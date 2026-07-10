@@ -1,0 +1,49 @@
+{
+  "name": "Mundo Shinobi (Naruto)",
+  "description": "RPG ambientado no universo de Naruto, seguindo o cânone da obra de Masashi Kishimoto. Vilas ocultas, missões ranqueadas, jutsus, chakra e política shinobi.",
+  "canonBased": true,
+  "loreNotes": "O mundo segue o cânone de Naruto (e Naruto Shippuden). Respeite a linha do tempo da obra: Exame Chunin, missão ao País das Ondas, invasão de Konoha, a saída de Sasuke, o timeskip, a Akatsuki, a Quarta Guerra Ninja. Personagens canônicos devem agir e ter força coerentes com o ponto atual da linha do tempo — Kakashi não usa Kamui antes de despertá-lo, Naruto não domina o Modo Sábio antes do arco de Pain. Jutsus exigem chakra e, em geral, selos de mão. Elementos: Katon (fogo), Suiton (água), Doton (terra), Fūton (vento), Raiton (raio), além de kekkei genkai (Sharingan, Byakugan, Mokuton...). Missões são ranqueadas D, C, B, A, S. Hierarquia: Estudante da Academia → Genin → Chunin → Jounin Especial → Jounin → Kage. O jogador é um personagem original inserido no mundo: ele pode cruzar com eventos canônicos, mas suas ações não reescrevem o cânone sem muito esforço narrativo.",
+  "attributes": [
+    { "key": "taijutsu", "label": "Taijutsu", "min": 1, "max": 10, "default": 3, "description": "Combate corpo a corpo" },
+    { "key": "ninjutsu", "label": "Ninjutsu", "min": 1, "max": 10, "default": 3, "description": "Técnicas de chakra" },
+    { "key": "genjutsu", "label": "Genjutsu", "min": 1, "max": 10, "default": 2, "description": "Ilusões" },
+    { "key": "inteligencia", "label": "Inteligência", "min": 1, "max": 10, "default": 3, "description": "Tática e raciocínio" },
+    { "key": "forca", "label": "Força", "min": 1, "max": 10, "default": 3 },
+    { "key": "velocidade", "label": "Velocidade", "min": 1, "max": 10, "default": 3 },
+    { "key": "vigor", "label": "Vigor", "min": 1, "max": 10, "default": 3, "description": "Resistência física e reserva de chakra" },
+    { "key": "selos", "label": "Selos de Mão", "min": 1, "max": 10, "default": 3, "description": "Velocidade e precisão de selos" }
+  ],
+  "resources": [
+    { "key": "hp", "label": "Saúde", "defaultMax": 40, "color": "#e0524d" },
+    { "key": "chakra", "label": "Chakra", "defaultMax": 50, "color": "#4d7de0", "description": "Consumido por jutsus; esgotamento causa exaustão ou morte" },
+    { "key": "stamina", "label": "Fôlego", "defaultMax": 30, "color": "#4de08a" }
+  ],
+  "abilityTypes": [
+    { "key": "ninjutsu", "label": "Ninjutsu" },
+    { "key": "taijutsu", "label": "Taijutsu" },
+    { "key": "genjutsu", "label": "Genjutsu" },
+    { "key": "fuinjutsu", "label": "Fūinjutsu (selamento)" },
+    { "key": "senjutsu", "label": "Senjutsu" },
+    { "key": "kekkei_genkai", "label": "Kekkei Genkai" },
+    { "key": "medico", "label": "Ninjutsu Médico" },
+    { "key": "arma", "label": "Bukijutsu (armas)" }
+  ],
+  "abilityRanks": ["D", "C", "B", "A", "S"],
+  "ranks": [
+    { "key": "estudante", "label": "Estudante da Academia", "xpRequired": 0 },
+    { "key": "genin", "label": "Genin", "xpRequired": 100 },
+    { "key": "chunin", "label": "Chunin", "xpRequired": 600 },
+    { "key": "jounin_especial", "label": "Jounin Especial", "xpRequired": 1500 },
+    { "key": "jounin", "label": "Jounin", "xpRequired": 3000 },
+    { "key": "kage", "label": "Nível Kage", "xpRequired": 8000 }
+  ],
+  "creationPoints": 10,
+  "extraFields": [
+    { "key": "vila", "label": "Vila Oculta", "description": "Konoha, Suna, Kiri, Kumo, Iwa..." },
+    { "key": "cla", "label": "Clã" },
+    { "key": "elemento", "label": "Afinidade Elemental", "description": "Katon, Suiton, Doton, Fūton, Raiton" },
+    { "key": "kekkei_genkai", "label": "Kekkei Genkai", "description": "Vazio se não possuir" },
+    { "key": "especialidade", "label": "Especialidade" }
+  ],
+  "diceNotes": "Testes: 1d20 + (atributo x 2) contra dificuldade 14 (fácil), 18 (médio), 22 (difícil), 26 (heroico). Jutsus custam chakra conforme o rank: D=3, C=6, B=12, A=20, S=35. Usar jutsu acima do próprio rank de habilidade exige teste e custa +50% de chakra. Confronto direto: rolagens opostas, vence a maior. Rank do ninja limita naturalmente o teto narrativo de poder."
+}
