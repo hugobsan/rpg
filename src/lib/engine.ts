@@ -1,7 +1,7 @@
 import { q } from "./db";
 import { getAgent } from "./agents";
 import { chat, ChatMessage, estimateTokens } from "./openrouter";
-import { rulesetPromptSummary } from "./ruleset";
+import { currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
 import { addMemory, recentMemories, searchMemories } from "./retrieval";
 import { executeGmTool, GM_TOOLS, ToolContext } from "./tools";
 import {
@@ -62,7 +62,18 @@ function sheetSummary(c: Character, full: boolean): string {
   if (extra) lines.push(`  ${extra}`);
   if (s.abilities.length)
     lines.push(
-      `  habilidades: ${s.abilities.map((a) => `${a.name}${a.rank ? ` (${a.rank})` : ""}`).join(", ")}`
+      `  habilidades:\n` +
+        s.abilities
+          .map((a) => {
+            if (a.progress === undefined) return `    - ${a.name}${a.rank ? ` (${a.rank})` : ""}`;
+            const cur = currentMilestone(a);
+            const next = nextMilestone(a);
+            let line = `    - ${a.name}: ${a.progress}% de domínio`;
+            if (cur) line += ` — atual: ${cur.description}`;
+            if (next) line += ` | próximo marco aos ${next.threshold}%: ${next.description}`;
+            return line;
+          })
+          .join("\n")
     );
   if (full) {
     if (s.inventory.length)

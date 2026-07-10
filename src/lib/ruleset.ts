@@ -1,4 +1,4 @@
-import { Ruleset, Sheet } from "./types";
+import { Ability, AbilityMilestone, Ruleset, Sheet } from "./types";
 
 /** Ruleset padrão, agnóstico de cenário. Presets (ex: Naruto) são importados por JSON. */
 export const DEFAULT_RULESET: Ruleset = {
@@ -73,6 +73,24 @@ export function blankSheet(ruleset: Ruleset): Sheet {
   };
 }
 
+/** Marco de domínio ativo no progresso atual (o mais alto threshold <= progress). */
+export function currentMilestone(a: Ability): AbilityMilestone | null {
+  if (a.progress === undefined || !a.milestones?.length) return null;
+  const reached = a.milestones
+    .filter((m) => m.threshold <= a.progress!)
+    .sort((x, y) => y.threshold - x.threshold);
+  return reached[0] || null;
+}
+
+/** Próximo marco ainda não alcançado. */
+export function nextMilestone(a: Ability): AbilityMilestone | null {
+  if (a.progress === undefined || !a.milestones?.length) return null;
+  const upcoming = a.milestones
+    .filter((m) => m.threshold > a.progress!)
+    .sort((x, y) => x.threshold - y.threshold);
+  return upcoming[0] || null;
+}
+
 /** Resumo textual do ruleset para prompts (compacto). */
 export function rulesetPromptSummary(r: Ruleset): string {
   const lines = [
@@ -88,6 +106,7 @@ export function rulesetPromptSummary(r: Ruleset): string {
       `Campos extras da ficha: ${r.extraFields.map((f) => `${f.label} (${f.key})`).join(", ")}`
     );
   if (r.diceNotes) lines.push(`Rolagens: ${r.diceNotes}`);
+  if (r.progressionNotes) lines.push(`Progressão de habilidades: ${r.progressionNotes}`);
   if (r.loreNotes) lines.push(`Cenário/lore: ${r.loreNotes}`);
   return lines.join("\n");
 }

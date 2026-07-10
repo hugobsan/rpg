@@ -3,8 +3,22 @@ import { ToolDef } from "./openrouter";
 import { rollDice } from "./dice";
 import { addMemory, searchMemories, searchBookChunks } from "./retrieval";
 import { listBooks, readPages } from "./books";
-import { Campaign, Character, Scene, Sheet, TurnEvent } from "./types";
-import { blankSheet } from "./ruleset";
+import { Ability, Campaign, Character, Scene, Sheet, TurnEvent } from "./types";
+import { blankSheet, currentMilestone, nextMilestone } from "./ruleset";
+
+const MILESTONE_SCHEMA = {
+  type: "array",
+  description:
+    "Marcos de capacidade por nível de domínio (opcional). Use quando a habilidade evolui em estágios com poderes distintos (ex: um dōjutsu que desbloqueia leitura de movimentos aos 25%, cópia de técnicas aos 50%...). Inclua um marco com threshold=0 descrevendo a capacidade inicial.",
+  items: {
+    type: "object",
+    properties: {
+      threshold: { type: "number", description: "0-100: domínio a partir do qual este marco vale" },
+      description: { type: "string", description: "o que se torna possível a partir deste ponto" },
+    },
+    required: ["threshold", "description"],
+  },
+};
 
 const S = (props: Record<string, unknown>, required: string[]) => ({
   type: "object",
@@ -66,16 +80,36 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "add_ability",
       description:
-        "Adiciona (ou atualiza, se mesmo nome) uma habilidade/jutsu ao personagem.",
+        "Adiciona (ou redefine, se mesmo nome) uma habilidade/jutsu ao personagem. Para habilidades com evolução em estágios (dōjutsu, técnicas assinatura), defina milestones — o progresso é próprio dessa habilidade, não uma barra genérica do personagem. Para habilidades simples, basta rank.",
       parameters: S(
         {
           character: { type: "string" },
           name: { type: "string" },
           abilityType: { type: "string", description: "key do tipo (ex: ninjutsu)" },
-          rank: { type: "string", description: "nível de maestria (ex: C)" },
+          rank: { type: "string", description: "nível amplo de maestria (ex: C) — para habilidades sem marcos" },
           description: { type: "string" },
+          progress: { type: "number", description: "0-100: domínio inicial desta habilidade (default 0)" },
+          milestones: MILESTONE_SCHEMA,
         },
         ["character", "name", "abilityType"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_ability_progress",
+      description:
+        "Avança (ou fixa) o domínio de UMA habilidade específica do personagem, não um atributo geral. Use delta para progresso incremental de treino/uso, ou set para fixar um valor. O retorno informa se um marco de capacidade foi cruzado — narre o que isso desbloqueia.",
+      parameters: S(
+        {
+          character: { type: "string" },
+          name: { type: "string", description: "nome exato da habilidade" },
+          delta: { type: "number", description: "variação de progresso (0-100)" },
+          set: { type: "number", description: "valor absoluto de progresso (0-100)" },
+          reason: { type: "string", description: "o que gerou esse avanço" },
+        },
+        ["character", "name"]
       ),
     },
   },
@@ -199,6 +233,8 @@ export const GM_TOOLS: ToolDef[] = [
                 type: { type: "string" },
                 rank: { type: "string" },
                 description: { type: "string" },
+                progress: { type: "number" },
+                milestones: MILESTONE_SCHEMA,
               },
               required: ["name", "type"],
             },
@@ -368,11 +404,18 @@ export async function executeGmTool(
     }
     case "add_ability": {
       const c = await getChar(cid, String(args.character));
-      const ability = {
+      const milestones = Array.isArray(args.milestones)
+        ? (args.milestones as { threshold: number; description: string }[])
+            .map((m) => ({ threshold: Number(m.threshold), description: String(m.description) }))
+            .sort((a, b) => a.threshold - b.threshold)
+        : undefined;
+      const ability: Ability = {
         name: String(args.name),
         type: String(args.abilityType),
         rank: args.rank ? String(args.rank) : undefined,
         description: args.description ? String(args.description) : undefined,
+        progress: milestones ? Number(args.progress ?? 0) : (typeof args.progress === "number" ? args.progress : undefined),
+        milestones,
       };
       const idx = c.sheet.abilities.findIndex(
         (a) => a.name.toLowerCase() === ability.name.toLowerCase()
@@ -381,8 +424,41 @@ export async function executeGmTool(
       else c.sheet.abilities.push(ability);
       await saveSheet(c.id, c.sheet);
       ctx.emit({ type: "state" });
-      ctx.emit({ type: "tool", name, summary: `${c.name} ${idx >= 0 ? "aprimorou" : "aprendeu"}: ${ability.name}${ability.rank ? ` (${ability.rank})` : ""}` });
-      return `Habilidade ${idx >= 0 ? "atualizada" : "adicionada"}.`;
+      const cur = currentMilestone(ability);
+      ctx.emit({
+        type: "tool",
+        name,
+        summary: `${c.name} ${idx >= 0 ? "aprimorou" : "aprendeu"}: ${ability.name}${ability.rank ? ` (${ability.rank})` : ""}${cur ? ` — ${cur.description}` : ""}`,
+      });
+      return `Habilidade ${idx >= 0 ? "atualizada" : "adicionada"}.${cur ? ` Marco atual: ${cur.description}` : ""}`;
+    }
+    case "update_ability_progress": {
+      const c = await getChar(cid, String(args.character));
+      const ability = c.sheet.abilities.find(
+        (a) => a.name.toLowerCase() === String(args.name).toLowerCase()
+      );
+      if (!ability)
+        return `Erro: ${c.name} não possui a habilidade "${args.name}". Use add_ability para criá-la primeiro (com milestones, se aplicável).`;
+      const before = currentMilestone(ability);
+      const prevProgress = ability.progress ?? 0;
+      if (typeof args.set === "number") ability.progress = args.set;
+      else if (typeof args.delta === "number") ability.progress = prevProgress + args.delta;
+      else return `Erro: informe delta ou set.`;
+      ability.progress = Math.max(0, Math.min(100, ability.progress));
+      await saveSheet(c.id, c.sheet);
+      const after = currentMilestone(ability);
+      const upcoming = nextMilestone(ability);
+      ctx.emit({ type: "state" });
+      const crossed = after && after !== before;
+      ctx.emit({
+        type: "tool",
+        name,
+        summary: `${c.name}: ${ability.name} → ${ability.progress}%${crossed ? ` — novo marco: ${after!.description}` : ""}`,
+      });
+      let msg = `${ability.name} agora está em ${ability.progress}% de domínio.`;
+      if (crossed) msg += ` NOVO MARCO ALCANÇADO: ${after!.description} — narre esse avanço.`;
+      if (upcoming) msg += ` Próximo marco aos ${upcoming.threshold}%: ${upcoming.description}.`;
+      return msg;
     }
     case "add_item": {
       const c = await getChar(cid, String(args.character));
@@ -474,9 +550,25 @@ export async function executeGmTool(
       if (args.attributes && typeof args.attributes === "object")
         Object.assign(sheet.attributes, args.attributes as Record<string, number>);
       if (Array.isArray(args.abilities))
-        sheet.abilities = (args.abilities as { name: string; type: string; rank?: string; description?: string }[]).map(
-          (a) => ({ name: a.name, type: a.type, rank: a.rank, description: a.description })
-        );
+        sheet.abilities = (
+          args.abilities as {
+            name: string;
+            type: string;
+            rank?: string;
+            description?: string;
+            progress?: number;
+            milestones?: { threshold: number; description: string }[];
+          }[]
+        ).map((a) => ({
+          name: a.name,
+          type: a.type,
+          rank: a.rank,
+          description: a.description,
+          progress: a.progress,
+          milestones: a.milestones
+            ?.map((m) => ({ threshold: Number(m.threshold), description: String(m.description) }))
+            .sort((x, y) => x.threshold - y.threshold),
+        }));
       const persona = {
         appearance: args.appearance ? String(args.appearance) : undefined,
         personality: String(args.personality),

@@ -47,15 +47,28 @@ export interface Ruleset {
   /** Campos extras livres da ficha (ex: elemento, kekkei genkai) */
   extraFields: { key: string; label: string; description?: string }[];
   diceNotes?: string; // convenções de rolagem para o Mestre
+  /** Orientação sobre progresso/milestones por habilidade (ex: estágios de um dōjutsu) */
+  progressionNotes?: string;
 }
 
 // ---------- Ficha de personagem ----------
 
+export interface AbilityMilestone {
+  /** 0-100: progresso de domínio a partir do qual este marco vale */
+  threshold: number;
+  /** o que se torna possível a partir deste ponto de domínio */
+  description: string;
+}
+
 export interface Ability {
   name: string;
   type: string; // key de AbilityTypeDef
-  rank?: string;
+  rank?: string; // opcional: nível amplo (D/C/B/A/S) para habilidades simples
   description?: string;
+  /** 0-100: domínio/aprendizado desta habilidade especificamente (não do personagem) */
+  progress?: number;
+  /** marcos de capacidade por nível de domínio, ordenados por threshold crescente */
+  milestones?: AbilityMilestone[];
 }
 
 export interface Item {
