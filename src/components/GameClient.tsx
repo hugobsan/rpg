@@ -361,10 +361,14 @@ export function SheetView({ char, campaign }: { char: Character; campaign: Campa
         );
       })}
       <div className="attr-grid">
-        {rs.attributes.map((a) => (
-          <div key={a.key} className="attr-cell">
+        {rs.attributes.map((a, i) => (
+          <div key={a.key} className="attr-cell has-tip" tabIndex={0}>
             <div className="v">{s.attributes[a.key] ?? "-"}</div>
             <div className="k">{a.label}</div>
+            {/* mesmo balão da criação de personagem; colunas da direita abrem para a esquerda */}
+            <div className={`attr-tip${i % 4 >= 2 ? " right" : ""}`}>
+              {[a.description, rs.diceNotes?.split(/\.\s/)[0], `Máximo ${a.max}`].filter(Boolean).join("\n\n")}
+            </div>
           </div>
         ))}
       </div>
@@ -579,9 +583,9 @@ function ScriptView({
       <button className="btn ghost small" onClick={regen} disabled={busy} style={{ marginTop: 8 }}>
         {busy ? "gerando..." : script ? "Regenerar roteiro" : "Gerar roteiro"}
       </button>
-      <div style={{ marginTop: 14 }}>
-        <a className="btn ghost small" href={`/api/campaigns/${campaignId}/export?what=ruleset`}>⬇ Exportar mecânica (JSON)</a>{" "}
-        <a className="btn ghost small" href={`/api/campaigns/${campaignId}/export?what=full`} style={{ marginLeft: 6 }}>⬇ Exportar campanha</a>
+      <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <a className="btn ghost small" style={{ whiteSpace: "nowrap", textDecoration: "none" }} href={`/api/campaigns/${campaignId}/export?what=ruleset`}>⬇ Exportar mecânica (JSON)</a>
+        <a className="btn ghost small" style={{ whiteSpace: "nowrap", textDecoration: "none" }} href={`/api/campaigns/${campaignId}/export?what=full`}>⬇ Exportar campanha</a>
       </div>
     </div>
   );
