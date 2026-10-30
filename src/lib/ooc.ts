@@ -45,6 +45,29 @@ const SAVE_DIRECTIVE: ToolDef = {
   },
 };
 
+/**
+ * Modelos fracos às vezes escrevem a chamada como texto ("(save_directive: ...)") e imitam o "📌 Guardei"
+ * do histórico sem salvar nada. Tira as duas coisas do texto e devolve as pseudo-chamadas para o código salvar.
+ */
+export function splitPseudoCalls(text: string): { clean: string; pseudo: { content: string; kind?: string; scope?: string }[] } {
+  const pseudo: { content: string; kind?: string; scope?: string }[] = [];
+  const clean = text
+    .replace(/^.*📌\s*Guardei.*$/gm, "")
+    .replace(/\(?\s*save_directive\s*[:(]\s*(.+?)\)?\s*$/gm, (_, arg: string) => {
+      const raw = arg.trim().replace(/\)+$/, "");
+      try {
+        const j = JSON.parse(raw);
+        if (j && typeof j.content === "string") pseudo.push(j);
+      } catch {
+        if (raw) pseudo.push({ content: raw });
+      }
+      return "";
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { clean, pseudo };
+}
+
 const KIND_LABEL: Record<string, string> = { diretriz: "Diretriz", preferencia: "Preferência", correcao: "Correção" };
 
 export async function oocTalk(campaignId: string, text: string): Promise<{ reply: string; directives: string[] }> {
@@ -89,7 +112,8 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
   await q(`INSERT INTO gm_notes (campaign_id, role, content) VALUES ($1, 'player', $2)`, [campaignId, text]);
   const messages: ChatMessage[] = [
     { role: "system", content: system },
-    ...notes.map((n): ChatMessage => ({ role: n.role === "player" ? "user" : "assistant", content: n.content })),
+    // sem os "📌 Guardei" no histórico: o modelo imita a linha em vez de chamar a ferramenta
+    ...notes.map((n): ChatMessage => ({ role: n.role === "player" ? "user" : "assistant", content: splitPseudoCalls(n.content).clean })),
     { role: "user", content: text },
   ];
 
@@ -107,9 +131,14 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
       campaignId,
       purpose: "conversa fora do jogo",
     });
-    reply = r.content.trim();
+    const split = splitPseudoCalls(r.content);
+    reply = split.clean;
     const results: ChatMessage[] = [];
-    for (const call of r.toolCalls) {
+    // chamada escrita como texto, sem a chamada de verdade: salva pelo texto
+    const calls = r.toolCalls.length
+      ? r.toolCalls
+      : split.pseudo.map((p, i) => ({ id: `pseudo-${i}`, type: "function" as const, function: { name: "save_directive", arguments: JSON.stringify(p) } }));
+    for (const call of calls) {
       let out = "Ignorado: limite de 3 diretrizes por fala.";
       if (call.function.name === "save_directive" && saved.length < 3) {
         let a: { content?: string; kind?: string; scope?: string } = {};
@@ -129,7 +158,7 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
       }
       results.push({ role: "tool", tool_call_id: call.id, name: call.function.name, content: out });
     }
-    if (reply || !r.toolCalls.length) break;
+    if (reply || !r.toolCalls.length) break; // pseudo-chamadas já foram salvas; não há 2ª rodada para elas
     messages.push({ role: "assistant", content: null, tool_calls: r.toolCalls }, ...results);
   }
 

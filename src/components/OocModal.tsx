@@ -66,17 +66,16 @@ export default function OocModal({ campaignId, onClose }: { campaignId: string; 
             (&quot;menos combate&quot;, &quot;na próxima cena quero treinar com o Iruka&quot;) viram diretrizes que o
             Mestre segue a partir do próximo turno; perguntas só são respondidas, sem spoilers.
           </p>
-          {directives.length > 0 && (
-            <div style={{ marginBottom: 12 }}>
-              <div className="ooc-tag" style={{ marginBottom: 6 }}>Diretrizes ativas</div>
+          <div style={{ marginBottom: 12 }}>
+              <div className="ooc-tag" style={{ marginBottom: 6 }}>Diretrizes ativas ({directives.length})</div>
+              {!directives.length && <p className="muted" style={{ margin: 0, fontSize: 13 }}>Nenhuma por enquanto.</p>}
               {directives.map((d) => (
                 <div key={d.id} className="ooc-directive">
                   <span>📌 {d.content}{d.subject === "proxima_cena" && <span className="muted"> · nesta cena e na próxima</span>}</span>
                   <button title="Desativar esta diretriz" aria-label="Desativar diretriz" onClick={() => removeDirective(d.id)}>✕</button>
                 </div>
               ))}
-            </div>
-          )}
+          </div>
           <div className="npc-chat-feed" ref={feedRef} style={{ maxHeight: "35vh", overflowY: "auto", minHeight: 120 }}>
             {notes.map((n) => (
               <div key={n.id} className={`npc-bubble ${n.role === "player" ? "ooc-player" : "npc"}`}>
