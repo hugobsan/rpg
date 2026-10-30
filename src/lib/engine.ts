@@ -1,7 +1,7 @@
 import { q } from "./db";
 import { getAgent } from "./agents";
 import { chat, ChatMessage, estimateTokens } from "./openrouter";
-import { currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
+import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
 import { addMemory, MemoryHit, recentMemories, searchMemories } from "./retrieval";
 import { decideTurn, scoreImportance } from "./decisions";
 import { takeSnapshot } from "./turnSnapshot";
@@ -11,6 +11,7 @@ import {
   CampaignScript,
   Character,
   GameMessage,
+  Ruleset,
   Scene,
   TurnEvent,
 } from "./types";
@@ -45,7 +46,7 @@ export async function getCharacters(campaignId: string): Promise<Character[]> {
 
 // ---------- montagem de contexto do Mestre ----------
 
-function sheetSummary(c: Character, full: boolean): string {
+function sheetSummary(c: Character, full: boolean, rs: Ruleset): string {
   const s = c.sheet;
   const res = Object.entries(s.resources)
     .map(([k, v]) => `${k} ${v.current}/${v.max}`)
@@ -67,16 +68,18 @@ function sheetSummary(c: Character, full: boolean): string {
       `  habilidades:\n` +
         s.abilities
           .map((a) => {
-            if (a.progress === undefined) return `    - ${a.name}${a.rank ? ` (${a.rank})` : ""}`;
+            let line = `    - ${abilityPromptLine(rs, a)}`;
+            if (a.progress === undefined) return line;
             const cur = currentMilestone(a);
             const next = nextMilestone(a);
-            let line = `    - ${a.name}: ${a.progress}% de domínio`;
+            line += ` | ${a.progress}% de domínio`;
             if (cur) line += ` — atual: ${cur.description}`;
             if (next) line += ` | próximo marco aos ${next.threshold}%: ${next.description}`;
             return line;
           })
           .join("\n")
     );
+  else lines.push(`  habilidades: nenhuma registrada`);
   if (full) {
     if (s.inventory.length)
       lines.push(`  inventário: ${s.inventory.map((i) => `${i.qty}x ${i.name}`).join(", ")}`);
@@ -125,10 +128,10 @@ async function buildGmSystem(
     `\n--- MECÂNICA ---\n${rulesetPromptSummary(campaign.ruleset)}`,
     `\n--- CENA ATUAL (nº ${scene.seq}) ---\nModo: ${scene.mode} | Local: ${scene.location || "?"} | Título: ${scene.title || "-"}\n${MODE_HINTS[scene.mode] || ""}${scene.summary ? `\nResumo do que já aconteceu nesta cena (compactado): ${scene.summary}` : ""}`,
     player
-      ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true)}`
+      ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset)}`
       : "",
     activeNpcs.length
-      ? `\n--- NPCs EM CENA ---\n${activeNpcs.map((n) => sheetSummary(n, true)).join("\n")}`
+      ? `\n--- NPCs EM CENA ---\n${activeNpcs.map((n) => sheetSummary(n, true, campaign.ruleset)).join("\n")}`
       : "\n--- NPCs EM CENA ---\n(nenhum)",
     inactiveNames.length
       ? `NPCs conhecidos fora de cena (não interagem; reative com set_npc_active): ${inactiveNames.join(", ")}`
@@ -463,7 +466,7 @@ export async function generateScript(campaign: Campaign): Promise<CampaignScript
       {
         role: "user",
         content: `MECÂNICA/CENÁRIO:\n${rulesetPromptSummary(campaign.ruleset)}\n\nPERSONAGEM DO JOGADOR:\n${
-          player ? sheetSummary(player, true) : "(não criado)"
+          player ? sheetSummary(player, true, campaign.ruleset) : "(não criado)"
         }\n\nMonte o roteiro da campanha "${campaign.name}".${
           campaign.ruleset.canonBased
             ? " O cenário é baseado em obra: ancore os arcos na linha do tempo canônica a partir do ponto de inserção do personagem."

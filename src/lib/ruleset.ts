@@ -52,6 +52,15 @@ export function normalizeRuleset(input: unknown): Ruleset {
   r.abilityRanks = Array.isArray(r.abilityRanks) ? r.abilityRanks : [];
   r.ranks = Array.isArray(r.ranks) ? r.ranks : [];
   r.extraFields = Array.isArray(r.extraFields) ? r.extraFields : [];
+  // campos de habilidade opcionais (rulesets antigos não têm)
+  r.abilitiesLabel = typeof r.abilitiesLabel === "string" && r.abilitiesLabel.trim() ? r.abilitiesLabel : "Habilidades";
+  const ac = r.abilityCosts;
+  r.abilityCosts = ac && typeof ac.resource === "string" && ac.byRank && typeof ac.byRank === "object" ? ac : undefined;
+  const sa = r.startingAbilities;
+  r.startingAbilities =
+    sa && typeof sa === "object" && !Array.isArray(sa)
+      ? Object.fromEntries(Object.entries(sa).filter(([, v]) => Array.isArray(v)))
+      : undefined;
   return r as Ruleset;
 }
 
@@ -71,6 +80,45 @@ export function blankSheet(ruleset: Ruleset): Sheet {
     xp: 0,
     extra: {},
   };
+}
+
+/** Custo efetivo: o da habilidade ou, sem ele, o padrão do rank no ruleset. */
+export function abilityCost(r: Ruleset, a: Ability): { resource: string; amount: number } | null {
+  if (a.cost) return a.cost;
+  const amount = a.rank ? r.abilityCosts?.byRank[a.rank] : undefined;
+  return amount === undefined ? null : { resource: r.abilityCosts!.resource, amount };
+}
+
+/** "D=3, C=6, ..." na ordem de abilityRanks (o JSONB do Postgres reordena as chaves). */
+export function costsByRankText(r: Ruleset): string {
+  const by = r.abilityCosts?.byRank || {};
+  const keys = [...r.abilityRanks.filter((k) => k in by), ...Object.keys(by).filter((k) => !r.abilityRanks.includes(k))];
+  return keys.map((k) => `${k}=${by[k]}`).join(", ");
+}
+
+/** Kit de habilidades de um rank, somando os ranks anteriores (o de cima vence em nome repetido). */
+export function startingKit(r: Ruleset, rankKey?: string): Ability[] {
+  const kit = new Map<string, Ability>();
+  for (const rank of r.ranks) {
+    for (const a of r.startingAbilities?.[rank.key] || []) kit.set(a.name.toLowerCase(), a);
+    if (rank.key === rankKey) break;
+  }
+  return [...kit.values()];
+}
+
+/** Linha compacta de uma habilidade para o prompt: tipo, rank, custo, dano, efeito, requisitos. */
+export function abilityPromptLine(r: Ruleset, a: Ability): string {
+  const cost = abilityCost(r, a);
+  const bits = [
+    a.type,
+    a.rank && `rank ${a.rank}`,
+    cost && (cost.amount ? `custo ${cost.amount} ${cost.resource}${a.cost ? "" : " (padrão do rank)"}` : "sem custo"),
+    a.damage && `dano ${a.damage}`,
+  ].filter(Boolean);
+  let line = `${a.name} [${bits.join(", ")}]`;
+  if (a.effect) line += ` — efeito: ${a.effect}`;
+  if (a.requirements) line += ` — requisitos: ${a.requirements}`;
+  return line;
 }
 
 /** Marco de domínio ativo no progresso atual (o mais alto threshold <= progress). */
@@ -106,6 +154,15 @@ export function rulesetPromptSummary(r: Ruleset): string {
       `Campos extras da ficha: ${r.extraFields.map((f) => `${f.label} (${f.key})`).join(", ")}`
     );
   if (r.diceNotes) lines.push(`Rolagens: ${r.diceNotes}`);
+  if (r.abilityCosts)
+    lines.push(
+      `Custo padrão de habilidade por rank (${r.abilityCosts.resource}): ${costsByRankText(r)}`
+    );
+  const kits = r.ranks
+    .filter((k) => r.startingAbilities?.[k.key]?.length)
+    .map((k) => `${k.label}: ${r.startingAbilities![k.key].map((a) => a.name).join(", ")}`);
+  if (kits.length)
+    lines.push(`Kit que todo personagem sabe ao chegar ao rank (cumulativo): ${kits.join(" | ")}`);
   if (r.progressionNotes) lines.push(`Progressão de habilidades: ${r.progressionNotes}`);
   if (r.loreNotes) lines.push(`Cenário/lore: ${r.loreNotes}`);
   return lines.join("\n");

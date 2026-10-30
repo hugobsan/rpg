@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
-import { blankSheet, normalizeRuleset } from "@/lib/ruleset";
+import { blankSheet, normalizeRuleset, startingKit } from "@/lib/ruleset";
 import { generateScript, getCampaign } from "@/lib/engine";
-import { Campaign, Persona } from "@/lib/types";
+import { Ability, Campaign, Persona } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ interface CreateBody {
     name: string;
     attributes?: Record<string, number>;
     extra?: Record<string, string>;
-    abilities?: { name: string; type: string; rank?: string; description?: string }[];
+    abilities?: Ability[]; // extras além do kit do rank inicial
     appearance?: string;
     personality?: string;
     backstory?: string;
@@ -61,7 +61,11 @@ export async function POST(req: NextRequest) {
   const sheet = blankSheet(ruleset);
   if (body.character.attributes) Object.assign(sheet.attributes, body.character.attributes);
   if (body.character.extra) Object.assign(sheet.extra, body.character.extra);
-  if (body.character.abilities?.length) sheet.abilities = body.character.abilities;
+  // kit do rank inicial + extras da tela (extra com mesmo nome substitui o do kit)
+  const abilities = new Map(startingKit(ruleset, sheet.rank).map((a) => [a.name.toLowerCase(), a]));
+  for (const a of body.character.abilities || [])
+    if (a?.name?.trim() && a.type) abilities.set(a.name.trim().toLowerCase(), { ...a, name: a.name.trim() });
+  sheet.abilities = [...abilities.values()];
   const persona: Persona = {
     appearance: body.character.appearance,
     personality: body.character.personality,

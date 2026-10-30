@@ -49,6 +49,12 @@ export interface Ruleset {
   diceNotes?: string; // convenções de rolagem para o Mestre
   /** Orientação sobre progresso/milestones por habilidade (ex: estágios de um dōjutsu) */
   progressionNotes?: string;
+  /** Nome da aba/seção de habilidades na UI (ex: "Jutsus"). Padrão: "Habilidades" */
+  abilitiesLabel?: string;
+  /** Custo padrão por rank de habilidade, usado quando a habilidade não tem custo próprio */
+  abilityCosts?: { resource: string; byRank: Record<string, number> };
+  /** Kit que todo personagem sabe ao atingir cada rank (key de RankDef). Cumulativo: um rank inclui os anteriores */
+  startingAbilities?: Record<string, Ability[]>;
 }
 
 // ---------- Ficha de personagem ----------
@@ -69,6 +75,14 @@ export interface Ability {
   progress?: number;
   /** marcos de capacidade por nível de domínio, ordenados por threshold crescente */
   milestones?: AbilityMilestone[];
+  /** custo por uso; sem ele, vale o padrão do rank (Ruleset.abilityCosts). amount 0 = sem custo */
+  cost?: { resource: string; amount: number };
+  /** o que a habilidade faz em jogo (alcance, duração, teste) */
+  effect?: string;
+  /** dano em notação de dado, ex: "2d6" */
+  damage?: string;
+  /** requisitos: selos, elemento, kekkei genkai, outra habilidade */
+  requirements?: string;
 }
 
 export interface Item {

@@ -12,6 +12,7 @@ import NpcModal, { playLine } from "./NpcModal";
 import ImageViewer from "./ImageViewer";
 import Gallery from "./Gallery";
 import InventoryView from "./InventoryView";
+import AbilitiesView from "./AbilitiesView";
 import DiceRoller, { diceText } from "./DiceRoller";
 
 // ---------- helpers ----------
@@ -75,7 +76,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   const [busy, setBusy] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<"sheet" | "inventory" | "npcs" | "memories" | "books" | "script" | "gallery">("sheet");
+  const [tab, setTab] = useState<"sheet" | "abilities" | "inventory" | "npcs" | "memories" | "books" | "script" | "gallery">("sheet");
   const [imageFull, setImageFull] = useState(false);
   // largura da barra lateral, ajustável pela alça entre ela e o chat (lembrada neste navegador)
   const [sideW, setSideW] = useState(SIDE_DEFAULT);
@@ -433,6 +434,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
           {(
             [
               ["sheet", "Ficha"],
+              ["abilities", campaign.ruleset.abilitiesLabel || "Habilidades"],
               ["inventory", "Inventário"],
               ["npcs", `NPCs (${npcs.filter((n) => n.active).length})`],
               ["memories", "Marcos"],
@@ -464,6 +466,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
             </div>
           )}
           {tab === "sheet" && player && <SheetView char={player} campaign={campaign} />}
+          {tab === "abilities" && player && <AbilitiesView char={player} ruleset={campaign.ruleset} />}
           {tab === "inventory" && player && (
             <InventoryView char={player} campaignId={campaignId} disabled={busy} onChange={reloadState} />
           )}
@@ -571,40 +574,6 @@ export function SheetView({ char, campaign }: { char: Character; campaign: Campa
           </div>
         );
       })}
-      {s.abilities.length > 0 && (
-        <>
-          <h4 style={{ margin: "14px 0 8px" }}>Habilidades</h4>
-          {s.abilities.map((a) => {
-            const milestones = (a.milestones || []).slice().sort((x, y) => x.threshold - y.threshold);
-            const progress = a.progress ?? null;
-            const cur = progress === null ? null : [...milestones].reverse().find((m) => m.threshold <= progress);
-            const next = progress === null ? null : milestones.find((m) => m.threshold > progress);
-            return (
-              <div key={a.name} className="ability-item">
-                <div className="name">
-                  {a.name} {a.rank && <span className="pill">{a.rank}</span>}
-                  {progress !== null && <span className="pill">{progress}%</span>}
-                </div>
-                <div className="sub">
-                  {rs.abilityTypes.find((t) => t.key === a.type)?.label || a.type}
-                  {a.description ? ` — ${a.description}` : ""}
-                </div>
-                {progress !== null && (
-                  <div className="bar-outer" style={{ height: 7, marginTop: 6 }}>
-                    <div className="bar-inner" style={{ width: `${progress}%`, background: "var(--accent)" }} />
-                  </div>
-                )}
-                {cur && <div className="sub" style={{ marginTop: 5 }}>▸ {cur.description}</div>}
-                {next && (
-                  <div className="sub" style={{ opacity: 0.7 }}>
-                    próximo marco aos {next.threshold}%: {next.description}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </>
-      )}
     </div>
   );
 }

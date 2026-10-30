@@ -4,7 +4,7 @@ import { rollDice } from "./dice";
 import { addMemory, searchMemories, searchBookChunks } from "./retrieval";
 import { listBooks, readPages } from "./books";
 import { Ability, Campaign, Character, Scene, Sheet, TurnEvent } from "./types";
-import { blankSheet, currentMilestone, nextMilestone } from "./ruleset";
+import { abilityPromptLine, blankSheet, currentMilestone, nextMilestone } from "./ruleset";
 
 const MILESTONE_SCHEMA = {
   type: "array",
@@ -85,7 +85,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "add_ability",
       description:
-        "Adiciona (ou redefine, se mesmo nome) uma habilidade/jutsu ao personagem. Para habilidades com evolução em estágios (dōjutsu, técnicas assinatura), defina milestones — o progresso é próprio dessa habilidade, não uma barra genérica do personagem. Para habilidades simples, basta rank.",
+        "Adiciona (ou redefine, se mesmo nome) uma habilidade/jutsu ao personagem. Use quando ele aprende algo E quando ele usa uma técnica plausível que ainda não está na ficha: registre NA HORA DO USO, antes de resolver (rolagem, custo), com custo, efeito, dano e requisitos — nada de resolver uma técnica que não está na ficha. Para habilidades com evolução em estágios (dōjutsu, técnicas assinatura), defina milestones — o progresso é próprio dessa habilidade, não uma barra genérica do personagem. Para habilidades simples, basta rank.",
       parameters: S(
         {
           character: { type: "string" },
@@ -95,6 +95,18 @@ export const GM_TOOLS: ToolDef[] = [
           description: { type: "string" },
           progress: { type: "number", description: "0-100: domínio inicial desta habilidade (default 0)" },
           milestones: MILESTONE_SCHEMA,
+          cost: {
+            type: "object",
+            description: "custo por uso. Omita para usar o padrão do rank no ruleset; amount 0 = sem custo",
+            properties: {
+              resource: { type: "string", description: "key do recurso (ex: chakra)" },
+              amount: { type: "number" },
+            },
+            required: ["resource", "amount"],
+          },
+          effect: { type: "string", description: "o que faz em jogo: alcance, duração, teste usado" },
+          damage: { type: "string", description: "dano em notação de dado (ex: 2d6), se causar dano" },
+          requirements: { type: "string", description: "selos, elemento, kekkei genkai, outra habilidade" },
         },
         ["character", "name", "abilityType"]
       ),
@@ -420,6 +432,7 @@ export async function executeGmTool(
             .map((m) => ({ threshold: Number(m.threshold), description: String(m.description) }))
             .sort((a, b) => a.threshold - b.threshold)
         : undefined;
+      const cost = args.cost as { resource?: unknown; amount?: unknown } | undefined;
       const ability: Ability = {
         name: String(args.name),
         type: String(args.abilityType),
@@ -427,7 +440,15 @@ export async function executeGmTool(
         description: args.description ? String(args.description) : undefined,
         progress: milestones ? Number(args.progress ?? 0) : (typeof args.progress === "number" ? args.progress : undefined),
         milestones,
+        cost: cost && typeof cost.resource === "string" && Number.isFinite(Number(cost.amount))
+          ? { resource: cost.resource, amount: Number(cost.amount) }
+          : undefined,
+        effect: args.effect ? String(args.effect) : undefined,
+        damage: args.damage ? String(args.damage) : undefined,
+        requirements: args.requirements ? String(args.requirements) : undefined,
       };
+      if (ability.cost && !c.sheet.resources[ability.cost.resource])
+        return `Erro: recurso "${ability.cost.resource}" não existe na ficha de ${c.name}.`;
       const idx = c.sheet.abilities.findIndex(
         (a) => a.name.toLowerCase() === ability.name.toLowerCase()
       );
@@ -441,7 +462,7 @@ export async function executeGmTool(
         name,
         summary: `${c.name} ${idx >= 0 ? "aprimorou" : "aprendeu"}: ${ability.name}${ability.rank ? ` (${ability.rank})` : ""}${cur ? ` — ${cur.description}` : ""}`,
       });
-      return `Habilidade ${idx >= 0 ? "atualizada" : "adicionada"}.${cur ? ` Marco atual: ${cur.description}` : ""}`;
+      return `Habilidade ${idx >= 0 ? "atualizada" : "adicionada"}: ${abilityPromptLine(ctx.campaign.ruleset, ability)}.${cur ? ` Marco atual: ${cur.description}` : ""}`;
     }
     case "update_ability_progress": {
       const c = await getChar(cid, String(args.character));

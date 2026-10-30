@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Campaign, Character, VoiceProfile } from "@/lib/types";
 import { SheetView } from "./GameClient";
+import AbilitiesView from "./AbilitiesView";
 
 interface ChatMsg {
   role: "player" | "npc";
@@ -189,7 +190,12 @@ export default function NpcModal({
               )}
             </div>
           )}
-          {view === "sheet" && <SheetView char={npc} campaign={campaign} />}
+          {view === "sheet" && (
+            <>
+              <SheetView char={npc} campaign={campaign} />
+              {npc.sheet.abilities.length > 0 && <AbilitiesView char={npc} ruleset={campaign.ruleset} />}
+            </>
+          )}
           {view === "voice" && (
             <div>
               <label className="field">
