@@ -186,6 +186,14 @@ export interface AgentConfig {
   web_search: boolean;
   system_prompt: string;
   params: Record<string, unknown>;
+  // preço do modelo (USD/M tokens) salvo no último Salvar
+  pricing?: {
+    input: number | null;
+    output: number | null;
+    cache_read: number | null;
+    context: number;
+    fetched_at: string;
+  } | null;
 }
 
 // ---------- Eventos SSE do turno ----------

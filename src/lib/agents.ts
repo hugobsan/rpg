@@ -4,7 +4,7 @@ import { AgentConfig } from "./types";
 /**
  * Agentes fixos do sistema. Cada um é um conjunto modelo + system prompt +
  * parâmetros, editável na tela /agents. Defaults escolhidos por custo/benefício:
- *  - Mestre: modelo premium (narrativa + tool use são o coração do jogo)
+ *  - Mestre: modelo bom e barato nos turnos simples; premium nos complexos (o Jev decide)
  *  - NPC/Roteirista: modelo de ótimo custo para roleplay e planejamento
  *  - Cronista: modelo barato e rápido (sumarização/extração roda com frequência)
  *  - Imagem: modelo de geração de imagem unificada do OpenRouter
@@ -14,12 +14,13 @@ export const DEFAULT_AGENTS: AgentConfig[] = [
     id: "gm",
     name: "Mestre",
     description:
-      "Narra o mundo, arbitra regras, controla o ritmo das cenas e usa ferramentas para alterar fichas, rolar dados, criar NPCs e consultar livros/memórias. Pode buscar na internet (:online).",
-    model: "anthropic/claude-sonnet-5",
+      "Narra o mundo, arbitra regras, controla o ritmo das cenas e usa ferramentas para alterar fichas, rolar dados, criar NPCs e consultar livros/memórias. O Jev escolhe por turno entre o modelo principal (turnos simples) e o de turnos complexos, e decide se vale buscar na internet (:online).",
+    model: "openai/gpt-6.1-terra",
     temperature: 0.9,
     max_tokens: 3000,
     web_search: true,
-    params: { historyBudgetTokens: 9000, maxToolRounds: 8 },
+    // complexModel vazio = sem roteamento (sempre o modelo principal)
+    params: { historyBudgetTokens: 9000, maxToolRounds: 8, complexModel: "anthropic/claude-sonnet-5.5" },
     system_prompt: `Você é o Mestre de uma mesa de RPG individual (um jogador). Sua função é criar uma experiência imersiva, coerente e memorável.
 
 REGRAS DE OURO
@@ -62,7 +63,7 @@ FORMATO DA RESPOSTA
 
 - Fale APENAS como o personagem, em primeira pessoa. Sem narração externa, sem colchetes de meta-comentário, sem revelar segredos da persona a menos que o personagem revelasse.
 - Aja estritamente conforme a persona, o conhecimento e o estado atual do personagem. Você NÃO sabe o que o personagem não presenciou.
-- Considere o contexto da cena atual: se o momento torna a conversa implausível (batalha, urgência, distância, hostilidade), recuse ou corte a conversa DE FORMA COERENTE com o personagem ("Agora não!", sair andando...). Prefixe sua primeira resposta com [RECUSA] se o personagem não vai parar para conversar.
+- Considere o contexto da cena atual: se no meio da conversa o momento a tornar implausível (batalha, urgência, distância, hostilidade), corte-a DE FORMA COERENTE com o personagem ("Agora não!", sair andando...).
 - Emoções, maneirismos e vocabulário próprios do personagem. Respostas curtas e naturais, como diálogo real.
 - Se o cenário é baseado em uma obra e o personagem é canônico, mantenha-se fiel ao cânone no ponto atual da linha do tempo.`,
   },
@@ -117,6 +118,19 @@ Diretrizes:
   ]
 }
 Regras: memórias são fatos que precisarão ser lembrados muitas sessões depois (mudanças de status de NPC, revelações, dívidas, itens únicos, feridas graves, promessas). NÃO inclua detalhes descartáveis. importance 5 = muda a campanha; 1 = cor local.`,
+  },
+  {
+    id: "decider",
+    name: "Jev (decisões)",
+    description:
+      "Modelo de decisão (OpenRouter Decisions API): não escreve texto, devolve probabilidades. Uma chamada antes de cada turno decide se o turno é complexo (modelo do Mestre), se precisa de busca web e quais memórias entram; também decide se um NPC topa conversar e dá a importância das memórias novas. Se falhar, tudo segue o padrão. Só o modelo é usado; limiares ficam no código.",
+    // build fixo (canonical_slug): limiares do probe valem para este build; trocar = refazer scripts/jev-check.ts
+    model: "typesafe/jev-1.14-20261014",
+    temperature: 0,
+    max_tokens: 0,
+    web_search: false,
+    params: {},
+    system_prompt: "",
   },
   {
     id: "image",

@@ -6,3 +6,5 @@ out/
 .env.local
 .DS_Store
 pgdata/
+tsconfig.tsbuildinfo
+.playwright-mcp/

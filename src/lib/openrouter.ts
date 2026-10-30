@@ -55,6 +55,41 @@ export async function getOpenRouterKey(): Promise<string> {
   return fromSettings.apiKey || process.env.OPENROUTER_API_KEY || "";
 }
 
+export interface ApiLog {
+  agentId: string;
+  campaignId?: string | null;
+  model: string;
+  purpose: string;
+  request: unknown;
+  response: unknown;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  durationMs?: number | null;
+  error?: string | null;
+  cost?: number | null; // USD
+}
+
+/** Grava uma chamada de IA em api_logs (nunca lança). */
+export async function logApiCall(l: ApiLog): Promise<void> {
+  await q(
+    `INSERT INTO api_logs (agent_id, campaign_id, model, purpose, request, response, prompt_tokens, completion_tokens, duration_ms, error, cost)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [
+      l.agentId,
+      l.campaignId || null,
+      l.model,
+      l.purpose,
+      JSON.stringify(l.request),
+      l.response ? JSON.stringify(l.response) : null,
+      l.promptTokens ?? null,
+      l.completionTokens ?? null,
+      l.durationMs ?? null,
+      l.error ?? null,
+      l.cost ?? null,
+    ]
+  ).catch(() => {});
+}
+
 /**
  * Chamada única ao OpenRouter (chat completions). Toda chamada é registrada
  * em api_logs com tokens, duração e erro — visível na tela de Agentes.
@@ -127,7 +162,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
     throw e;
   } finally {
     const usage = (responseJson as {
-      usage?: { prompt_tokens?: number; completion_tokens?: number };
+      usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
     } | null)?.usage;
     // log truncado: sem base64 de imagens, mensagens limitadas
     const logRequest = {
@@ -154,50 +189,71 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
           ).slice(0, 20000)
         )
       : null;
-    await q(
-      `INSERT INTO api_logs (agent_id, campaign_id, model, purpose, request, response, prompt_tokens, completion_tokens, duration_ms, error)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [
-        opts.agentId,
-        opts.campaignId || null,
-        model,
-        opts.purpose,
-        JSON.stringify(logRequest),
-        logResponse ? JSON.stringify(logResponse) : null,
-        usage?.prompt_tokens ?? null,
-        usage?.completion_tokens ?? null,
-        Date.now() - started,
-        error,
-      ]
-    ).catch(() => {});
+    await logApiCall({
+      agentId: opts.agentId,
+      campaignId: opts.campaignId,
+      model,
+      purpose: opts.purpose,
+      request: logRequest,
+      response: logResponse,
+      promptTokens: usage?.prompt_tokens,
+      completionTokens: usage?.completion_tokens,
+      durationMs: Date.now() - started,
+      error,
+      cost: usage?.cost, // USD real, já com cache/busca/raciocínio
+    });
   }
 }
 
+// preço em USD por token (strings), como vem do catálogo
+export type ModelPricing = {
+  prompt: string;
+  completion: string;
+  input_cache_read?: string;
+};
+
 /** Lista modelos disponíveis no OpenRouter (para o seletor da tela de Agentes). */
 export async function listModels(): Promise<
-  { id: string; name: string; context: number; pricing: { prompt: string; completion: string } }[]
+  { id: string; slug: string; name: string; context: number; pricing: ModelPricing }[]
 > {
   const apiKey = await getOpenRouterKey();
-  const res = await fetch("https://openrouter.ai/api/v1/models", {
+  // output_modalities=all inclui modelos de imagem e de decisão (a lista padrão só traz texto)
+  const res = await fetch("https://openrouter.ai/api/v1/models?output_modalities=all", {
     headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
   });
   if (!res.ok) throw new Error(`OpenRouter models: ${res.status}`);
   const data = (await res.json()) as {
     data: {
       id: string;
+      canonical_slug?: string;
       name: string;
       context_length: number;
-      pricing: { prompt: string; completion: string };
+      pricing: ModelPricing;
     }[];
   };
   return data.data
     .map((m) => ({
       id: m.id,
+      slug: m.canonical_slug || m.id,
       name: m.name,
       context: m.context_length,
       pricing: m.pricing,
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** Preço salvo no agente: USD por milhão de tokens + contexto. null se o modelo não existe no catálogo. */
+export async function getModelPricing(id: string) {
+  const m = (await listModels()).find((x) => x.id === id || x.slug === id); // aceita o id ou o slug versionado
+  if (!m) return null;
+  const perM = (v?: string) => (v == null || Number(v) < 0 ? null : Number((Number(v) * 1e6).toPrecision(6)));
+  return {
+    input: perM(m.pricing.prompt),
+    output: perM(m.pricing.completion),
+    cache_read: perM(m.pricing.input_cache_read),
+    context: m.context,
+    fetched_at: new Date().toISOString(),
+  };
 }
 
 /** Estimativa grosseira de tokens (~3.5 chars/token para pt-BR). */

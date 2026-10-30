@@ -2,7 +2,8 @@ import { q } from "./db";
 import { getAgent } from "./agents";
 import { chat, ChatMessage, estimateTokens } from "./openrouter";
 import { currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
-import { addMemory, recentMemories, searchMemories } from "./retrieval";
+import { addMemory, MemoryHit, recentMemories, searchMemories } from "./retrieval";
+import { decideTurn, scoreImportance } from "./decisions";
 import { executeGmTool, GM_TOOLS, ToolContext } from "./tools";
 import {
   Campaign,
@@ -105,7 +106,7 @@ async function buildGmSystem(
   campaign: Campaign,
   scene: Scene,
   chars: Character[],
-  playerInput: string,
+  memories: MemoryHit[],
   basePrompt: string
 ): Promise<string> {
   const player = chars.find((c) => c.kind === "player");
@@ -113,15 +114,6 @@ async function buildGmSystem(
   const inactiveNames = chars
     .filter((c) => c.kind === "npc" && !c.active)
     .map((c) => c.name);
-
-  const [relevant, recent] = await Promise.all([
-    playerInput ? searchMemories(campaign.id, playerInput, { limit: 6 }) : Promise.resolve([]),
-    recentMemories(campaign.id, 8),
-  ]);
-  const seen = new Set<number>();
-  const memories = [...relevant, ...recent].filter((m) =>
-    seen.has(m.id) ? false : (seen.add(m.id), true)
-  );
 
   const activeArc = campaign.script?.arcs.find((a) => a.status === "active");
 
@@ -150,6 +142,28 @@ async function buildGmSystem(
       : "",
   ];
   return parts.filter(Boolean).join("\n");
+}
+
+/** Candidatas a memória do turno: top-k por similaridade + as mais importantes/recentes. */
+async function candidateMemories(campaignId: string, playerInput: string): Promise<MemoryHit[]> {
+  const [relevant, recent] = await Promise.all([
+    playerInput ? searchMemories(campaignId, playerInput, { limit: 6 }) : Promise.resolve([]),
+    recentMemories(campaignId, 8),
+  ]);
+  const seen = new Set<number>();
+  return [...relevant, ...recent].filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
+}
+
+/** Fontes da busca web (annotations) em texto, para não perdê-las nas rodadas sem :online. */
+function webSources(raw: unknown): string {
+  const anns =
+    (raw as { choices?: { message?: { annotations?: { url_citation?: { title?: string; url?: string; content?: string } }[] } }[] })
+      ?.choices?.[0]?.message?.annotations || [];
+  return anns
+    .map((a) => a.url_citation)
+    .filter((c) => c?.url)
+    .map((c) => `- ${c!.title || c!.url} (${c!.url})${c!.content ? `: ${c!.content.slice(0, 500)}` : ""}`)
+    .join("\n");
 }
 
 /** Janela de histórico recente dentro do orçamento de tokens. */
@@ -222,17 +236,47 @@ export async function runTurn(
   let scene = await getCurrentScene(campaignId);
   const chars = await getCharacters(campaignId);
   const gm = await getAgent("gm");
-  const params = gm.params as { historyBudgetTokens?: number; maxToolRounds?: number };
+  const params = gm.params as { historyBudgetTokens?: number; maxToolRounds?: number; complexModel?: string };
+  const complexModel = params.complexModel?.trim();
 
   await saveMessage(campaignId, scene.id, "player", playerInput);
 
   emit({ type: "status", text: "O Mestre está pensando..." });
-  const system = await buildGmSystem(campaign, scene, chars, playerInput, gm.system_prompt);
-  const history = await historyWindow(
-    campaignId,
-    scene.id,
-    params.historyBudgetTokens ?? 9000
+  const [history, candidates] = await Promise.all([
+    historyWindow(campaignId, scene.id, params.historyBudgetTokens ?? 9000),
+    candidateMemories(campaignId, playerInput),
+  ]);
+
+  // Jev, numa chamada só: modelo do turno (1), busca web (2) e filtro de memórias (4)
+  const activeArc = campaign.script?.arcs.find((a) => a.status === "active");
+  const lastGm = [...history].reverse().find((m) => m.role === "assistant");
+  const decision = await decideTurn(
+    {
+      setting: { name: campaign.ruleset.name, canonBased: !!campaign.ruleset.canonBased },
+      scene: { mode: scene.mode, location: scene.location, title: scene.title, summary: scene.summary },
+      activeArc: activeArc
+        ? `${activeArc.title}: ${activeArc.summary} Eventos canônicos: ${activeArc.canonEvents.join(" | ") || "-"}`
+        : null,
+      npcsInScene: Object.fromEntries(
+        chars
+          .filter((c) => c.kind === "npc" && c.active)
+          .map((c) => [c.name, [c.persona.personality, c.sheet.abilities.map((a) => a.name).join(", ")].filter(Boolean).join(" | ")])
+      ),
+      lastGmNarration: typeof lastGm?.content === "string" ? lastGm.content : "",
+      playerAction: playerInput,
+      memories: candidates,
+      askComplexity: !!complexModel,
+      askWeb: gm.web_search,
+    },
+    campaignId
   );
+  // modelo decidido uma vez e mantido em todas as rodadas; falha do Jev = modelo principal
+  const turnModel = complexModel && decision.complex ? complexModel : gm.model;
+  // falha do Jev = web conforme o agente
+  const useWeb = gm.web_search && decision.web !== false;
+  const memories = candidates.filter((m) => decision.keepMemory(m.id, m.importance));
+
+  const system = await buildGmSystem(campaign, scene, chars, memories, gm.system_prompt);
   // a última mensagem do histórico já é o input do jogador recém-salvo? Não: janela foi lida após salvar.
   const messages: ChatMessage[] = [{ role: "system", content: system }, ...history];
   if (
@@ -247,13 +291,14 @@ export async function runTurn(
   let finalText = "";
 
   for (let round = 0; round <= maxRounds; round++) {
+    // :online só na 1ª rodada: o plugin cobra por requisição e repetiria a mesma busca a cada rodada
     const result = await chat({
-      model: gm.model,
+      model: turnModel,
       messages,
       temperature: gm.temperature,
       max_tokens: gm.max_tokens,
       tools: GM_TOOLS,
-      webSearch: gm.web_search,
+      webSearch: useWeb && round === 0,
       agentId: "gm",
       campaignId,
       purpose: round === 0 ? "turno do jogador" : `turno (round ${round + 1})`,
@@ -263,9 +308,10 @@ export async function runTurn(
       finalText = result.content || finalText;
       break;
     }
+    const sources = useWeb && round === 0 ? webSources(result.raw) : "";
     messages.push({
       role: "assistant",
-      content: result.content || null,
+      content: [result.content, sources && `[Fontes da busca web]\n${sources}`].filter(Boolean).join("\n\n") || null,
       tool_calls: result.toolCalls,
     });
     for (const call of result.toolCalls) {
@@ -379,10 +425,15 @@ export async function maybeCompact(campaignId: string, scene: Scene): Promise<vo
   await q(`UPDATE messages SET compacted = TRUE WHERE id = ANY($1::bigint[])`, [
     toCompact.map((r) => r.id),
   ]);
-  for (const m of parsed.memories || []) {
-    if (m?.content)
-      await addMemory(campaignId, m.kind || "event", m.content, m.subject || null, m.importance ?? 3);
-  }
+  const mems = (parsed.memories || []).filter((m) => m?.content);
+  // importância pelo Jev; se ele falhar, fica a do Cronista
+  const importance = await scoreImportance(
+    (await getCampaign(campaignId)).ruleset.name,
+    mems,
+    campaignId
+  );
+  for (const [i, m] of mems.entries())
+    await addMemory(campaignId, m.kind || "event", m.content, m.subject || null, importance[i]);
 }
 
 // ---------- roteirista ----------

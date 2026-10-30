@@ -3,32 +3,24 @@ import { useEffect, useState } from "react";
 
 interface SettingsShape {
   openrouter: { configured: boolean; apiKeyMasked: string };
-  embeddings: {
-    enabled: boolean;
-    baseUrl: string;
-    model: string;
-    apiKeyMasked: string;
-  };
+  embeddings: { enabled: boolean; model: string };
 }
 
 export default function SettingsPage() {
   const [data, setData] = useState<SettingsShape | null>(null);
   const [orKey, setOrKey] = useState("");
-  const [emb, setEmb] = useState({ enabled: false, baseUrl: "", model: "", apiKey: "" });
+  const [emb, setEmb] = useState({ enabled: false, model: "" });
   const [msg, setMsg] = useState("");
   const [testMsg, setTestMsg] = useState("");
+  const [reMsg, setReMsg] = useState("");
+  const [reRunning, setReRunning] = useState(false);
 
   const load = () =>
     fetch("/api/settings")
       .then((r) => r.json())
       .then((d: SettingsShape) => {
         setData(d);
-        setEmb({
-          enabled: d.embeddings.enabled,
-          baseUrl: d.embeddings.baseUrl,
-          model: d.embeddings.model,
-          apiKey: "",
-        });
+        setEmb(d.embeddings);
       });
   useEffect(() => {
     load();
@@ -36,9 +28,8 @@ export default function SettingsPage() {
 
   const save = async () => {
     setMsg("salvando...");
-    const body: Record<string, unknown> = { embeddings: { ...emb } };
+    const body: Record<string, unknown> = { embeddings: emb };
     if (orKey.trim()) body.openrouterApiKey = orKey.trim();
-    if (!emb.apiKey) delete (body.embeddings as Record<string, unknown>).apiKey;
     const res = await fetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -53,6 +44,23 @@ export default function SettingsPage() {
     setTestMsg("testando...");
     const res = await fetch("/api/models");
     setTestMsg(res.ok ? `✓ conexão OK (${(await res.json()).length} modelos disponíveis)` : `✗ falhou: ${(await res.json()).error || res.status}`);
+  };
+
+  const reprocess = async () => {
+    // reprocessa com o modelo salvo no banco, não com o que está na tela
+    if (emb.enabled !== data?.embeddings.enabled || emb.model !== data?.embeddings.model)
+      return setReMsg("✗ salve as configurações antes de reprocessar");
+    setReRunning(true);
+    setReMsg("reprocessando... (pode demorar)");
+    try {
+      const res = await fetch("/api/embeddings/reprocess", { method: "POST" });
+      const d = await res.json();
+      const n = `${d.memories ?? 0} memórias e ${d.book_chunks ?? 0} trechos`;
+      setReMsg(res.ok ? `✓ ${n} reprocessados` : `✗ ${d.error || res.status}${d.memories !== undefined ? ` (${n} reprocessados; o restante ficou sem embedding)` : ""}`);
+    } catch {
+      setReMsg("✗ falha na requisição");
+    }
+    setReRunning(false);
   };
 
   if (!data) return <div className="container"><p className="muted">Carregando...</p></div>;
@@ -80,29 +88,23 @@ export default function SettingsPage() {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>Embeddings (busca vetorial no pgvector)</h3>
-        <p className="muted">
-          O OpenRouter não oferece embeddings, então a busca semântica usa um endpoint
-          OpenAI-compatível separado (ex: OpenAI text-embedding-3-small — centavos por livro).
-          Sem isso, o sistema continua funcionando com busca full-text do Postgres, só menos
-          &quot;esperta&quot; para consultas por significado.
-        </p>
         <label className="field" style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input type="checkbox" checked={emb.enabled} style={{ width: "auto" }}
             onChange={(e) => setEmb({ ...emb, enabled: e.target.checked })} />
           <span style={{ margin: 0 }}>Habilitar embeddings</span>
         </label>
         <label className="field">
-          <span>Base URL</span>
-          <input type="text" value={emb.baseUrl} onChange={(e) => setEmb({ ...emb, baseUrl: e.target.value })} />
-        </label>
-        <label className="field">
           <span>Modelo</span>
           <input type="text" value={emb.model} onChange={(e) => setEmb({ ...emb, model: e.target.value })} />
         </label>
-        <label className="field">
-          <span>API key {data.embeddings.apiKeyMasked ? `(atual: ${data.embeddings.apiKeyMasked})` : ""}</span>
-          <input type="password" value={emb.apiKey} onChange={(e) => setEmb({ ...emb, apiKey: e.target.value })} />
-        </label>
+        <p className="muted" style={{ marginBottom: 0 }}>
+          ⚠ Trocar o modelo exige reprocessar os embeddings já gerados (memórias e livros):
+          vetores de modelos diferentes não são comparáveis.
+        </p>
+        <button className="btn small" style={{ marginTop: 10 }} onClick={reprocess} disabled={reRunning}>
+          Reprocessar embeddings
+        </button>
+        {reMsg && <span className="muted" style={{ marginLeft: 10 }}>{reMsg}</span>}
       </div>
 
       <button className="btn primary" onClick={save}>Salvar configurações</button>

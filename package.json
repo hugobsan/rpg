@@ -12,6 +12,7 @@
     "db:down": "docker compose down"
   },
   "dependencies": {
+    "@xyflow/react": "12.12.0",
     "next": "^15.3.0",
     "pg": "^8.13.0",
     "react": "^19.0.0",

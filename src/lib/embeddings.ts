@@ -1,17 +1,14 @@
 import { getSetting } from "./db";
+import { getOpenRouterKey } from "./openrouter";
 
 export interface EmbeddingConfig {
   enabled: boolean;
-  baseUrl: string; // endpoint OpenAI-compatível (ex: https://api.openai.com/v1)
-  apiKey: string;
-  model: string; // ex: text-embedding-3-small
+  model: string; // id de modelo de embeddings do OpenRouter
 }
 
 export const DEFAULT_EMBEDDING_CONFIG: EmbeddingConfig = {
   enabled: false,
-  baseUrl: "https://api.openai.com/v1",
-  apiKey: "",
-  model: "text-embedding-3-small",
+  model: "openai/text-embedding-3-small",
 };
 
 export async function getEmbeddingConfig(): Promise<EmbeddingConfig> {
@@ -22,17 +19,18 @@ export async function getEmbeddingConfig(): Promise<EmbeddingConfig> {
 }
 
 /**
- * Gera embeddings via endpoint OpenAI-compatível. Retorna null se não
+ * Gera embeddings via OpenRouter. Retorna null se não
  * configurado ou em erro — o retrieval cai para full-text search do Postgres.
  */
 export async function embed(texts: string[]): Promise<number[][] | null> {
   const cfg = await getEmbeddingConfig();
-  if (!cfg.enabled || !cfg.apiKey || texts.length === 0) return null;
+  const apiKey = await getOpenRouterKey();
+  if (!cfg.enabled || !apiKey || texts.length === 0) return null;
   try {
-    const res = await fetch(`${cfg.baseUrl.replace(/\/$/, "")}/embeddings`, {
+    const res = await fetch("https://openrouter.ai/api/v1/embeddings", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${cfg.apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ model: cfg.model, input: texts }),

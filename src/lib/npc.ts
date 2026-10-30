@@ -5,6 +5,7 @@ import { chat, ChatMessage } from "./openrouter";
 import { addMemory, searchMemories } from "./retrieval";
 import { getCampaign, getCurrentScene } from "./engine";
 import { Character } from "./types";
+import { decideNpcWilling, scoreImportance } from "./decisions";
 
 async function getNpc(campaignId: string, npcId: string): Promise<Character> {
   const rows = await q<Character>(
@@ -36,8 +37,9 @@ function npcContext(npc: Character): string {
 
 /**
  * Conversa particular com um NPC (fora da narração do Mestre).
- * O NPC recebe persona + memórias de relação + contexto da cena, e pode
- * recusar a conversa (prefixo [RECUSA]) se implausível no momento.
+ * O NPC recebe persona + memórias de relação + contexto da cena. No início da
+ * sessão o Jev decide se ele topa conversar; na recusa o próprio NPC recusa em
+ * personagem e a troca não é gravada (se o jogador insistir, decide de novo).
  */
 export async function npcTalk(
   campaignId: string,
@@ -83,8 +85,33 @@ export async function npcTalk(
     .filter(Boolean)
     .join("\n");
 
+  // só no início da sessão (histórico vazio): no meio da conversa o NPC corta em personagem
+  const willing =
+    history.length > 0 ||
+    (await decideNpcWilling(
+      {
+        npc: {
+          name: npc.name,
+          canon: npc.canon,
+          personality: npc.persona.personality,
+          goals: npc.persona.goals,
+          present: npc.active,
+        },
+        relation: relationMemories.map((m) => m.content),
+        scene: { mode: scene.mode, location: scene.location, summary: scene.summary },
+        playerName: player?.name || null,
+        playerMessage: playerText,
+      },
+      campaignId
+    ));
+
   const messages: ChatMessage[] = [
-    { role: "system", content: system },
+    {
+      role: "system",
+      content: willing
+        ? system
+        : `${system}\n\n--- INSTRUÇÃO PARA ESTA RESPOSTA ---\nVocê NÃO vai parar para conversar agora. Recuse em personagem, numa fala curta (uma ou duas frases), coerente com a cena e com a relação com o jogador.`,
+    },
     ...history.map(
       (h): ChatMessage =>
         h.role === "player"
@@ -101,11 +128,14 @@ export async function npcTalk(
     max_tokens: agent.max_tokens,
     agentId: "npc",
     campaignId,
-    purpose: `conversa com ${npc.name}`,
+    purpose: willing ? `conversa com ${npc.name}` : `recusa de ${npc.name}`,
   });
 
-  const refused = result.content.trimStart().startsWith("[RECUSA]");
+  // prompts antigos gravados no banco ainda podem prefixar [RECUSA]: limpa e respeita
+  const legacyRefusal = /^\s*\[RECUSA\]/.test(result.content);
+  const refused = !willing || legacyRefusal;
   const reply = result.content.replace(/^\s*\[RECUSA\]\s*/, "").trim();
+  if (!willing) return { sessionId: sid, reply, refused };
 
   await q(
     `INSERT INTO npc_chats (campaign_id, npc_id, session_id, role, content)
@@ -158,17 +188,16 @@ export async function endNpcChat(
     const parsed = JSON.parse(result.content.replace(/```json|```/g, "").trim()) as {
       memories?: { kind: string; subject?: string; content: string; importance?: number }[];
     };
-    for (const m of parsed.memories || []) {
-      if (m?.content) {
-        await addMemory(
-          campaignId,
-          m.kind || "npc",
-          m.content,
-          m.subject || npc.name,
-          m.importance ?? 3
-        );
-        saved++;
-      }
+    const mems = (parsed.memories || []).filter((m) => m?.content);
+    // importância pelo Jev; se ele falhar, fica a do Cronista
+    const importance = await scoreImportance(
+      (await getCampaign(campaignId)).ruleset.name,
+      mems.map((m) => ({ ...m, subject: m.subject || npc.name })),
+      campaignId
+    );
+    for (const [i, m] of mems.entries()) {
+      await addMemory(campaignId, m.kind || "npc", m.content, m.subject || npc.name, importance[i]);
+      saved++;
     }
   } catch {
     /* sem memórias extraíveis */
