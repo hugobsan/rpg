@@ -64,7 +64,7 @@ interface StateShape {
   messages: { id: number; role: string; content: string; meta: { choices?: string[] } }[];
   hasMore: boolean; // há mensagens anteriores às carregadas
   memories: { id: number; kind: string; subject: string | null; content: string; importance: number }[];
-  lastImage: { id: number; data_url: string } | null;
+  lastImage: { id: number; url: string } | null;
 }
 
 const toFeed = (messages: StateShape["messages"]): FeedItem[] =>
@@ -198,7 +198,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
     }
     const data = (await res.json()) as StateShape;
     setState(data);
-    setSceneImage(data.lastImage?.data_url ?? null); // null quando apagada ou tirada da ficha
+    setSceneImage(data.lastImage?.url ?? null); // null quando apagada ou tirada da ficha
     setSceneImageId(data.lastImage?.id ?? null);
     return data;
   }, [campaignId]);
@@ -351,7 +351,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
       const res = await fetch(`/api/campaigns/${campaignId}/image`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Falha ao gerar imagem");
-      setSceneImage(data.dataUrl);
+      setSceneImage(data.url);
       setSceneImageId(Number(data.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

@@ -57,7 +57,7 @@ export async function POST(
        VALUES ($1,$2,$3,$4) RETURNING id`,
       [id, scene.id, prompt.slice(0, 2000), result.images[0]]
     );
-    return NextResponse.json({ id: rows[0].id, dataUrl: result.images[0] });
+    return NextResponse.json({ id: Number(rows[0].id), url: `/api/campaigns/${id}/images/${rows[0].id}` });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : String(e) },

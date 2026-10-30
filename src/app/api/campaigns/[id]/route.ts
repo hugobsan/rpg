@@ -24,11 +24,8 @@ export async function GET(
          WHERE campaign_id = $1 ORDER BY id DESC LIMIT 100`,
         [id]
       ),
-      q(
-        `SELECT id, scene_id, prompt, data_url, created_at::text FROM scene_images
-         WHERE campaign_id = $1 ORDER BY id DESC LIMIT 1`,
-        [id]
-      ),
+      // só o id: a imagem vai por URL (binário com cache longo), nunca em base64 no JSON
+      q<{ id: string }>(`SELECT id FROM scene_images WHERE campaign_id = $1 ORDER BY id DESC LIMIT 1`, [id]),
     ]);
     return NextResponse.json({
       campaign,
@@ -40,7 +37,9 @@ export async function GET(
       memories: milestones,
       // a ficha mostra a última imagem, a menos que o jogador a tenha tirado de lá (✕); ela segue na galeria
       lastImage:
-        images[0] && Number(images[0].id) !== Number(campaign.state?.hiddenSheetImageId) ? images[0] : null,
+        images[0] && Number(images[0].id) !== Number(campaign.state?.hiddenSheetImageId)
+          ? { id: Number(images[0].id), url: `/api/campaigns/${id}/images/${images[0].id}` }
+          : null,
     });
   } catch {
     return NextResponse.json({ error: "Campanha não encontrada" }, { status: 404 });
