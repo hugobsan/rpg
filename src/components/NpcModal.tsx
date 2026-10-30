@@ -11,6 +11,9 @@ interface ChatMsg {
   refused?: boolean;
 }
 
+let loadingKey: string | null = null; // fala (npc + texto) sendo gerada agora
+let lineSeq = 0;
+
 /**
  * Toca a fala na voz do NPC (TTS do OpenRouter; o servidor guarda o áudio, repetir não cobra).
  * Velocidade e tom do personagem (persona.voiceFx) são aplicados só aqui, no navegador; o mp3 é o mesmo.
@@ -21,16 +24,25 @@ export async function playLine(
   text: string,
   fx: VoiceFx = fxOf(npc.persona)
 ) {
+  const key = `${npc.id}\n${text}`;
+  if (loadingKey === key) return; // clique repetido enquanto a mesma fala carrega: ignora
+  const me = ++lineSeq;
+  loadingKey = key;
   stopVoice();
-  const res = await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}/speech`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
-  const d = await res.json().catch(() => ({}));
-  if (!res.ok) return alert(d.error || `Erro ${res.status} ao gerar a voz`);
-  playVoice(d.url, fx);
-  return d as { voice: string; gender: "male" | "female" | null };
+  try {
+    const res = await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}/speech`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return alert(d.error || `Erro ${res.status} ao gerar a voz`);
+    if (me !== lineSeq) return; // outra fala foi pedida depois: a mais recente vence
+    playVoice(d.url, fx); // já tocando? playVoice para o anterior e recomeça, sem sobrepor
+    return d as { voice: string; gender: "male" | "female" | null };
+  } finally {
+    if (loadingKey === key) loadingKey = null;
+  }
 }
 
 interface TtsInfo {
