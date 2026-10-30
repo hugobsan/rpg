@@ -12,11 +12,14 @@
     "db:down": "docker compose down"
   },
   "dependencies": {
+    "@breezystack/lamejs": "1.2.7",
     "@xyflow/react": "12.12.0",
+    "cannon-es": "0.20.0",
     "next": "^15.3.0",
     "pg": "^8.13.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "three": "0.186.1",
     "unpdf": "^0.12.1"
   },
   "devDependencies": {
@@ -24,6 +27,7 @@
     "@types/pg": "^8.11.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "0.186.0",
     "typescript": "^5.6.0"
   }
 }

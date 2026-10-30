@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Mp3Encoder } from "@breezystack/lamejs";
 import { q } from "./db";
 import { getAgent } from "./agents";
 import { getOpenRouterKey, listModels, logApiCall } from "./openrouter";
@@ -54,24 +55,22 @@ export async function npcVoice(npc: Character, campaign: Campaign) {
   return { model: s.model, voice: gender === "female" ? s.female : s.male, gender: gender ?? null };
 }
 
-/** PCM 16 bits cru → WAV (o navegador não toca PCM sem cabeçalho). Taxa e canais vêm do Content-Type. */
-function pcmToWav(pcm: Buffer, type: string): Buffer {
+/** PCM 16 bits cru → mp3 (o HeyGen, por exemplo, só entrega PCM; WAV ficaria ~10x maior). Taxa e canais vêm do Content-Type. */
+function pcmToMp3(pcm: Buffer, type: string): Buffer {
   const rate = Number(/rate=(\d+)/.exec(type)?.[1] || 24000);
-  const ch = Number(/channels=(\d+)/.exec(type)?.[1] || 1);
-  const h = Buffer.alloc(44);
-  h.write("RIFF", 0);
-  h.writeUInt32LE(36 + pcm.length, 4);
-  h.write("WAVEfmt ", 8);
-  h.writeUInt32LE(16, 16);
-  h.writeUInt16LE(1, 20); // PCM
-  h.writeUInt16LE(ch, 22);
-  h.writeUInt32LE(rate, 24);
-  h.writeUInt32LE(rate * ch * 2, 28);
-  h.writeUInt16LE(ch * 2, 32);
-  h.writeUInt16LE(16, 34);
-  h.write("data", 36);
-  h.writeUInt32LE(pcm.length, 40);
-  return Buffer.concat([h, pcm]);
+  const ch = Number(/channels=(\d+)/.exec(type)?.[1] || 1) === 2 ? 2 : 1;
+  // copia para um buffer alinhado: Int16Array exige offset par
+  const all = new Int16Array(new Uint8Array(pcm).buffer, 0, Math.floor(pcm.length / 2));
+  const left = ch === 2 ? all.filter((_, i) => i % 2 === 0) : all;
+  const right = ch === 2 ? all.filter((_, i) => i % 2 === 1) : undefined;
+  const enc = new Mp3Encoder(ch, rate, 64); // 64 kbps basta para voz
+  // o lamejs devolve Int8Array (apesar do tipo dizer Uint8Array): vira Buffer pelos mesmos bytes
+  const bytes = (a: ArrayBufferView) => Buffer.from(a.buffer, a.byteOffset, a.byteLength);
+  const out: Buffer[] = [];
+  for (let i = 0; i < left.length; i += 1152)
+    out.push(bytes(enc.encodeBuffer(left.subarray(i, i + 1152), right?.subarray(i, i + 1152))));
+  out.push(bytes(enc.flush()));
+  return Buffer.concat(out);
 }
 
 /** Gera o áudio da fala (ou acha no cache). Devolve a chave do cache, servida em /api/tts/[key]. */
@@ -98,14 +97,14 @@ export async function synthesize(
   let error: string | null = null;
   let saved: { mime: string; bytes: number } | null = null;
   try {
-    let res = await call("pcm"); // pcm é o formato que todos dão, menos o MiniMax (só mp3)
-    if (res.status === 400) res = await call("mp3");
+    // pede mp3 direto; quem não aceitar (HeyGen) manda pcm, que é convertido para mp3 aqui
+    let res = await call("mp3");
+    if (res.status === 400) res = await call("pcm");
     genId = res.headers.get("x-generation-id");
     if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 500)}`);
     const type = res.headers.get("content-type") || "audio/mpeg";
     const raw = Buffer.from(await res.arrayBuffer());
-    // ponytail: PCM vira WAV sem compressão (~90 KB/s a 44,1 kHz); converter para mp3 pediria uma dependência
-    const [mime, data] = type.startsWith("audio/pcm") ? ["audio/wav", pcmToWav(raw, type)] : [type.split(";")[0], raw];
+    const [mime, data] = type.startsWith("audio/pcm") ? ["audio/mpeg", pcmToMp3(raw, type)] : [type.split(";")[0], raw];
     await q(`INSERT INTO tts_cache (key, mime, data) VALUES ($1,$2,$3) ON CONFLICT (key) DO NOTHING`, [key, mime, data]);
     saved = { mime, bytes: data.length };
     return key;
