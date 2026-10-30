@@ -2,7 +2,7 @@
 /**
  * Mapa 3D de um local (Cartógrafo), na aba Mapa. Mostra o lugar `placeId` (o atual por padrão):
  * o 3D (three, sob demanda, só renderiza quando algo muda; 2D em SVG enquanto carrega e sem
- * WebGL), os pontos de interesse clicáveis, os peões nas zonas do palco que batem com um ponto,
+ * WebGL), os pontos de interesse clicáveis, os peões (o jogador sempre, os NPCs em cena com ele e o palco nas zonas que batem com um ponto),
  * os botões Gerar / Editar / Regerar / Remover, o "gerando" e a galeria dos outros lugares com mapa.
  * Gerar e editar viram tarefa em segundo plano (POST /maps); ao terminar, a tela relê a campanha.
  */
@@ -52,13 +52,16 @@ function useSpec(campaignId: string, info: LocalMapInfo | undefined) {
   return { spec, failed: failed && !spec };
 }
 
-export default function LocalMap({ campaignId, world, maps, jobs, stage, player, period, placeId, onPlace, onChanged }: {
+const NEAR = ["corpo_a_corpo", "perto", "medio", "longe"];
+
+export default function LocalMap({ campaignId, world, maps, jobs, stage, player, npcs = [], period, placeId, onPlace, onChanged }: {
   campaignId: string;
   world: WorldMap;
   maps: LocalMapInfo[];
   jobs: Job[];
   stage: SceneStage | null;
   player: string;
+  npcs?: string[]; // NPCs em cena (ativos)
   period?: Period;
   placeId: string;
   onPlace: (id: string | null) => void; // abre o mapa de outro lugar (null = o atual)
@@ -85,23 +88,37 @@ export default function LocalMap({ campaignId, world, maps, jobs, stage, player,
     if (selected !== null && !spec?.pois[selected]) setSelected(null);
   }, [spec, selected]);
 
-  // peões: o jogador e quem está no palco, na zona que tem o nome de um ponto do mapa
+  // peões no mapa do lugar atual: quem está no palco vai para a zona com nome de ponto do mapa;
+  // o jogador sempre aparece (na zona dele, senão junto de quem está mais perto, senão no ponto mais central)
+  // e os NPCs em cena que o palco não posiciona ficam com ele
+  const npcKey = npcs.join("|");
   const tokens = useMemo<LocalToken[]>(() => {
-    if (!spec || !here || !stage) return [];
+    if (!spec || !here || !spec.pois.length) return [];
     const poiOf = (zone?: string) => {
       if (!zone) return -1;
       const z = norm(zone);
       const i = spec.pois.findIndex((p) => norm(p.name) === z);
       return i >= 0 ? i : spec.pois.findIndex((p) => norm(p.name).includes(z) || z.includes(norm(p.name)));
     };
-    return stage.actors
+    const actors = stage?.actors ?? [];
+    const out: LocalToken[] = actors
       .map((a) => ({
         name: a.name,
         poi: poiOf(a.zone),
         kind: (player && first(a.name) === first(player) ? "player" : a.stance) as LocalToken["kind"],
       }))
       .filter((t) => t.poi >= 0);
-  }, [spec, here, stage, player]);
+    let you = out.find((t) => t.kind === "player")?.poi;
+    if (you === undefined) {
+      const closest = actors.filter((a) => poiOf(a.zone) >= 0).sort((a, b) => NEAR.indexOf(a.distance) - NEAR.indexOf(b.distance))[0];
+      const dist = (i: number) => Math.hypot(spec.pois[i].at[0], spec.pois[i].at[2]);
+      you = closest ? poiOf(closest.zone) : spec.pois.reduce((best, _, i) => (dist(i) < dist(best) ? i : best), 0);
+      if (player) out.push({ name: player, poi: you, kind: "player" });
+    }
+    for (const n of npcKey ? npcKey.split("|") : [])
+      if (!actors.some((a) => first(a.name) === first(n))) out.push({ name: n, poi: you, kind: "neutro" });
+    return out;
+  }, [spec, here, stage, player, npcKey]);
   const data = useMemo<LocalMapData | null>(() => (spec ? { spec, tokens, period } : null), [spec, tokens, period]);
 
   const send = async (action: "generate" | "edit" | "remove", text = "") => {

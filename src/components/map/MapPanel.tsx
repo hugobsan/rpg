@@ -134,6 +134,7 @@ export default function MapPanel({ campaign, scene, characters, maps = [], jobs 
           jobs={jobs}
           stage={stage}
           player={player}
+          npcs={characters.filter((c) => c.kind === "npc" && c.active).map((c) => c.name)}
           period={per}
           placeId={localId}
           onPlace={openLocal}
