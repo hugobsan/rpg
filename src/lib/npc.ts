@@ -22,10 +22,15 @@ function npcContext(npc: Character): string {
   return [
     `PERSONAGEM QUE VOCÊ INTERPRETA: ${npc.name}${npc.canon ? " (personagem canônico da obra)" : ""}`,
     `Rank: ${s.rank || "-"}`,
+    p.role ? `Papel: ${p.role}` : "",
+    p.age ? `Idade: ${p.age}` : "",
     p.appearance ? `Aparência: ${p.appearance}` : "",
     p.personality ? `Personalidade: ${p.personality}` : "",
+    p.speech ? `Jeito de falar (siga nas falas): ${p.speech}` : "",
+    p.quirks ? `Manias e gestos: ${p.quirks}` : "",
     p.backstory ? `Passado: ${p.backstory}` : "",
     p.goals ? `Objetivos: ${p.goals}` : "",
+    p.relationships ? `Relações: ${p.relationships}` : "",
     p.secrets ? `Segredos (não revele levianamente): ${p.secrets}` : "",
     s.abilities.length
       ? `Habilidades conhecidas: ${s.abilities.map((a) => `${a.name}${a.rank ? ` (${a.rank})` : ""}`).join(", ")}`

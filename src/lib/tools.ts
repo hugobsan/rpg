@@ -24,6 +24,7 @@ import { clockParts, formatClock, formatDuration, getClock, period, toMinutes } 
 import { expireObjectives, formatRemaining, getObjectives, Objective, OBJECTIVE_KIND_LABEL, ObjectiveKind } from "./objectives";
 import { executeMapTool, MAP_TOOLS, recordScenePlace } from "./map";
 import { dcResultText, getTable, tableDc } from "./table";
+import { queueProfile } from "./characters";
 
 const MILESTONE_SCHEMA = {
   type: "array",
@@ -286,44 +287,17 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "create_npc",
       description:
-        "Cria um NPC novo (ativo na cena). Informe ficha resumida e persona. canon=true para personagens da obra original.",
+        "Registra um NPC novo na hora, ativo na cena. O Criador de personagens monta perfil, ficha e retrato em segundo plano a partir do brief. canon=true para personagens da obra.",
       parameters: S(
         {
           name: { type: "string" },
           canon: { type: "boolean" },
-          gender: {
-            type: "string",
-            enum: ["male", "female", "unknown"],
-            description: "sexo do NPC (define a voz); unknown só se não houver como saber",
-          },
-          rank: { type: "string", description: "key do rank do ruleset" },
-          appearance: { type: "string" },
+          gender: { type: "string", enum: ["male", "female", "unknown"], description: "define a voz" },
+          brief: { type: "string", description: "quem é, papel, poder e o que já foi narrado ou estabelecido sobre ele" },
+          rank: { type: "string", description: "key do cargo, se já definido" },
           personality: { type: "string" },
-          backstory: { type: "string" },
-          goals: { type: "string" },
-          secrets: { type: "string", description: "só o Mestre vê" },
-          attributes: {
-            type: "object",
-            description: "mapa key->valor dos atributos que fogem do padrão",
-            additionalProperties: { type: "number" },
-          },
-          abilities: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                name: { type: "string" },
-                type: { type: "string" },
-                rank: { type: "string" },
-                description: { type: "string" },
-                progress: { type: "number" },
-                milestones: MILESTONE_SCHEMA,
-              },
-              required: ["name", "type"],
-            },
-          },
         },
-        ["name", "gender", "personality"]
+        ["name", "gender", "brief"]
       ),
     },
   },
@@ -943,48 +917,33 @@ export async function executeGmTool(
         .join("\n");
     }
     case "create_npc": {
+      // registro na hora (o portão de NPC exige antes da narração); perfil e ficha vêm do Criador em segundo plano
       const sheet = blankSheet(ctx.campaign.ruleset);
-      if (args.rank) sheet.rank = String(args.rank);
-      if (args.attributes && typeof args.attributes === "object")
-        Object.assign(sheet.attributes, args.attributes as Record<string, number>);
-      if (Array.isArray(args.abilities))
-        sheet.abilities = (
-          args.abilities as {
-            name: string;
-            type: string;
-            rank?: string;
-            description?: string;
-            progress?: number;
-            milestones?: { threshold: number; description: string }[];
-          }[]
-        ).map((a) => ({
-          name: a.name,
-          type: a.type,
-          rank: a.rank,
-          description: a.description,
-          progress: a.progress,
-          milestones: a.milestones
-            ?.map((m) => ({ threshold: Number(m.threshold), description: String(m.description) }))
-            .sort((x, y) => x.threshold - y.threshold),
-        }));
+      const said = String(args.rank ?? "").trim().toLowerCase();
+      const rank = ctx.campaign.ruleset.ranks.find((k) => said && (k.key === said || k.label.toLowerCase() === said));
+      if (rank) sheet.rank = rank.key;
+      const brief = String(args.brief ?? "").trim();
       const persona = {
-        appearance: args.appearance ? String(args.appearance) : undefined,
-        personality: String(args.personality),
-        backstory: args.backstory ? String(args.backstory) : undefined,
-        goals: args.goals ? String(args.goals) : undefined,
-        secrets: args.secrets ? String(args.secrets) : undefined,
+        personality: args.personality ? String(args.personality) : undefined,
+        backstory: brief || undefined, // até o Criador terminar (ou se ele falhar), o Mestre se guia pelo brief
         // sem o parâmetro fica undefined e o Jev decide na 1ª fala
         gender: args.gender === "male" || args.gender === "female" ? args.gender : args.gender === "unknown" ? null : undefined,
       };
-      await q(
+      const [npc] = await q<Character & { inserted: boolean }>(
         `INSERT INTO characters (campaign_id, kind, name, active, canon, sheet, persona)
          VALUES ($1,'npc',$2,TRUE,$3,$4,$5)
-         ON CONFLICT (campaign_id, name) DO UPDATE SET active = TRUE`,
+         ON CONFLICT (campaign_id, name) DO UPDATE SET active = TRUE
+         RETURNING *, (xmax = 0) AS inserted`,
         [cid, String(args.name), !!args.canon, JSON.stringify(sheet), JSON.stringify(persona)]
       );
       ctx.emit({ type: "state" });
-      ctx.emit({ type: "tool", name, summary: `✨ NPC criado: ${args.name}` });
-      return `NPC ${args.name} criado e ativo na cena.`;
+      if (!npc.inserted) {
+        ctx.emit({ type: "tool", name: "set_npc_active", summary: `${npc.name} entrou em cena` });
+        return `${npc.name} já estava registrado: voltou para a cena.`;
+      }
+      await queueProfile(ctx.campaign, npc, { brief: [brief, !rank && said && `cargo: ${args.rank}`].filter(Boolean).join(". "), fixedRank: !!rank });
+      ctx.emit({ type: "tool", name, summary: `✨ NPC criado: ${npc.name}` });
+      return `NPC ${npc.name} registrado e ativo na cena. O Criador de personagens monta perfil e ficha em segundo plano; até lá, interprete pelo brief.`;
     }
     case "set_npc_active": {
       const c = await getChar(cid, String(args.name));

@@ -157,6 +157,12 @@ export interface Persona {
   backstory?: string;
   goals?: string;
   secrets?: string; // só o Mestre vê
+  // perfil rico (Criador de personagens)
+  age?: string; // idade ou aparente: "12 anos", "uns 40"
+  role?: string; // papel e afiliação em poucas palavras
+  speech?: string; // jeito de falar: tom, vocabulário, bordões
+  relationships?: string;
+  quirks?: string; // manias, hábitos, gestos
   // sexo: define a voz padrão. undefined = ainda não decidido (o Jev decide na 1ª fala); null = desconhecido
   gender?: "male" | "female" | null;
   // ajuste de reprodução da voz (só no navegador, nunca vai para a API do TTS). undefined = padrão (1x, 0 st)

@@ -96,8 +96,14 @@ export function sheetSummary(c: Character, full: boolean, rs: Ruleset): string {
     if (s.inventory.length)
       lines.push(`  inventário: ${s.inventory.map((i) => `${i.qty}x ${i.name}`).join(", ")}`);
     const p = c.persona;
+    // perfil rico do Criador, enxuto (vai a cada rodada; o completo sai no get_character)
+    const cut = (t: string, n: number) => (t.length > n ? `${t.slice(0, n).trimEnd()}…` : t);
+    const who = [p.role, p.age].filter(Boolean).join(", ");
+    if (who) lines.push(`  ${cut(who, 140)}`);
     if (p.personality) lines.push(`  personalidade: ${p.personality}`);
-    if (p.backstory) lines.push(`  passado: ${p.backstory}`);
+    if (p.speech) lines.push(`  jeito de falar: ${cut(p.speech, 200)}`);
+    if (p.relationships) lines.push(`  relações: ${cut(p.relationships, 240)}`);
+    if (p.backstory) lines.push(`  passado: ${c.kind === "npc" ? cut(p.backstory, 400) : p.backstory}`);
     if (p.goals) lines.push(`  objetivos: ${p.goals}`);
     if (p.secrets) lines.push(`  segredos (só você sabe): ${p.secrets}`);
   }
