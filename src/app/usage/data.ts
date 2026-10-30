@@ -15,11 +15,11 @@ export interface DayRow { day: string; agent_id: string | null; calls: number; c
 export interface Summary {
   totals: Agg;
   byAgent: (Agg & { agent_id: string | null })[];
-  byModel: (Agg & { model: string })[];
+  byModel: (Agg & { model: string; provider: string })[];
   byDay: DayRow[];
   start: string | null;
   today: string;
-  options: { agents: { id: string; name: string }[]; campaigns: { id: string; name: string }[]; models: string[] };
+  options: { agents: { id: string; name: string }[]; campaigns: { id: string; name: string }[]; models: string[]; providers: string[] };
 }
 /** Linha do histórico sem request/response (o detalhe vem de /api/usage/logs/[id] ao expandir). */
 export interface LogRow {
@@ -27,6 +27,7 @@ export interface LogRow {
   agent_id: string | null;
   campaign_id: string | null;
   model: string;
+  provider: string; // fonte de modelos (openrouter ou o id de outra fonte)
   purpose: string;
   prompt_tokens: number | null;
   completion_tokens: number | null;
@@ -40,10 +41,10 @@ export interface LogPage { rows: LogRow[]; total: number; page: number; pageSize
 /** totais, quebras por agente/modelo/dia do recorte filtrado + opções dos filtros */
 export async function usageSummary(sp: URLSearchParams): Promise<Summary> {
   const { where, params, interval } = parseFilter(sp);
-  const [[totals], byAgent, byModel, byDay, [bounds], agents, campaigns, models] = await Promise.all([
+  const [[totals], byAgent, byModel, byDay, [bounds], agents, campaigns, models, providers] = await Promise.all([
     q<Agg>(`SELECT ${AGG} FROM api_logs ${where}`, params),
     q<Agg & { agent_id: string | null }>(`SELECT agent_id, ${AGG} FROM api_logs ${where} GROUP BY agent_id ORDER BY cost DESC, calls DESC`, params),
-    q<Agg & { model: string }>(`SELECT model, ${AGG} FROM api_logs ${where} GROUP BY model ORDER BY cost DESC, calls DESC`, params),
+    q<Agg & { model: string; provider: string }>(`SELECT model, provider, ${AGG} FROM api_logs ${where} GROUP BY model, provider ORDER BY cost DESC, calls DESC`, params),
     q<DayRow>(
       `SELECT to_char((created_at AT TIME ZONE '${TZ}')::date, 'YYYY-MM-DD') AS day, agent_id,
               COUNT(*)::int AS calls, COALESCE(SUM(cost), 0)::float AS cost
@@ -59,6 +60,7 @@ export async function usageSummary(sp: URLSearchParams): Promise<Summary> {
     q<{ id: string; name: string }>(`SELECT id, name FROM agents`),
     q<{ id: string; name: string }>(`SELECT id, name FROM campaigns ORDER BY created_at DESC`),
     q<{ model: string }>(`SELECT DISTINCT model FROM api_logs ORDER BY model`),
+    q<{ provider: string }>(`SELECT DISTINCT provider FROM api_logs ORDER BY provider`),
   ]);
   return {
     totals,
@@ -67,7 +69,7 @@ export async function usageSummary(sp: URLSearchParams): Promise<Summary> {
     byDay,
     start: interval ? bounds.start : null,
     today: bounds.today,
-    options: { agents, campaigns, models: models.map((m) => m.model) },
+    options: { agents, campaigns, models: models.map((m) => m.model), providers: providers.map((p) => p.provider) },
   };
 }
 
@@ -95,7 +97,7 @@ export async function usageLogs(sp: URLSearchParams): Promise<LogPage> {
   const order = sort ? `${sort} ${dir} NULLS LAST, id ${dir}` : `id ${dir}`;
   const [rows, [{ total }]] = await Promise.all([
     q<LogRow>(
-      `SELECT id, agent_id, campaign_id, model, purpose, prompt_tokens,
+      `SELECT id, agent_id, campaign_id, model, provider, purpose, prompt_tokens,
               completion_tokens, duration_ms, error, cost::float, created_at::text
        FROM api_logs ${where} ORDER BY ${order} LIMIT $${n + 1} OFFSET $${n + 2}`,
       [...params, pageSize, (page - 1) * pageSize]

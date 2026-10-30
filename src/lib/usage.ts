@@ -35,6 +35,8 @@ export function parseFilter(sp: URLSearchParams) {
   if (campaign && UUID.test(campaign)) add("campaign_id = ?", campaign);
   const model = sp.get("model");
   if (model && model.length <= 200) add("model = ?", model);
+  const provider = sp.get("provider");
+  if (provider && provider.length <= 60) add("provider = ?", provider);
   if (sp.get("errors") === "1") where.push("error IS NOT NULL");
 
   // período: datas personalizadas têm prioridade sobre o preset; dias no fuso de São Paulo

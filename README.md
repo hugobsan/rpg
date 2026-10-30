@@ -42,7 +42,7 @@ O schema do banco é aplicado automaticamente no primeiro acesso — não há pa
 
 ### Os agentes
 
-Cada agente é um registro editável (modelo + system prompt + parâmetros) na tela **/agents**. O histórico completo de chamadas ao OpenRouter (custo, tokens, duração, request/response) fica em **/usage** (Custos e uso), para você avaliar o gasto e trocar modelos quando quiser.
+Cada agente é um registro editável (fonte + modelo + system prompt + parâmetros) na tela **/agents**. A fonte padrão é o OpenRouter; em **Fontes de modelos**, na mesma tela, dá para cadastrar qualquer API compatível com a da OpenAI (nome, URL base e API key; OpenAI, Anthropic, Gemini e OpenCode já vêm com a URL, só falta a chave) e escolher a fonte de cada agente, inclusive Jev, Voz, Ilustrador e os embeddings (em Configurações), que chamam na fonte o mesmo caminho que usam no OpenRouter. O histórico completo de chamadas (fonte, custo, tokens, duração, request/response) fica em **/usage** (Custos e uso), para você avaliar o gasto e trocar modelos quando quiser; só o OpenRouter informa o custo, das outras fontes ficam os tokens.
 
 | Agente | Modelo default | Papel | Por quê |
 |---|---|---|---|
@@ -195,7 +195,8 @@ scripts/map-check.ts       # mapa e palco: nomes, layout, ferramentas e "gerar n
 docker-compose.yml         # Postgres + pgvector (porta 5433)
 src/lib/
   schema.sql               # schema idempotente (aplicado no boot)
-  openrouter.ts            # cliente OpenRouter + logging obrigatório em api_logs
+  openrouter.ts            # cliente de chat (OpenRouter ou outra fonte OpenAI-compatível) + logging obrigatório em api_logs
+  sourcePresets.ts         # fontes conhecidas (OpenAI, Anthropic, Gemini, OpenCode): URL pronta, só falta a chave
   agents.ts                # agentes default (modelos + prompts)
   engine.ts                # turno, contexto, compactação, roteirista
   tools.ts                 # ~20 ferramentas do Mestre

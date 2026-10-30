@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSetting, setSetting } from "@/lib/db";
 import { getEmbeddingConfig } from "@/lib/embeddings";
+import { getSources } from "@/lib/openrouter";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +12,16 @@ function mask(key: string): string {
 
 export async function GET() {
   const openrouter = await getSetting<{ apiKey?: string }>("openrouter", {});
-  const { enabled, model } = await getEmbeddingConfig();
+  const { enabled, model, source } = await getEmbeddingConfig();
+  const sources = (await getSources()).map(({ id, name }) => ({ id, name })); // fontes para os embeddings (sem chave)
   const ui = await getSetting<{ diceAnimation?: boolean; imageGeneration?: boolean; autoMaps?: boolean; diceForce?: number }>("ui", {});
   return NextResponse.json({
     openrouter: {
       configured: !!(openrouter.apiKey || process.env.OPENROUTER_API_KEY),
       apiKeyMasked: mask(openrouter.apiKey || process.env.OPENROUTER_API_KEY || ""),
     },
-    embeddings: { enabled, model },
+    embeddings: { enabled, model, source },
+    sources,
     // ligadas por padrão
     ui: { diceAnimation: ui.diceAnimation !== false, imageGeneration: ui.imageGeneration !== false, autoMaps: ui.autoMaps !== false, diceForce: ui.diceForce ?? 1 },
   });
@@ -32,6 +35,7 @@ export async function PUT(req: NextRequest) {
     await setSetting("embeddings", {
       enabled: !!body.embeddings.enabled,
       model: String(body.embeddings.model || "").trim(),
+      source: String(body.embeddings.source || "openrouter"),
     });
   if (body.ui)
     await setSetting("ui", {

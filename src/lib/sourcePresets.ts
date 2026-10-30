@@ -23,13 +23,13 @@ export const SOURCE_PRESETS: SourcePreset[] = [
     url: "https://api.anthropic.com/v1",
     noTemperature: true,
     note:
-      "Camada de compatibilidade com a OpenAI, que a própria Anthropic diz não ser solução de produção. Sem response_format nem cache de prompt; as mensagens de sistema vão juntas para o início. Nos Claude 4.7 ou mais novos temperature abaixo de 1 dá erro, então ela não é enviada. Modelos: claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5, claude-fable-5-1.",
+      "Camada de compatibilidade com a OpenAI, que a própria Anthropic diz não ser solução de produção. Sem response_format nem cache de prompt; as mensagens de sistema vão juntas para o início. Nos Claude 4.7 ou mais novos temperature abaixo de 1 dá erro: a temperatura e o raciocínio do agente (params.reasoning) não são enviados. Modelos: claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5, claude-fable-5-1.",
   },
   {
     kind: "gemini",
     name: "Gemini",
     url: "https://generativelanguage.googleapis.com/v1beta/openai",
-    note: "Endpoint compatível com a OpenAI do Google AI (beta). Imagem e embeddings usam outros caminhos: o Ilustrador não funciona por aqui.",
+    note: "Endpoint compatível com a OpenAI do Google AI (beta). Gera imagem só por /images/generations: o Ilustrador não funciona por aqui.",
   },
   {
     kind: "opencode",

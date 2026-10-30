@@ -19,7 +19,8 @@ function testRoll(): DiceResult {
 
 export interface SettingsShape {
   openrouter: { configured: boolean; apiKeyMasked: string };
-  embeddings: { enabled: boolean; model: string };
+  embeddings: { enabled: boolean; model: string; source: string };
+  sources: { id: string; name: string }[]; // fontes de modelos cadastradas em Agentes
   ui: { diceAnimation: boolean; imageGeneration: boolean; autoMaps: boolean; diceForce: number };
 }
 type Result = { ok: boolean; text: string } | null;
@@ -44,7 +45,7 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
   const [reRunning, setReRunning] = useState(false);
   const [re, setRe] = useState<Result>(null);
 
-  const embDirty = emb.enabled !== data.embeddings.enabled || emb.model !== data.embeddings.model;
+  const embDirty = emb.enabled !== data.embeddings.enabled || emb.model !== data.embeddings.model || emb.source !== data.embeddings.source;
   const dirty = !!orKey.trim() || embDirty || diceAnimation !== data.ui.diceAnimation || diceForce !== data.ui.diceForce || imageGeneration !== data.ui.imageGeneration || autoMaps !== data.ui.autoMaps;
 
   const save = async () => {
@@ -142,16 +143,23 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
         <div>
           <label className={s.switch}>
             <b>Usar embeddings</b>
-            <span>Gera um vetor por memória e por trecho de livro, pelo OpenRouter (custo baixo).</span>
+            <span>Gera um vetor por memória e por trecho de livro, na fonte escolhida abaixo (POST /embeddings; custo baixo).</span>
             <input type="checkbox" role="switch" checked={emb.enabled} onChange={(e) => setEmb({ ...emb, enabled: e.target.checked })} />
           </label>
           <label className="field" style={{ marginTop: 16 }}>
+            <span>Fonte (cadastre outras em Agentes)</span>
+            <select value={emb.source} onChange={(e) => setEmb({ ...emb, source: e.target.value })}>
+              <option value="openrouter">OpenRouter</option>
+              {data.sources.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          </label>
+          <label className="field">
             <span>Modelo de embeddings</span>
             <input type="text" value={emb.model} onChange={(e) => setEmb({ ...emb, model: e.target.value })} spellCheck={false} />
           </label>
           <div className={s.warn}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M8 1.8 14.6 13.5H1.4L8 1.8Z" strokeLinejoin="round" /><path d="M8 6.2v3.4M8 11.6v.1" strokeLinecap="round" /></svg>
-            <span>Trocar o modelo exige reprocessar os embeddings já gerados (memórias e livros): vetores de modelos diferentes não se comparam. Salve antes de reprocessar.</span>
+            <span>Trocar o modelo ou a fonte exige reprocessar os embeddings já gerados (memórias e livros): vetores de modelos diferentes não se comparam. Salve antes de reprocessar.</span>
           </div>
           <div className={s.row}>
             <button className="btn small" onClick={reprocess} disabled={reRunning}>

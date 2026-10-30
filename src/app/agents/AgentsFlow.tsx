@@ -205,9 +205,9 @@ const NODES: (FlowNode | LaneNode)[] = [
     oque: "Guarda tudo: campanhas, cenas, fichas, mensagens, memórias (com embeddings para busca por similaridade), roteiro, conversas de NPC, imagens e o log de cada chamada de IA (tokens, custo, duração).",
     custo: "Local (Docker). Nenhuma chamada paga; só os embeddings das memórias passam pelo OpenRouter.",
   }),
-  n("or", X[5], -250, "infra", "OpenRouter", "toda IA passa por aqui", {
-    oque: "Todas as chamadas de IA (Jev, Mestre, NPC, Cronista, Roteirista, Ilustrador e os criadores) saem por este gateway e viram uma linha no histórico do agente: tokens, duração, custo, request e resposta. O Jev usa a Decisions API (probabilidades); os demais, chat completions.",
-    custo: "Você paga o preço do modelo escolhido em cada agente, direto ao OpenRouter.",
+  n("or", X[5], -250, "infra", "OpenRouter e outras fontes", "toda IA passa por aqui", {
+    oque: "Todas as chamadas de IA (Jev, Mestre, NPC, Cronista, Roteirista, Ilustrador e os criadores) saem pela fonte de modelos do agente: o OpenRouter (padrão) ou outra API compatível com a da OpenAI cadastrada em Fontes de modelos. Cada chamada vira uma linha no histórico do agente: fonte, tokens, duração, custo, request e resposta. O Jev usa a Decisions API (probabilidades); os demais, chat completions.",
+    custo: "Você paga o preço do modelo escolhido em cada agente, direto à fonte. Só o OpenRouter informa o custo de cada chamada; das outras ficam os tokens.",
   }),
 
   // --- NPC ---
