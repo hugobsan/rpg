@@ -464,7 +464,7 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
             </label>
             <label className="field">
               <span>NPCs iniciais (texto livre; o Mestre os cria na primeira cena)</span>
-              <textarea value={initialNpcs} onChange={(e) => setInitialNpcs(e.target.value)} placeholder="Ex: meu sensei Jounin especialista em Genjutsu; dois colegas de time..." />
+              <textarea value={initialNpcs} onChange={(e) => setInitialNpcs(e.target.value)} placeholder="Ex: meu mentor, um veterano rabugento; dois colegas de equipe..." />
             </label>
           </>
         )}

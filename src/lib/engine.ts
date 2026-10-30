@@ -530,7 +530,7 @@ export async function fallbackPlace(campaignId: string, ctx: ToolContext, player
     messages: [
       {
         role: "system",
-        content: `Você dá nome ao lugar onde o personagem do jogador está no FIM da narração de RPG, para o mapa da campanha. Responda só o nome, do mais específico ao mais geral separado por vírgula (ex.: "Casa do Ren, Konoha" ou "Loja de armas, Rua principal, Konoha"), sem aspas nem ponto final. Se for um lugar já conhecido, use o nome dele exatamente. Se a narração não disser onde ele está, responda só: ?`,
+        content: `Você dá nome ao lugar onde o personagem do jogador está no FIM da narração de RPG, para o mapa da campanha. Responda só o nome, do mais específico ao mais geral separado por vírgula (ex.: "Casa do Ren, Vila do Norte" ou "Loja de armas, Rua principal, Porto Velho"), sem aspas nem ponto final. Se for um lugar já conhecido, use o nome dele exatamente. Se a narração não disser onde ele está, responda só: ?`,
       },
       {
         role: "user",

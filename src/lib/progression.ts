@@ -214,7 +214,7 @@ export function train(r: Ruleset, s: Sheet, target: string, hours: number, day: 
   const t = target.trim().toLowerCase();
   const attr = ability ? undefined : r.attributes.find((a) => a.key.toLowerCase() === t || a.label.toLowerCase() === t);
   if (!ability && !attr)
-    return { error: `"${target}" não é um jutsu da ficha nem um atributo (${r.attributes.map((a) => a.key).join(", ")}). Registre o jutsu com add_ability antes.` };
+    return { error: `"${target}" não é uma habilidade da ficha nem um atributo (${r.attributes.map((a) => a.key).join(", ")}). Registre a habilidade com add_ability antes.` };
 
   if (ability) {
     const before = mastery(ability);
@@ -271,13 +271,13 @@ export function progressionPromptLines(r: Ruleset): string[] {
     `Níveis de poder (vêm só da XP e sobem sozinhos; NÃO são cargo; teto de atributo): ${powerLevels(r)
       .map((l) => `${l.label}=${l.xpRequired} XP${l.attributeCap !== undefined ? ` (teto ${l.attributeCap})` : ""}`)
       .join(", ")}. 1 ponto livre de atributo a cada ${r.xpPerAttributePoint ?? DEFAULT_XP_PER_POINT} XP, distribuído pelo jogador.`,
-    `Domínio do jutsu: bônus no teste ${bands(r.masteryBonus ?? DEFAULT_MASTERY_BONUS, (v) => `+${v}`)}; custo ${bands(
+    `Domínio da habilidade: bônus no teste ${bands(r.masteryBonus ?? DEFAULT_MASTERY_BONUS, (v) => `+${v}`)}; custo ${bands(
       r.masteryCost ?? DEFAULT_MASTERY_COST,
       (v) => `x${v}`
     )}. Teste de técnica (use_ability): 1d20 + atributo x${r.attributeMultiplier ?? 1} + bônus do domínio.`,
     `Treino (train): no máximo ${tr.maxHoursPerDay} h por dia; domínio por hora ${bands(tr.masteryPerHour, (v) => `+${v}`)}; uso real ${bands(
       tr.masteryPerUse,
       (v) => `+${v}`
-    )}; no máximo +${tr.maxMasteryPerDay}% de domínio por jutsu por dia; +1 de atributo a cada ${tr.hoursPerAttributePoint} h x valor atual.`,
+    )}; no máximo +${tr.maxMasteryPerDay}% de domínio por habilidade por dia; +1 de atributo a cada ${tr.hoursPerAttributePoint} h x valor atual.`,
   ];
 }

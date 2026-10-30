@@ -39,7 +39,7 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
 const MILESTONE_SCHEMA = {
   type: "array",
   description:
-    "Marcos de capacidade por nível de domínio (opcional). Use quando a habilidade evolui em estágios com poderes distintos (ex: um dōjutsu que desbloqueia leitura de movimentos aos 25%, cópia de técnicas aos 50%...). Inclua um marco com threshold=0 descrevendo a capacidade inicial.",
+    "Marcos de capacidade por nível de domínio (opcional). Use quando a habilidade evolui em estágios com poderes distintos (ex: um olho ou dom especial que desbloqueia leitura de movimentos aos 25%, cópia de técnicas aos 50%...). Inclua um marco com threshold=0 descrevendo a capacidade inicial.",
   items: {
     type: "object",
     properties: {
@@ -83,11 +83,11 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "update_resource",
       description:
-        "Altera um recurso (saúde, chakra...) de um personagem. Use delta para dano/cura/gasto, ou set para fixar. Opcionalmente ajusta o máximo.",
+        "Altera um recurso (saúde, energia do poder...) de um personagem. Use delta para dano/cura/gasto, ou set para fixar. Opcionalmente ajusta o máximo.",
       parameters: S(
         {
           character: { type: "string", description: "nome exato" },
-          resource: { type: "string", description: "key do recurso (ex: hp, chakra)" },
+          resource: { type: "string", description: "key do recurso, como está na mecânica (ex: hp)" },
           delta: { type: "number", description: "variação (+cura/-dano)" },
           set: { type: "number", description: "valor absoluto" },
           setMax: { type: "number", description: "novo máximo" },
@@ -157,7 +157,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "use_ability",
       description:
-        "Resolve o uso de uma técnica DA FICHA do personagem (jutsu, golpe especial...). O servidor faz a conta: desconta o custo já ajustado pelo domínio (falha sem rolar se não houver recurso), rola 1d20 + atributo x multiplicador + bônus do domínio contra a CD (o jogador vê a rolagem) e sobe o domínio pelo uso. Use no lugar de roll_dice + update_resource para técnicas da ficha. O dano, se houver, role à parte com roll_dice.",
+        "Resolve o uso de uma técnica DA FICHA do personagem (o que a mecânica chama de habilidade: magia, golpe especial...). O servidor faz a conta: desconta o custo já ajustado pelo domínio (falha sem rolar se não houver recurso), rola 1d20 + atributo x multiplicador + bônus do domínio contra a CD (o jogador vê a rolagem) e sobe o domínio pelo uso. Use no lugar de roll_dice + update_resource para técnicas da ficha. O dano, se houver, role à parte com roll_dice.",
       parameters: S(
         {
           character: { type: "string" },
@@ -177,11 +177,11 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "train",
       description:
-        "Treino: avança o relógio pelas horas treinadas e só então aplica o ganho. Jutsu: o domínio sobe por hora (menos nos domínios altos). Atributo: as horas acumulam até o próximo +1, até o teto do nível de poder. Há limite de horas de treino por dia e de domínio ganho por jutsu por dia; acima disso o treino é recusado (exausto). Não chame advance_time para as mesmas horas.",
+        "Treino: avança o relógio pelas horas treinadas e só então aplica o ganho. Habilidade: o domínio sobe por hora (menos nos domínios altos). Atributo: as horas acumulam até o próximo +1, até o teto do nível de poder. Há limite de horas de treino por dia e de domínio ganho por habilidade por dia; acima disso o treino é recusado (exausto). Não chame advance_time para as mesmas horas.",
       parameters: S(
         {
           character: { type: "string" },
-          target: { type: "string", description: "nome do jutsu da ficha ou key do atributo" },
+          target: { type: "string", description: "nome da habilidade da ficha ou key do atributo" },
           hours: { type: "number", description: "horas realistas de treino (inteiras, ex: 2, 4)" },
           note: { type: "string", description: "como treinou" },
         },
@@ -820,7 +820,7 @@ export async function executeGmTool(
       let msg = `Treino de ${r.hours} h. Relógio: ${formatClock(minutes)} (${period(minutes)}). Hoje: ${r.hoursToday} h de treino.`;
       if (r.kind === "ability") {
         msg += ` Domínio de ${r.label}: ${r.before}% → ${r.after}%.`;
-        if (r.capped) msg += " Rendimento cortado: chegou ao máximo de domínio por dia neste jutsu.";
+        if (r.capped) msg += " Rendimento cortado: chegou ao máximo de domínio por dia nesta habilidade.";
         if (r.milestone) msg += ` NOVO MARCO ALCANÇADO: ${r.milestone.description} — narre esse avanço.`;
       } else {
         msg += r.after > r.before ? ` ${r.label} subiu de ${r.before} para ${r.after}!` : ` ${r.label} continua ${r.after}.`;
