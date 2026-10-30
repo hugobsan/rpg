@@ -1,6 +1,14 @@
 "use client";
 import { useState } from "react";
 import type { Character } from "@/lib/types";
+import { toast } from "./ui/Toast";
+import s from "./SidePanels.module.css";
+
+const BagIcon = ({ size = 18 }: { size?: number }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M8 7V6a4 4 0 0 1 8 0v1" /><path d="M5 7h14l-1 13H6L5 7Z" /><path d="M9 11h6" />
+  </svg>
+);
 
 /** Aba Inventário: itens do personagem do jogador, com a opção de largar. */
 export default function InventoryView({
@@ -33,33 +41,43 @@ export default function InventoryView({
       return;
     }
     setConfirming(null);
+    toast(`${qty > 1 ? `${qty}x ` : ""}${name} ficou no local atual.`, { title: "Item largado" });
     onChange();
   };
 
   if (!items.length)
-    return <p className="muted">{char.name} não carrega nada. Itens ganhos na história aparecem aqui.</p>;
+    return (
+      <div className={s.empty}>
+        <BagIcon size={26} />
+        <b>{char.name} não carrega nada</b>
+        Itens ganhos, comprados ou encontrados na história aparecem aqui.
+      </div>
+    );
   return (
-    <div>
-      <p className="muted" style={{ marginTop: 0 }}>
-        Largar um item tira ele da ficha na hora. O Mestre fica sabendo que ele ficou no local atual.
-      </p>
-      {error && <div className="error-box" style={{ marginBottom: 8 }}>{error}</div>}
-      {items.map((i) => (
-        <div key={i.name} className="ability-item">
-          <div className="name" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ flex: 1 }}>
-              {i.name} {i.qty > 1 && <span className="pill">{i.qty}x</span>}
-            </span>
+    <div className={s.wrap}>
+      <div className={s.head}>
+        <h4>Carregando</h4>
+        <span className={s.count}>{items.reduce((n, i) => n + i.qty, 0)} no total</span>
+      </div>
+      {error && <div className="error-box">{error}</div>}
+      {items.map((i, n) => (
+        <div key={i.name} className={s.card} style={{ animationDelay: `${Math.min(n, 8) * 25}ms` }}>
+          <div className={s.row}>
+            <span className={s.icon}><BagIcon /></span>
+            <div className={s.grow}>
+              <div className={s.title}>{i.name}</div>
+              {i.description && <div className={s.sub}>{i.description}</div>}
+            </div>
+            {i.qty > 1 && <span className={s.chip}>×{i.qty}</span>}
             {confirming !== i.name && (
               <button className="btn ghost small" disabled={disabled || busy} onClick={() => setConfirming(i.name)}>
                 Largar
               </button>
             )}
           </div>
-          {i.description && <div className="sub">{i.description}</div>}
           {confirming === i.name && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8, alignItems: "center" }}>
-              <span className="sub" style={{ flex: "1 1 100%" }}>Largar {i.name}?</span>
+            <div className={s.actions}>
+              <span className={s.sub}>Largar {i.name}? O Mestre fica sabendo que ficou no local atual.</span>
               <button className="btn small" disabled={busy} onClick={() => drop(i.name, 1)}>
                 {i.qty > 1 ? "Largar 1" : "Largar"}
               </button>

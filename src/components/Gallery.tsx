@@ -2,12 +2,28 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import ImageViewer from "./ImageViewer";
+import Skeleton from "./ui/Skeleton";
+import s from "./Gallery.module.css";
+import p from "./SidePanels.module.css";
 
 type Img = { id: number; created_at: string; location: string | null; title: string | null };
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 const where = (i: Img) => i.location || i.title || "Cena sem local";
+
+/** Miniatura: skeleton até a imagem carregar, depois aparece suave. */
+function Thumb({ src, alt }: { src: string; alt: string }) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <>
+      {!loaded && <Skeleton />}
+      {/* miniatura redimensionada pelo Next (webp, ~15 KB em vez da imagem inteira); a tela cheia usa o original */}
+      <Image src={src} alt={alt} fill sizes="(max-width: 600px) 45vw, 260px" className={loaded ? s.loaded : undefined}
+        onLoad={() => setLoaded(true)} onError={() => setLoaded(true)} />
+    </>
+  );
+}
 
 /** Galeria: recarrega ao abrir a aba (monta) e quando `refreshKey` muda (imagem nova). */
 export default function Gallery({
@@ -42,30 +58,50 @@ export default function Gallery({
     onDeleted?.();
   };
 
-  if (!images) return <p className="muted">Carregando...</p>;
-  if (!images.length) return <p className="muted">Nenhuma imagem ainda. Use "Ver ambiente".</p>;
+  if (!images)
+    return (
+      <div className={s.grid} aria-busy="true">
+        {[0, 1, 2, 3].map((i) => <Skeleton key={i} style={{ aspectRatio: "4 / 3", borderRadius: "var(--r-md)" }} />)}
+      </div>
+    );
+  if (!images.length)
+    return (
+      <div className={p.empty}>
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="m21 16-5-5-8 8" />
+        </svg>
+        <b>Nenhuma imagem ainda</b>
+        Use &quot;Ver ambiente&quot; na cena para o ilustrador pintar onde você está. Tudo que for pintado fica guardado aqui.
+      </div>
+    );
   const url = (i: Img) => `/api/campaigns/${campaignId}/images/${i.id}`;
   return (
     <>
-      {error && <div className="error-box" style={{ marginBottom: 8 }}>{error}</div>}
-      <div className="gallery">
+      {error && <div className="error-box">{error}</div>}
+      <div className={s.grid}>
         {images.map((i, n) => (
-          <div key={i.id} className="gallery-item">
-            <button className="gallery-open" onClick={() => setOpen(n)}>
-              {/* miniatura redimensionada pelo Next (webp, ~15 KB em vez da imagem inteira); a tela cheia usa o original */}
-              <Image src={url(i)} alt={where(i)} width={384} height={240} sizes="(max-width: 600px) 45vw, 260px" style={{ height: "auto" }} />
-              <span className="when">{when(i.created_at)}</span>
-              <span className="where">{where(i)}</span>
+          <div key={i.id} className={s.item} style={{ animationDelay: `${Math.min(n, 8) * 30}ms` }}>
+            <button className={s.open} onClick={() => setOpen(n)} aria-label={`Abrir ${where(i)}`}>
+              <Thumb src={url(i)} alt={where(i)} />
+              <span className={s.cap}>
+                <span className={s.where}>{where(i)}</span>
+                <span className={s.when}>{when(i.created_at)}</span>
+              </span>
             </button>
             {confirming === i.id ? (
-              <div className="gallery-confirm">
+              <div className={s.confirm}>
                 <span>Apagar esta imagem?</span>
-                <button className="btn small" onClick={() => remove(i)}>Apagar</button>
-                <button className="btn ghost small" onClick={() => setConfirming(null)}>Cancelar</button>
+                <div>
+                  <button className="btn danger small" onClick={() => remove(i)}>Apagar</button>
+                  <button className="btn ghost small" onClick={() => setConfirming(null)}>Cancelar</button>
+                </div>
               </div>
             ) : (
-              <button className="gallery-delete" title="Apagar imagem" aria-label="Apagar imagem"
-                onClick={() => setConfirming(i.id)}>🗑</button>
+              <button className={s.del} title="Apagar imagem" aria-label="Apagar imagem" onClick={() => setConfirming(i.id)}>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
+                </svg>
+              </button>
             )}
           </div>
         ))}

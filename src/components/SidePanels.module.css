@@ -1,0 +1,139 @@
+/* Abas menores da barra lateral (Inventário, Missões, Marcos, Livros, Roteiro). Só tokens do DESIGN.md. */
+.wrap { display: flex; flex-direction: column; gap: var(--s-2); }
+.note { margin: 0 0 var(--s-1); font-size: 12.5px; line-height: 1.5; color: var(--text-dim); }
+.head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-2); margin: var(--s-3) 0 2px; }
+.head:first-child { margin-top: 0; }
+.head h4 { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--text-dim); }
+.count { font-size: 11.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+/* explicação recolhida */
+.how { font-size: 12.5px; color: var(--text-dim); }
+.how summary { cursor: pointer; color: var(--accent); width: fit-content; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.how summary::-webkit-details-marker { display: none; }
+.how summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--dur) var(--ease-out); }
+.how[open] summary::before { transform: rotate(45deg); }
+.how p { margin: var(--s-2) 0 0; line-height: 1.55; }
+
+/* estado vazio: ícone, frase e o que fazer */
+.empty {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
+  padding: var(--s-5) var(--s-4); border: 1px dashed var(--border-strong); border-radius: var(--r-lg);
+  color: var(--text-dim); font-size: 12.5px; line-height: 1.5;
+}
+.empty svg { color: var(--accent); opacity: 0.8; margin-bottom: 2px; }
+.empty b { color: var(--text); font-size: 13.5px; font-weight: 600; }
+
+/* cartão de item */
+.card {
+  position: relative; padding: 10px 12px; background: var(--panel-grad); border: 1px solid var(--border);
+  border-radius: var(--r-md); box-shadow: var(--hl); display: flex; flex-direction: column; gap: 4px;
+  transition: border-color var(--dur) var(--ease-out);
+  animation: rise var(--dur-slow) var(--ease-out) backwards;
+}
+.card:hover { border-color: var(--border-strong); }
+.row { display: flex; align-items: center; gap: var(--s-3); }
+.grow { flex: 1; min-width: 0; }
+.title { font-size: 13.5px; font-weight: 600; color: var(--text); line-height: 1.35; overflow-wrap: anywhere; }
+.sub { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-dim);
+  font-size: 11px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.icon {
+  flex-shrink: 0; width: 34px; height: 34px; display: grid; place-items: center; border-radius: var(--r-md);
+  background: var(--bg-sunken); border: 1px solid var(--border); color: var(--accent);
+}
+.actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+.actions .sub { flex: 1 1 100%; }
+
+
+/* missões: faixa de urgência à esquerda e tempo que corre */
+.quest { padding-left: 15px; }
+.quest::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent-line); }
+.quest.warn::before { background: var(--warn); }
+.quest.danger::before { background: var(--danger); box-shadow: 0 0 10px -1px var(--danger); }
+.quest.warn { border-color: color-mix(in srgb, var(--warn) 35%, var(--border)); }
+.quest.danger { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.closed { opacity: 0.72; }
+.closed .title { text-decoration: line-through; text-decoration-color: var(--text-faint); }
+.deadline { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); margin-top: 4px; font-size: 11.5px; color: var(--text-dim); }
+.left { font-weight: 600; color: var(--text); }
+.warn .left { color: var(--warn); }
+.danger .left { color: var(--danger); }
+.timebar { height: 3px; border-radius: var(--r-pill); background: var(--bg-sunken); overflow: hidden; margin-top: 2px; }
+.timebar > span { display: block; height: 100%; transform-origin: left; background: var(--accent-line); }
+.warn .timebar > span { background: var(--warn); }
+.danger .timebar > span { background: var(--danger); }
+.reward { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text); }
+.reward svg { color: var(--accent); }
+.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-soft); }
+.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); background: var(--danger-soft); }
+
+.more summary { cursor: pointer; font-size: 12.5px; color: var(--text-dim); margin-top: var(--s-2); width: fit-content; }
+.more summary:hover { color: var(--text); }
+.more > div { display: flex; flex-direction: column; gap: var(--s-2); margin-top: var(--s-2); }
+
+/* marcos: diretrizes fora do jogo à parte, história numa linha do tempo */
+.ooc {
+  border: 1px dashed color-mix(in srgb, var(--ooc) 55%, transparent); border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--ooc) 6%, transparent); padding: 10px 12px;
+}
+.ooc h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--ooc); display: flex; gap: 6px; align-items: center; }
+.ooc ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.ooc li { font-size: 12.5px; line-height: 1.45; padding-left: 12px; position: relative; }
+.ooc li::before { content: ""; position: absolute; left: 0; top: 0.6em; width: 5px; height: 5px; border-radius: 50%; background: var(--ooc); }
+.filters { display: flex; flex-wrap: wrap; gap: 4px; }
+.filters :global(.num) { opacity: 0.7; margin-left: 2px; }
+.timeline { list-style: none; margin: var(--s-1) 0 0; padding: 0; position: relative; }
+.timeline::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 1px; background: linear-gradient(var(--border-strong), transparent); }
+.event { position: relative; padding: 0 0 var(--s-3) 22px; animation: rise var(--dur-slow) var(--ease-out) backwards; }
+.dot { position: absolute; left: 0; top: 4px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--bg-raise); background: var(--kind, var(--text-faint)); box-shadow: 0 0 0 1px var(--kind, var(--border)); }
+.kind { font-size: 11px; font-weight: 600; color: var(--kind, var(--text-dim)); }
+.subject { font-size: 11px; color: var(--text-dim); }
+.event p { margin: 2px 0 0; font-size: 13px; line-height: 1.5; color: var(--text); }
+.pips { display: inline-flex; gap: 2px; margin-left: 6px; vertical-align: middle; }
+.pips i { width: 4px; height: 4px; border-radius: 50%; background: var(--border-strong); }
+.pips i.on { background: var(--kind, var(--accent)); }
+.k-milestone { --kind: var(--accent); }
+.k-event { --kind: var(--info); }
+.k-npc { --kind: var(--mode-dialogue); }
+.k-discovery { --kind: var(--mode-training); }
+.k-relationship { --kind: var(--ok); }
+
+/* livros: soltar arquivo e progresso */
+.drop {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; cursor: pointer;
+  padding: var(--s-5) var(--s-4); border: 1.5px dashed var(--border-strong); border-radius: var(--r-lg);
+  color: var(--text-dim); font-size: 12.5px; background: color-mix(in srgb, var(--bg-sunken) 50%, transparent);
+  transition: border-color var(--dur) var(--ease-out), background var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+}
+.drop:hover, .drop:focus-within { border-color: var(--accent-line); color: var(--text); }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--text); transform: scale(1.01); }
+.drop.busy { cursor: progress; }
+.drop svg { color: var(--accent); }
+.drop b { color: var(--text); font-weight: 600; font-size: 13.5px; }
+.drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.progress { width: 100%; height: 5px; border-radius: var(--r-pill); background: var(--bg-sunken); overflow: hidden; margin-top: 4px; }
+.progress > span { display: block; height: 100%; transform-origin: left; background: var(--accent); transition: transform var(--dur) var(--ease-out); }
+
+/* roteiro: arcos em passos */
+.gate {
+  position: relative; overflow: hidden; padding: var(--s-5) var(--s-4); text-align: center; border-radius: var(--r-lg);
+  border: 1px solid var(--border); background: var(--panel-grad); display: flex; flex-direction: column; align-items: center; gap: var(--s-2);
+}
+.gate p { margin: 0; font-size: 12.5px; color: var(--text-dim); }
+.premise { margin: 0; font: italic 13.5px/1.6 var(--font-narr); color: var(--text); padding: 2px 0 2px 12px; border-left: 2px solid var(--accent-line); }
+.arcs { list-style: none; margin: var(--s-2) 0 0; padding: 0; position: relative; }
+.arcs::before { content: ""; position: absolute; left: 9px; top: 10px; bottom: 10px; width: 1px; background: var(--border-strong); }
+.arc { position: relative; padding: 0 0 var(--s-4) 30px; }
+.arcDot { position: absolute; left: 0; top: 1px; width: 19px; height: 19px; border-radius: 50%; display: grid; place-items: center; background: var(--bg-raise); border: 1.5px solid var(--border-strong); color: var(--text-faint); }
+.arc.done .arcDot { border-color: var(--ok); color: var(--ok); }
+.arc.active .arcDot { border-color: var(--accent); background: var(--accent-fill); color: var(--accent-ink); box-shadow: var(--glow); }
+.arc.done { opacity: 0.6; }
+.arc .title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.arc .sub { margin-top: 2px; }
+.arcMeta { margin-top: 4px; font-size: 11.5px; color: var(--text-dim); display: flex; gap: 6px; align-items: flex-start; }
+.arcMeta svg { flex-shrink: 0; margin-top: 2px; color: var(--accent); }
+.links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--s-3); }
