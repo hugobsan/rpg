@@ -256,6 +256,19 @@ function parseChoices(text: string): { clean: string; choices: string[] } {
   return { clean: text.replace(m[0], "").trim(), choices };
 }
 
+/**
+ * Parte da narração que já pode ir ao jogador durante o streaming: corta no bloco ```choices e
+ * segura um começo de cerca no fim ("`", "``", "```cho"...) até saber se é o bloco de opções.
+ */
+export function visibleNarration(text: string): string {
+  const fence = "```choices";
+  const i = text.indexOf(fence);
+  if (i >= 0) return text.slice(0, i);
+  for (let k = Math.min(fence.length - 1, text.length); k > 0; k--)
+    if (fence.startsWith(text.slice(-k))) return text.slice(0, -k);
+  return text;
+}
+
 export async function runTurn(
   campaignId: string,
   playerInput: string,
@@ -335,6 +348,11 @@ export async function runTurn(
   let npcGate = false; // a narração já voltou uma vez por NPC sem registro
 
   for (let round = 0; round <= maxRounds; round++) {
+    // narração em streaming: o texto da rodada vai ao jogador enquanto chega; se a rodada virar
+    // chamada de ferramenta ou o portão de NPC devolver, o rascunho é descartado (narration_reset)
+    let roundText = "";
+    let streamed = 0;
+    const discardDraft = () => streamed && emit({ type: "narration_reset" });
     // :online só na 1ª rodada: o plugin cobra por requisição e repetiria a mesma busca a cada rodada
     const result = await chat({
       model: turnModel,
@@ -346,6 +364,12 @@ export async function runTurn(
       agentId: "gm",
       campaignId,
       purpose: round === 0 ? "turno do jogador" : `turno (round ${round + 1})`,
+      onDelta: (t) => {
+        const visible = visibleNarration((roundText += t));
+        if (visible.length <= streamed) return;
+        emit({ type: "narration_delta", text: visible.slice(streamed) });
+        streamed = visible.length;
+      },
     });
 
     if (!result.toolCalls.length || round === maxRounds) {
@@ -354,6 +378,7 @@ export async function runTurn(
       const missing = !npcGate && round < maxRounds ? unregisteredSpeakers(finalText, await getCharacters(campaignId)) : [];
       if (!missing.length) break;
       npcGate = true;
+      discardDraft();
       messages.push({ role: "assistant", content: finalText });
       messages.push({
         role: "user",
@@ -361,6 +386,7 @@ export async function runTurn(
       });
       continue;
     }
+    discardDraft();
     const sources = useWeb && round === 0 ? webSources(result.raw) : "";
     messages.push({
       role: "assistant",

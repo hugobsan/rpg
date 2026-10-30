@@ -37,6 +37,8 @@ export interface ChatOptions {
   tools?: ToolDef[];
   webSearch?: boolean;
   modalities?: string[];
+  // streaming: recebe cada pedaço do texto enquanto a resposta é gerada (o resultado final vem igual)
+  onDelta?: (text: string) => void;
   // metadados para o log
   agentId: string;
   campaignId?: string | null;
@@ -110,6 +112,10 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   };
   if (opts.tools?.length) body.tools = opts.tools;
   if (opts.modalities) body.modalities = opts.modalities;
+  if (opts.onDelta) {
+    body.stream = true;
+    body.stream_options = { include_usage: true }; // usage (tokens e custo) chega no último pedaço
+  }
 
   const started = Date.now();
   let responseJson: Record<string, unknown> | null = null;
@@ -125,16 +131,19 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       },
       body: JSON.stringify(body),
     });
-    const text = await res.text();
-    try {
-      responseJson = JSON.parse(text);
-    } catch {
-      responseJson = { raw: text };
+    if (opts.onDelta && res.ok && res.body) responseJson = await readStream(res.body, opts.onDelta);
+    else {
+      const text = await res.text();
+      try {
+        responseJson = JSON.parse(text);
+      } catch {
+        responseJson = { raw: text };
+      }
+      if (!res.ok)
+        throw new Error(
+          `OpenRouter ${res.status}: ${text.slice(0, 500)}`
+        );
     }
-    if (!res.ok)
-      throw new Error(
-        `OpenRouter ${res.status}: ${text.slice(0, 500)}`
-      );
     const errObj = (responseJson as { error?: { message?: string } }).error;
     if (errObj) throw new Error(`OpenRouter: ${errObj.message || "erro"}`);
 
@@ -209,6 +218,78 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       cost: usage?.cost, // USD real, já com cache/busca/raciocínio
     });
   }
+}
+
+type StreamToolCall = { index?: number; id?: string; function?: { name?: string; arguments?: string } };
+
+/**
+ * Lê a resposta em streaming (SSE) e remonta o JSON de uma resposta sem streaming (choices[0].message
+ * com content, tool_calls, annotations e reasoning; usage), para o resto do código e o log não mudarem.
+ * Erro no meio do stream (pedaço com error, ou a conexão caiu) vira `error` no resultado, com o parcial.
+ */
+export async function readStream(
+  stream: ReadableStream<Uint8Array>,
+  onDelta: (text: string) => void
+): Promise<Record<string, unknown>> {
+  const msg: { role: string; content: string; tool_calls?: ToolCall[]; annotations?: unknown[]; reasoning?: string } = {
+    role: "assistant",
+    content: "",
+  };
+  const choice: { message: typeof msg; finish_reason: string | null } = { message: msg, finish_reason: null };
+  const out: Record<string, unknown> = { choices: [choice] };
+  const calls: ToolCall[] = [];
+  const handle = (line: string) => {
+    if (!line.startsWith("data:")) return; // ": OPENROUTER PROCESSING" (keep-alive) e linhas vazias
+    const data = line.slice(5).trim();
+    if (!data || data === "[DONE]") return;
+    const chunk = JSON.parse(data) as {
+      id?: string; model?: string; provider?: string; usage?: unknown; error?: unknown;
+      choices?: { finish_reason?: string | null; delta?: { content?: string | null; reasoning?: string | null; annotations?: unknown[]; tool_calls?: StreamToolCall[] } }[];
+    };
+    out.id ??= chunk.id;
+    out.model ??= chunk.model;
+    out.provider ??= chunk.provider;
+    if (chunk.usage) out.usage = chunk.usage;
+    const c = chunk.choices?.[0];
+    if (c?.finish_reason) choice.finish_reason = c.finish_reason;
+    if (chunk.error || c?.finish_reason === "error") out.error = chunk.error || { message: "a resposta parou no meio" };
+    const d = c?.delta;
+    if (!d) return;
+    if (d.content) {
+      msg.content += d.content;
+      onDelta(d.content);
+    }
+    if (d.reasoning) msg.reasoning = (msg.reasoning || "") + d.reasoning;
+    if (d.annotations?.length) (msg.annotations ??= []).push(...d.annotations);
+    // ferramentas chegam em pedaços: id e nome no primeiro, os argumentos aos poucos (pelo index)
+    for (const t of d.tool_calls || []) {
+      const i = t.index ?? (t.id ? calls.length : calls.length - 1);
+      const call = (calls[i] ??= { id: "", type: "function", function: { name: "", arguments: "" } });
+      if (t.id) call.id = t.id;
+      if (t.function?.name) call.function.name = t.function.name;
+      if (t.function?.arguments) call.function.arguments += t.function.arguments;
+    }
+  };
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  try {
+    while (!out.error) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() ?? "";
+      for (const l of lines) handle(l.replace(/\r$/, ""));
+    }
+    handle(buf.trim());
+  } catch (e) {
+    out.error = { message: e instanceof Error ? e.message : String(e) };
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  if (calls.length) msg.tool_calls = calls.filter(Boolean);
+  return out;
 }
 
 // preço em USD por token (strings), como vem do catálogo
