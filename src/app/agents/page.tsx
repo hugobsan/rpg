@@ -2,7 +2,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { AgentConfig } from "@/lib/types";
-import AgentsDiagram from "./AgentsDiagram";
+import dynamic from "next/dynamic";
+
+// o diagrama (React Flow, pesado) vem em pedaço separado, depois da página; o card vazio guarda o lugar
+const AgentsDiagram = dynamic(() => import("./AgentsDiagram"), {
+  ssr: false,
+  loading: () => <div className="card" style={{ marginBottom: 14, minHeight: 56 }} />,
+});
 
 interface Model {
   id: string;

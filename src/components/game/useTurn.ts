@@ -24,7 +24,8 @@ import { diceText } from "../DiceRoller";
  *                  Renderize o rascunho num componente à parte e os itens do feed com React.memo:
  *                  cada pedaço do streaming re-renderiza quem usa o hook.
  *   choices        opções do último turno
- *   busy, status   turno em andamento e o texto de status ("O Mestre está pensando...")
+ *   busy, status   turno em andamento e o texto da fase, vindo do servidor: "Lendo a cena...",
+ *                  "O Mestre está pensando...", "Consultando memórias e livros...", "Escrevendo..."
  *   send(text)     envia a ação; devolve false se não enviou (ocupado ou texto vazio)
  *   regenerate(fb) "gerar novamente" a última resposta (fb = motivo, pode ser "")
  *
@@ -227,7 +228,7 @@ export function useTurn(
         return lastPlayer >= 0 ? f.slice(0, lastPlayer + 1) : f;
       });
     } else setFeed((f) => [...f, { key: nextKey(), kind: "player", content: text }]);
-    setStatus("O Mestre está pensando...");
+    setStatus("Lendo a cena..."); // o servidor manda as fases seguintes
     let failed = false;
     try {
       const res = await fetch(`/api/campaigns/${campaignId}/turn`, {

@@ -278,21 +278,28 @@ export async function runTurn(
   // "gerar novamente": o estado já foi restaurado; feedback = motivo opcional do jogador
   regen?: { feedback: string }
 ): Promise<void> {
+  // status por fase: a tela acende "consultando", "dados" e "escrevendo" por estas palavras
+  emit({ type: "status", text: "Lendo a cena..." });
+  // a busca de memórias (embedding da ação, ida à rede) corre junto da foto e das leituras do banco
+  const candidatesP = candidateMemories(campaignId, playerInput);
+  candidatesP.catch(() => {}); // o erro sobe no await abaixo, sem virar rejeição solta antes dele
   // foto do estado antes do turno, para poder gerar a resposta de novo depois
   await takeSnapshot(campaignId, playerInput);
-  const campaign = await getCampaign(campaignId);
-  let scene = await getCurrentScene(campaignId);
-  const chars = await getCharacters(campaignId);
-  const gm = await getAgent("gm");
+  const [campaign, firstScene, chars, gm] = await Promise.all([
+    getCampaign(campaignId),
+    getCurrentScene(campaignId),
+    getCharacters(campaignId),
+    getAgent("gm"),
+  ]);
+  let scene = firstScene;
   const params = gm.params as { historyBudgetTokens?: number; maxToolRounds?: number; complexModel?: string };
   const complexModel = params.complexModel?.trim();
 
   await saveMessage(campaignId, scene.id, "player", playerInput);
 
-  emit({ type: "status", text: "O Mestre está pensando..." });
   const [history, candidates] = await Promise.all([
     historyWindow(campaignId, scene.id, params.historyBudgetTokens ?? 9000),
-    candidateMemories(campaignId, playerInput),
+    candidatesP,
   ]);
 
   // Jev, numa chamada só: modelo do turno (1), busca web (2) e filtro de memórias (4)
@@ -355,6 +362,7 @@ export async function runTurn(
     let roundText = "";
     let streamed = 0;
     const discardDraft = () => streamed && emit({ type: "narration_reset" });
+    emit({ type: "status", text: "O Mestre está pensando..." });
     // :online só na 1ª rodada: o plugin cobra por requisição e repetiria a mesma busca a cada rodada
     const result = await chat({
       model: turnModel,
@@ -369,6 +377,7 @@ export async function runTurn(
       onDelta: (t) => {
         const visible = visibleNarration((roundText += t));
         if (visible.length <= streamed) return;
+        if (!streamed) emit({ type: "status", text: "Escrevendo..." });
         emit({ type: "narration_delta", text: visible.slice(streamed) });
         streamed = visible.length;
       },
@@ -401,6 +410,8 @@ export async function runTurn(
         const args = JSON.parse(call.function.arguments || "{}");
         // tools de leitura emitem aqui (intenção); escrita e dados emitem no executor (resultado)
         if (/^(search_|read_|get_|list_)/.test(call.function.name)) {
+          if (/^(search_|read_|get_script)/.test(call.function.name))
+            emit({ type: "status", text: "Consultando memórias e livros..." });
           emit({
             type: "tool",
             name: call.function.name,

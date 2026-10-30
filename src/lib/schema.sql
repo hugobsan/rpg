@@ -178,3 +178,10 @@ CREATE TABLE IF NOT EXISTS gm_notes (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS gm_notes_campaign_idx ON gm_notes (campaign_id, id);
+
+-- consultas quentes por campanha (tela de jogo, turno, caixa de entrada, /usage)
+CREATE INDEX IF NOT EXISTS memories_campaign_id_idx ON memories (campaign_id, id);
+CREATE INDEX IF NOT EXISTS npc_chats_campaign_idx ON npc_chats (campaign_id, id);
+CREATE INDEX IF NOT EXISTS scene_images_campaign_idx ON scene_images (campaign_id, id);
+CREATE INDEX IF NOT EXISTS api_logs_campaign_idx ON api_logs (campaign_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS api_logs_created_idx ON api_logs (created_at DESC);

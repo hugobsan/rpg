@@ -165,7 +165,18 @@ Regras: memórias são fatos que precisarão ser lembrados muitas sessões depoi
   },
 ];
 
-export async function ensureDefaultAgents(): Promise<void> {
+// uma vez por processo (antes era um INSERT por agente a cada getAgent, várias vezes por turno);
+// variável do módulo, não global: no dev, editar este arquivo roda de novo e cria agente novo
+let defaultsReady: Promise<void> | null = null;
+
+export function ensureDefaultAgents(): Promise<void> {
+  return (defaultsReady ??= insertDefaultAgents().catch((e) => {
+    defaultsReady = null; // falhou (banco fora): tenta de novo na próxima
+    throw e;
+  }));
+}
+
+async function insertDefaultAgents(): Promise<void> {
   for (const a of DEFAULT_AGENTS) {
     await q(
       `INSERT INTO agents (id, name, description, model, temperature, max_tokens, web_search, system_prompt, params)
