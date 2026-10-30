@@ -168,7 +168,7 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
         <div className={s.kpis}>
           <div className={`card ${s.tile} ${s.hero}`}>
             <span className={s.tileLabel}>Custo total</span>
-            <span className={s.tileValue}>{usd(t.cost)}</span>
+            <span className={s.tileValue} title={usd(t.cost)}>${t.cost.toFixed(2)}</span>
             {shares.length > 0 && (
               <>
                 <div className={s.share} role="img" aria-label={`Custo por agente: ${shares.map((r) => `${agentName(r.agent_id)} ${pct(r.cost, t.cost)}`).join(", ")}`}>
