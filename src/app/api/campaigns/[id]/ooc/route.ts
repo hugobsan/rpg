@@ -29,9 +29,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-/** DELETE ?directive=ID → o jogador desativa (apaga) uma diretriz. */
+/** DELETE ?directive=ID → o jogador desativa (apaga) uma diretriz. DELETE ?notes=all → limpa a conversa (as diretrizes ficam). */
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (req.nextUrl.searchParams.get("notes") === "all") {
+    await q(`DELETE FROM gm_notes WHERE campaign_id = $1`, [id]);
+    return NextResponse.json({ ok: true });
+  }
   const directive = Number(req.nextUrl.searchParams.get("directive"));
   if (!Number.isInteger(directive)) return NextResponse.json({ error: "Diretriz inválida" }, { status: 400 });
   await q(`DELETE FROM memories WHERE id = $1 AND campaign_id = $2 AND kind = 'directive'`, [directive, id]);

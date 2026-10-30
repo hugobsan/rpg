@@ -34,6 +34,7 @@ export default function OocModal({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [clearing, setClearing] = useState(false); // confirmação inline do "Limpar conversa"
   const feedRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -77,6 +78,15 @@ export default function OocModal({
     }
   };
 
+  const clear = async () => {
+    setClearing(false);
+    const res = await fetch(`/api/campaigns/${campaignId}/ooc?notes=all`, { method: "DELETE" }).catch(() => null);
+    if (!res?.ok) return setError("Não deu para limpar a conversa. Tente de novo.");
+    setNotes([]);
+    setError("");
+    inputRef.current?.focus();
+  };
+
   const removeDirective = async (id: number) => {
     setDirectives((ds) => (ds || []).filter((d) => d.id !== id));
     await fetch(`/api/campaigns/${campaignId}/ooc?directive=${id}`, { method: "DELETE" });
@@ -92,6 +102,15 @@ export default function OocModal({
             <h3>Falar com o Mestre <span className={s.tag}>fora do jogo</span></h3>
             <p>Você fala como jogador, não como personagem. Nada disso aparece na história.</p>
           </div>
+          {notes.length > 0 && !busy && (clearing ? (
+            <span className={s.clearAsk} role="group" aria-label="Confirmar limpeza da conversa">
+              <span>Apagar a conversa? As diretrizes continuam.</span>
+              <button className="btn danger small" onClick={clear}>Limpar</button>
+              <button className="btn ghost small" onClick={() => setClearing(false)} autoFocus>Cancelar</button>
+            </span>
+          ) : (
+            <button className={`btn ghost small ${s.clear}`} onClick={() => setClearing(true)}>Limpar conversa</button>
+          ))}
           <button className={s.close} onClick={onClose} aria-label="Fechar"><Svg d="M6 6l12 12M18 6 6 18" /></button>
         </div>
 
