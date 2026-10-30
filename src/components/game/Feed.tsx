@@ -237,6 +237,11 @@ export function TurnWait({ status, phases }: { status: string; phases: Phase[] }
 
 /** "Anteriormente...": retomada ao abrir uma campanha com histórico. Sem IA: resumo da cena + fim da última narração. */
 export function Recap({ name, scene, last, onClose }: { name: string; scene: Scene; last?: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !document.querySelector("[aria-modal='true']") && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
     <section className={s.recap} aria-label="Anteriormente">
       <button className={s.recapClose} onClick={onClose} aria-label="Fechar a retomada"><Icon name="close" size={15} /></button>
