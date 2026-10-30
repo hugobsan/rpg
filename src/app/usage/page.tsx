@@ -63,6 +63,8 @@ function Usage() {
   const fp = new URLSearchParams(qs);
   fp.delete("page");
   fp.delete("size");
+  fp.delete("sort");
+  fp.delete("dir");
   const filterQs = fp.toString();
 
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -115,6 +117,9 @@ function Usage() {
   const t = summary?.totals;
   const pages = logs ? Math.max(Math.ceil(logs.total / logs.pageSize), 1) : 1;
   const page = logs?.page ?? 1;
+  // ordenação do histórico: no servidor (é paginado) e na URL; padrão = mais recentes primeiro
+  const logSort: Sort = { key: sp.get("sort") || "when", dir: sp.get("dir") === "asc" ? "asc" : "desc" };
+  const sortLogs = (key: string, dir: Dir) => set({ sort: key === "when" ? null : key, dir: key === "when" && dir === "desc" ? null : dir });
 
   return (
     <div className="container">
@@ -234,7 +239,11 @@ function Usage() {
           <div style={scroll}>
             <table className="plain">
               <thead>
-                <tr><th>Quando</th><th>Agente</th><th>Propósito</th><th>Modelo</th><th style={num}>Tokens (in/out)</th><th style={num}>Custo</th><th style={num}>Duração</th><th>Status</th></tr>
+                <tr>
+                  {LOG_COLS.map(([key, label, right]) => (
+                    <SortTh key={key} col={key} label={label} right={right} sort={logSort} onSort={sortLogs} />
+                  ))}
+                </tr>
               </thead>
               <tbody>
                 {logs.rows.map((l) => (
@@ -284,13 +293,51 @@ function Swatch({ color }: { color: string }) {
   return <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: color, marginRight: 6 }} />;
 }
 
-function Breakdown({ label, total, rows }: { label: string; total: number; rows: (Agg & { key: string; name: string; color?: string })[] }) {
+type Dir = "asc" | "desc";
+interface Sort { key: string; dir: Dir }
+// colunas do histórico: chave (a mesma da whitelist da rota), título, alinhada à direita
+const LOG_COLS: [string, string, boolean][] = [
+  ["when", "Quando", false], ["agent", "Agente", false], ["purpose", "Propósito", false], ["model", "Modelo", false],
+  ["tokens", "Tokens (in/out)", true], ["cost", "Custo", true], ["duration", "Duração", true], ["status", "Status", false],
+];
+
+/** cabeçalho clicável: 1º clique ordena (texto ▲, número ▼), o seguinte inverte */
+function SortTh({ col, label, right, sort, onSort }: { col: string; label: string; right?: boolean; sort: Sort; onSort: (key: string, dir: Dir) => void }) {
+  const active = sort.key === col;
+  const first: Dir = right || col === "when" || col === "last_at" ? "desc" : "asc";
+  return (
+    <th style={right ? num : undefined} aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button onClick={() => onSort(col, active ? (sort.dir === "asc" ? "desc" : "asc") : first)}
+        style={{ background: "none", border: 0, padding: 0, font: "inherit", color: active ? "var(--text)" : "inherit", cursor: "pointer", textTransform: "inherit", letterSpacing: "inherit", whiteSpace: "nowrap" }}>
+        {label}{active ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
+      </button>
+    </th>
+  );
+}
+
+type BRow = Agg & { key: string; name: string; color?: string };
+// valor de cada coluna das quebras para ordenar no cliente (% do custo segue o custo)
+const B_VAL: Record<string, (r: BRow) => number | string> = {
+  name: (r) => r.name.toLowerCase(), calls: (r) => r.calls, cost: (r) => r.cost, pct: (r) => r.cost,
+  tokens: (r) => r.prompt_tokens + r.completion_tokens, avg_ms: (r) => r.avg_ms ?? -1, last_at: (r) => r.last_at ?? "",
+};
+
+function Breakdown({ label, total, rows: raw }: { label: string; total: number; rows: BRow[] }) {
+  const [sort, setSort] = useState<Sort>({ key: "cost", dir: "desc" }); // padrão = ordem da API
+  const v = B_VAL[sort.key];
+  const rows = [...raw].sort((a, b) => (v(a) < v(b) ? -1 : v(a) > v(b) ? 1 : 0) * (sort.dir === "asc" ? 1 : -1));
+  const th = (col: string, text: string, right = true) => (
+    <SortTh col={col} label={text} right={right} sort={sort} onSort={(key, dir) => setSort({ key, dir })} />
+  );
   if (!rows.length) return <p className="muted">Nenhuma chamada no recorte.</p>;
   return (
     <div style={scroll}>
       <table className="plain">
         <thead>
-          <tr><th>{label}</th><th style={num}>Chamadas</th><th style={num}>Custo</th><th style={num}>% do custo</th><th style={num}>Tokens (in/out)</th><th style={num}>Tempo médio</th><th>Último uso</th></tr>
+          <tr>
+            {th("name", label, false)}{th("calls", "Chamadas")}{th("cost", "Custo")}{th("pct", "% do custo")}
+            {th("tokens", "Tokens (in/out)")}{th("avg_ms", "Tempo médio")}{th("last_at", "Último uso", false)}
+          </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
