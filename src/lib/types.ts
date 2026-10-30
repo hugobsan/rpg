@@ -325,6 +325,46 @@ export interface InboxItem {
   at: string; // quando chegou a última não lida
 }
 
+// ---------- Tarefas em segundo plano (lib/jobs.ts) ----------
+
+export interface Job {
+  id: number;
+  kind: string; // character | portrait | map | library
+  target: string | null;
+  label: string;
+  status: "running" | "done" | "error";
+  progress: { done: number; total: number } | null;
+  error: string | null;
+}
+
+// ---------- Biblioteca da campanha (tabela library) ----------
+
+export type LibraryKind = "ability" | "item";
+
+/** Habilidade da biblioteca: a mesma forma da ficha, sem o domínio (que é de quem aprende). */
+export type LibraryAbility = Omit<Ability, "progress"> & {
+  users?: string; // quem é conhecido por usar (cânone), ex.: "Clã Uchiha, Kakashi"
+};
+
+/** Item/ferramenta/equipamento da biblioteca. Vai para o inventário como { name, qty, description }. */
+export interface LibraryItem {
+  name: string;
+  category?: string; // arma, ferramenta, consumível, pergaminho, veículo...
+  rank?: string;
+  description?: string;
+  effect?: string;
+  damage?: string; // notação de dado
+}
+
+export interface LibraryEntry {
+  id: number;
+  kind: LibraryKind;
+  name: string;
+  data: LibraryAbility | LibraryItem;
+  canon: boolean;
+  source: "agent" | "gm";
+}
+
 // ---------- Agentes ----------
 
 export interface AgentConfig {

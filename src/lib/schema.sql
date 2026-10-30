@@ -185,3 +185,31 @@ CREATE INDEX IF NOT EXISTS npc_chats_campaign_idx ON npc_chats (campaign_id, id)
 CREATE INDEX IF NOT EXISTS scene_images_campaign_idx ON scene_images (campaign_id, id);
 CREATE INDEX IF NOT EXISTS api_logs_campaign_idx ON api_logs (campaign_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS api_logs_created_idx ON api_logs (created_at DESC);
+
+-- tarefas em segundo plano (perfis de NPC, retratos, mapas 3D, biblioteca): a tela de jogo acompanha por aqui (lib/jobs.ts)
+CREATE TABLE IF NOT EXISTS jobs (
+  id BIGSERIAL PRIMARY KEY,
+  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,   -- character | portrait | map | library
+  target TEXT,          -- o alvo (id do personagem, do local...): duas iguais não rodam juntas
+  label TEXT NOT NULL,  -- o que o jogador lê ("Cartógrafo desenhando a Vila da Folha")
+  status TEXT NOT NULL DEFAULT 'running', -- running | done | error
+  progress JSONB,       -- { done, total }
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS jobs_campaign_idx ON jobs (campaign_id, id DESC);
+
+-- biblioteca da campanha: habilidades e itens do mundo/cânone, fonte para criar personagens e registrar técnicas
+CREATE TABLE IF NOT EXISTS library (
+  id BIGSERIAL PRIMARY KEY,
+  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,   -- ability | item
+  name TEXT NOT NULL,
+  data JSONB NOT NULL DEFAULT '{}', -- LibraryAbility | LibraryItem (types.ts)
+  canon BOOLEAN NOT NULL DEFAULT FALSE,
+  source TEXT NOT NULL DEFAULT 'agent', -- agent (Criador) | gm (registrada no jogo)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS library_name_idx ON library (campaign_id, kind, lower(name));

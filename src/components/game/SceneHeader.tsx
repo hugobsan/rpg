@@ -1,5 +1,5 @@
 "use client";
-import type { Scene } from "@/lib/types";
+import type { Job, Scene } from "@/lib/types";
 import { clockParts, period } from "@/lib/clock";
 import Icon, { type IconName } from "./Icon";
 import Loader from "../ui/Loader";
@@ -42,8 +42,20 @@ function Action({ icon, label, onClick, busy, disabled, className = "" }: {
   );
 }
 
+/** Tarefas em segundo plano rodando: a primeira por extenso (com progresso), as demais no título. */
+function Jobs({ jobs }: { jobs: Job[] }) {
+  const text = (j: Job) => `${j.label}${j.progress ? ` (${j.progress.done}/${j.progress.total})` : ""}`;
+  return (
+    <span className={s.jobs} title={jobs.map(text).join("\n")} aria-live="polite">
+      <Loader size={14} label="Em segundo plano" />
+      <span className={s.jobText}>{text(jobs[0])}</span>
+      {jobs.length > 1 && <span className={s.hint}>+{jobs.length - 1}</span>}
+    </span>
+  );
+}
+
 /** Cabeçalho da cena: modo, título, local, relógio com o céu do período e as ações da cena. */
-export default function SceneHeader({ scene, clock, image, onOoc, onMap, onTable, tableHint }: {
+export default function SceneHeader({ scene, clock, image, onOoc, onMap, onTable, tableHint, jobs = [] }: {
   scene: Scene;
   clock: number | null;
   image?: { busy: boolean; onClick: () => void }; // só com a geração de imagem ligada
@@ -51,6 +63,7 @@ export default function SceneHeader({ scene, clock, image, onOoc, onMap, onTable
   onMap?: () => void;
   onTable?: () => void;
   tableHint?: string; // dificuldade atual, quando foge do normal
+  jobs?: Job[]; // tarefas em segundo plano rodando
 }) {
   const per = clock === null ? null : period(clock);
   const { day, hour, minute } = clockParts(clock ?? 0);
@@ -77,6 +90,8 @@ export default function SceneHeader({ scene, clock, image, onOoc, onMap, onTable
           </span>
         </span>
       )}
+
+      {jobs.length > 0 && <Jobs jobs={jobs} />}
 
       <nav className={s.actions} aria-label="Ações da cena">
         {image && <Action icon="landscape" label="Ambiente" onClick={image.onClick} busy={image.busy} />}

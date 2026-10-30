@@ -4,7 +4,8 @@ import { listBooks } from "./books";
 import { messagePage } from "./messages";
 import { listInbox } from "./npc";
 import { loadMap } from "./map";
-import type { Campaign, Character, InboxItem, Scene } from "./types";
+import { listJobs } from "./jobs";
+import type { Campaign, Character, InboxItem, Job, Scene } from "./types";
 
 export interface ChatLine {
   id: number;
@@ -25,13 +26,14 @@ export interface CampaignView {
   lastImage: { id: number; url: string } | null;
   ui: { diceAnimation: boolean; imageGeneration: boolean }; // Configurações, ligadas por padrão
   inbox: InboxItem[]; // mensagens particulares de NPC não lidas (npc_message)
+  jobs: Job[]; // tarefas em segundo plano rodando ou recém-terminadas (lib/jobs.ts)
 }
 
 /** Lança "Campanha não encontrada" se o id não existe. */
 export async function campaignView(id: string): Promise<CampaignView> {
   const campaign = await getCampaign(id);
   campaign.state.map ??= await loadMap(id, campaign.state); // campanha antiga: mapa montado das cenas, sem gravar
-  const [scene, characters, books, page, memories, images, ui, inbox] = await Promise.all([
+  const [scene, characters, books, page, memories, images, ui, inbox, jobs] = await Promise.all([
     getCurrentScene(id),
     getCharacters(id),
     listBooks(id),
@@ -45,6 +47,7 @@ export async function campaignView(id: string): Promise<CampaignView> {
     q<{ id: string }>(`SELECT id FROM scene_images WHERE campaign_id = $1 ORDER BY id DESC LIMIT 1`, [id]),
     getSetting<{ diceAnimation?: boolean; imageGeneration?: boolean }>("ui", {}),
     listInbox(id),
+    listJobs(id),
   ]);
   return {
     campaign,
@@ -61,5 +64,6 @@ export async function campaignView(id: string): Promise<CampaignView> {
         : null,
     ui: { diceAnimation: ui.diceAnimation !== false, imageGeneration: ui.imageGeneration !== false },
     inbox,
+    jobs,
   };
 }

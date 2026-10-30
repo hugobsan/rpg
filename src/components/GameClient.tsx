@@ -8,6 +8,7 @@ import { campaignTheme } from "@/lib/theme";
 import { effectiveCost } from "@/lib/progression";
 import { DIFFICULTIES, getTable } from "@/lib/table";
 import { useTurn } from "./game/useTurn";
+import { useJobs } from "./game/useJobs";
 import NpcModal from "./NpcModal";
 import OocModal from "./OocModal";
 import ImageViewer from "./ImageViewer";
@@ -89,6 +90,14 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   } = useTurn(campaignId, { initial, onEvent });
   draftRef.current = draft;
   stateRef.current = state;
+
+  // retratos, mapas 3D, biblioteca, perfis de NPC: ao terminar, relê a campanha e avisa
+  const jobs = useJobs(campaignId, state?.jobs, (ended) => {
+    reloadState();
+    for (const j of ended)
+      if (j.status === "error") toast(j.error || "Tente de novo.", { kind: "alerta", title: `Falhou: ${j.label}` });
+      else toast(j.label, { kind: "sucesso", title: "Pronto" });
+  });
 
   // O HTML já traz o feed: até hidratar, a coluna invertida mostra o fim (sem pular do topo para o fim)
   const [hydrated, setHydrated] = useState(false);
@@ -296,6 +305,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           onMap={() => show("map")}
           onTable={() => show("table")}
           tableHint={difficulty === "normal" ? undefined : DIFFICULTIES.find((d) => d.key === difficulty)?.label}
+          jobs={jobs.filter((j) => j.status === "running")}
         />
 
         <div className={s.feedWrap}>
