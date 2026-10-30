@@ -81,6 +81,10 @@ As decisões 1, 2 e 4 vão numa única chamada antes do turno. Se o Jev falhar (
 
 A cena atual tem um modo — `exploration`, `dialogue`, `battle`, `training`, `downtime` — que o Mestre troca via `set_scene`. Cada modo muda as instruções de ritmo (batalha = turnos táticos com recursos honestos; diálogo = falas curtas; treino = progresso incremental com recompensas mecânicas) e a cor/indicador na interface.
 
+### Relógio do jogo
+
+A história tem dia e hora (`campaigns.state.clock`, minutos desde o "Dia 1, 00:00" da campanha; helpers em `src/lib/clock.ts`). O banner da cena mostra "Dia 1 · 08:40 · manhã" e a hora entra no contexto do Mestre a cada turno. O Mestre avança o relógio com `advance_time` (quanto a interação levou) e fixa com `set_time` (abertura e saltos como "na manhã seguinte"). Se ele esquecer, o Jev escolhe uma faixa de tempo (quase nada, alguns minutos, ~15 min, ~1 h, algumas horas, meio dia ou mais) e o código soma os minutos da faixa; se o Jev falhar, o relógio não anda. O "gerar novamente" volta o relógio junto com o resto do turno, e a imagem do ambiente usa o período do dia.
+
 ### Estilos de campanha
 
 Escolhido na criação: **Aberta** (você descreve tudo livremente), **Híbrida** (opções sugeridas + digitação livre; diálogos sempre livres) ou **Guiada** (o Mestre dá opções concretas e a história fica mais controlada e verossímil).

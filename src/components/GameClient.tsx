@@ -14,6 +14,7 @@ import Gallery from "./Gallery";
 import InventoryView from "./InventoryView";
 import AbilitiesView from "./AbilitiesView";
 import DiceRoller, { diceText } from "./DiceRoller";
+import { formatClock, getClock, period, PERIOD_ICON } from "@/lib/clock";
 
 // ---------- helpers ----------
 
@@ -147,6 +148,8 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
       ]);
     else if (ev.type === "narration") setFeed((f) => [...f, { key: nextKey(), kind: "gm", content: ev.content }]);
     else if (ev.type === "choices") setChoices(ev.choices);
+    else if (ev.type === "time")
+      setState((s) => s && { ...s, campaign: { ...s.campaign, state: { ...s.campaign.state, clock: { minutes: ev.minutes } } } });
   };
 
   // libera os eventos retidos até a próxima rolagem (all: libera tudo, sem animar)
@@ -249,6 +252,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
             case "dice":
             case "narration":
             case "choices":
+            case "time":
               if (diceAnim.current && (ev.type === "dice" || held.current.length)) {
                 held.current.push(ev);
                 if (ev.type === "dice" && held.current.length === 1) setPendingDice(ev.result);
@@ -310,6 +314,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   const player = characters.find((c) => c.kind === "player");
   const npcs = characters.filter((c) => c.kind === "npc");
   const modeColor = MODE_COLOR[scene.mode] || "var(--accent)";
+  const clock = getClock(campaign.state);
 
   return (
     <div className="game-layout" style={{ "--side-w": `${sideW}px` } as CSSProperties}>
@@ -320,6 +325,13 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
           </span>
           <span style={{ fontFamily: "var(--serif)", fontSize: 15 }}>{campaign.name}</span>
           {scene.location && <span className="loc">📍 {scene.location}</span>}
+          {clock ? (
+            <span className="loc" title="Hora na história (o Mestre avança a cada interação)">
+              {PERIOD_ICON[period(clock.minutes)]} {formatClock(clock.minutes)} · {period(clock.minutes)}
+            </span>
+          ) : (
+            <span className="loc" title="O Mestre define a hora no próximo turno">🕐 hora ainda não definida</span>
+          )}
           <span style={{ flex: 1 }} />
           {imageGen && (
             <button className="btn ghost small" onClick={() => generateImage()} disabled={imageBusy}>

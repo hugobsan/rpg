@@ -5,6 +5,7 @@ import { addMemory, searchMemories, searchBookChunks } from "./retrieval";
 import { listBooks, readPages } from "./books";
 import { Ability, Campaign, Character, Scene, Sheet, TurnEvent } from "./types";
 import { abilityPromptLine, blankSheet, currentMilestone, nextMilestone } from "./ruleset";
+import { clockParts, formatClock, formatDuration, getClock, period, toMinutes } from "./clock";
 
 const MILESTONE_SCHEMA = {
   type: "array",
@@ -298,6 +299,38 @@ export const GM_TOOLS: ToolDef[] = [
   {
     type: "function",
     function: {
+      name: "advance_time",
+      description:
+        "Avança o relógio da história pelo tempo que a interação levou. Chame uma vez por turno em que o tempo passa, com uma estimativa realista: uma troca de falas leva minutos, um combate poucos minutos, uma refeição ou um treino curto ~1 h, uma viagem horas. Exige o relógio já definido (set_time).",
+      parameters: S(
+        {
+          minutes: { type: "number", description: "minutos que se passaram (ex: 5, 20, 90, 240)" },
+          reason: { type: "string", description: "o que levou esse tempo" },
+        },
+        ["minutes", "reason"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_time",
+      description:
+        "Fixa o relógio da história: na abertura da campanha, quando o relógio ainda não existe, e em saltos explícitos (\"na manhã seguinte\", \"três dias depois\", dormir até de manhã). Sem day, vale o dia atual; se a hora já passou hoje, vira o dia seguinte (o tempo não volta).",
+      parameters: S(
+        {
+          day: { type: "number", description: "dia da campanha (1 = primeiro dia); omita para hoje/próximo" },
+          hour: { type: "number", description: "0-23" },
+          minute: { type: "number", description: "0-59" },
+          reason: { type: "string", description: "por que o relógio mudou" },
+        },
+        ["hour", "minute", "reason"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "get_character",
       description: "Lê a ficha completa e persona de um personagem (player ou NPC, ativo ou não).",
       parameters: S({ name: { type: "string" } }, ["name"]),
@@ -376,6 +409,14 @@ async function getChar(campaignId: string, name: string): Promise<Character> {
   );
   if (!rows.length) throw new Error(`Personagem "${name}" não existe nesta campanha.`);
   return rows[0];
+}
+
+/** Grava o relógio sem tocar no resto de campaigns.state. */
+export async function saveClock(campaignId: string, minutes: number): Promise<void> {
+  await q(`UPDATE campaigns SET state = state || jsonb_build_object('clock', jsonb_build_object('minutes', $1::int)) WHERE id = $2`, [
+    minutes,
+    campaignId,
+  ]);
 }
 
 async function saveSheet(id: string, sheet: Sheet): Promise<void> {
@@ -555,10 +596,13 @@ export async function executeGmTool(
       return `Campo atualizado.`;
     }
     case "add_memory": {
+      // quando aconteceu, para o Mestre medir prazos e "há quanto tempo"
+      const clock = getClock(ctx.campaign.state);
+      const when = clock ? `[Dia ${clockParts(clock.minutes).day}, ${period(clock.minutes)}] ` : "";
       await addMemory(
         cid,
         String(args.kind),
-        String(args.content),
+        when + String(args.content),
         args.subject ? String(args.subject) : null,
         Number(args.importance ?? 3)
       );
@@ -668,6 +712,32 @@ export async function executeGmTool(
         summary: `🎬 ${ctx.scene.mode}${ctx.scene.location ? ` — ${ctx.scene.location}` : ""}`,
       });
       return `Cena atualizada: modo=${ctx.scene.mode}, local=${ctx.scene.location}.`;
+    }
+    case "advance_time":
+    case "set_time": {
+      const before = getClock(ctx.campaign.state)?.minutes;
+      let minutes: number;
+      if (name === "advance_time") {
+        if (before === undefined) return "O relógio ainda não foi definido: chame set_time primeiro.";
+        const delta = Math.round(Number(args.minutes));
+        if (!Number.isFinite(delta) || delta < 0) return "minutes precisa ser um número >= 0.";
+        minutes = before + Math.min(delta, 30 * 1440);
+      } else {
+        const hour = Math.round(Number(args.hour));
+        const minute = Math.round(Number(args.minute ?? 0));
+        if (!(hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59)) return "hour 0-23 e minute 0-59.";
+        const today = before === undefined ? 1 : clockParts(before).day;
+        const day = args.day !== undefined ? Math.max(1, Math.round(Number(args.day)) || 1) : today;
+        minutes = toMinutes(day, hour, minute);
+        // sem day explícito o tempo não volta: hora que já passou hoje = amanhã
+        if (args.day === undefined && before !== undefined && minutes < before) minutes += 1440;
+      }
+      await saveClock(cid, minutes);
+      ctx.campaign.state = { ...ctx.campaign.state, clock: { minutes } };
+      ctx.emit({ type: "time", minutes });
+      const delta = before === undefined ? "" : ` (${minutes >= before ? "+" : "-"}${formatDuration(Math.abs(minutes - before))})`;
+      ctx.emit({ type: "tool", name, summary: `🕐 ${formatClock(minutes)}${delta}${args.reason ? ` — ${args.reason}` : ""}` });
+      return `Relógio: ${formatClock(minutes)} (${period(minutes)})${delta}.`;
     }
     case "get_character": {
       const c = await getChar(cid, String(args.name));

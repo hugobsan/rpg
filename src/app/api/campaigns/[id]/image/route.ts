@@ -3,6 +3,7 @@ import { getSetting, q } from "@/lib/db";
 import { getAgent } from "@/lib/agents";
 import { chat } from "@/lib/openrouter";
 import { getCampaign, getCurrentScene } from "@/lib/engine";
+import { getClock, period } from "@/lib/clock";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -32,7 +33,9 @@ export async function POST(
       .reverse()
       .join("\n")
       .slice(-2500);
-    const prompt = `Ilustração de cena de RPG, estilo anime cinematográfico detalhado. Cenário: ${campaign.ruleset.name}. Local: ${scene.location || "desconhecido"}. Modo da cena: ${scene.mode}.\n\nDescrição do momento atual (ilustre fielmente o ambiente e a atmosfera; sem texto na imagem):\n${context}`;
+    const clock = getClock(campaign.state);
+    const light = clock ? ` Período do dia: ${period(clock.minutes)} (a luz e o céu devem refletir isso).` : "";
+    const prompt = `Ilustração de cena de RPG, estilo anime cinematográfico detalhado. Cenário: ${campaign.ruleset.name}. Local: ${scene.location || "desconhecido"}. Modo da cena: ${scene.mode}.${light}\n\nDescrição do momento atual (ilustre fielmente o ambiente e a atmosfera; sem texto na imagem):\n${context}`;
 
     const result = await chat({
       model: agent.model,

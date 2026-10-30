@@ -3,9 +3,10 @@ import { getAgent } from "./agents";
 import { chat, ChatMessage, estimateTokens } from "./openrouter";
 import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
 import { addMemory, MemoryHit, recentMemories, searchMemories } from "./retrieval";
-import { decideTurn, scoreImportance } from "./decisions";
+import { decideElapsed, decideTurn, scoreImportance } from "./decisions";
+import { formatClock, getClock, period } from "./clock";
 import { takeSnapshot } from "./turnSnapshot";
-import { executeGmTool, GM_TOOLS, ToolContext } from "./tools";
+import { executeGmTool, GM_TOOLS, saveClock, ToolContext } from "./tools";
 import {
   Campaign,
   CampaignScript,
@@ -120,13 +121,18 @@ async function buildGmSystem(
     .map((c) => c.name);
 
   const activeArc = campaign.script?.arcs.find((a) => a.status === "active");
+  const clock = getClock(campaign.state);
 
   const parts = [
     basePrompt,
     `\n====== CAMPANHA: ${campaign.name} ======`,
     STYLE_INSTRUCTIONS[campaign.style] || STYLE_INSTRUCTIONS.hybrid,
     `\n--- MECÂNICA ---\n${rulesetPromptSummary(campaign.ruleset)}`,
-    `\n--- CENA ATUAL (nº ${scene.seq}) ---\nModo: ${scene.mode} | Local: ${scene.location || "?"} | Título: ${scene.title || "-"}\n${MODE_HINTS[scene.mode] || ""}${scene.summary ? `\nResumo do que já aconteceu nesta cena (compactado): ${scene.summary}` : ""}`,
+    `\n--- CENA ATUAL (nº ${scene.seq}) ---\nModo: ${scene.mode} | Local: ${scene.location || "?"} | Título: ${scene.title || "-"}\n${
+      clock
+        ? `Hora na história: ${formatClock(clock.minutes)} (${period(clock.minutes)})`
+        : "Hora na história: AINDA NÃO DEFINIDA. Chame set_time neste turno com uma hora coerente com a história até aqui."
+    }\n${MODE_HINTS[scene.mode] || ""}${scene.summary ? `\nResumo do que já aconteceu nesta cena (compactado): ${scene.summary}` : ""}`,
     player
       ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset)}`
       : "",
@@ -306,6 +312,7 @@ export async function runTurn(
   const toolCtx: ToolContext = { campaign, scene, emit };
   const maxRounds = params.maxToolRounds ?? 8;
   let finalText = "";
+  let timeMoved = false; // o Mestre chamou advance_time/set_time neste turno
 
   for (let round = 0; round <= maxRounds; round++) {
     // :online só na 1ª rodada: o plugin cobra por requisição e repetiria a mesma busca a cada rodada
@@ -343,6 +350,7 @@ export async function runTurn(
             summary: toolSummary(call.function.name, args),
           });
         }
+        if (/^(advance|set)_time$/.test(call.function.name)) timeMoved = true;
         output = await executeGmTool(call.function.name, args, toolCtx);
         scene = toolCtx.scene; // set_scene pode ter trocado a cena
       } catch (e) {
@@ -363,8 +371,37 @@ export async function runTurn(
   emit({ type: "narration", content: narration, messageId: msgId });
   if (choices.length) emit({ type: "choices", choices });
 
-  await maybeCompact(campaignId, scene).catch(() => {});
+  // depois da narração (o jogador já está lendo); antes do done, para o "gerar novamente" não cruzar com a gravação
+  await Promise.all([
+    maybeCompact(campaignId, scene).catch(() => {}),
+    timeMoved ? null : fallbackClock(campaignId, campaign, scene, playerInput, narration, emit).catch(() => {}),
+  ]);
   emit({ type: "done" });
+}
+
+/** O Mestre esqueceu de mexer no relógio: o Jev escolhe uma faixa de tempo e o código soma. Falhou = não anda. */
+async function fallbackClock(
+  campaignId: string,
+  campaign: Campaign,
+  scene: Scene,
+  playerInput: string,
+  narration: string,
+  emit: (e: TurnEvent) => void
+): Promise<void> {
+  const clock = getClock(campaign.state);
+  if (!clock) return; // sem relógio, o Mestre define com set_time no próximo turno
+  const delta = await decideElapsed(
+    {
+      scene: { mode: scene.mode, location: scene.location },
+      clock: `${formatClock(clock.minutes)} (${period(clock.minutes)})`,
+      playerAction: playerInput,
+      gmNarration: narration,
+    },
+    campaignId
+  );
+  if (!delta) return;
+  await saveClock(campaignId, clock.minutes + delta);
+  emit({ type: "time", minutes: clock.minutes + delta });
 }
 
 function toolSummary(name: string, args: Record<string, unknown>): string {

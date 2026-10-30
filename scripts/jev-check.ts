@@ -6,7 +6,7 @@
  *   npx tsx scripts/jev-check.ts [--model typesafe/jev-1.14-20261014]
  */
 import {
-  buildImportanceRequest, buildNpcRequest, buildTurnRequest, decide, gateTurn, importanceLevel,
+  buildElapsedRequest, buildImportanceRequest, buildNpcRequest, ELAPSED_MINUTES, buildTurnRequest, decide, gateTurn, importanceLevel,
   COMPLEX_MIN, MEMORY_MIN, NPC_WILLING_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
 } from "../src/lib/decisions";
 import { pool } from "../src/lib/db";
@@ -138,6 +138,21 @@ const importanceCases: [string, number | null][] = [
       const probs = s.type === "score" ? JSON.stringify(s.probabilities) : "";
       check(`nível ${level} ${t} ${probs}`, exp === null ? null : level === exp, s.type === "score" ? s.score : NaN, `esperado ${exp ?? "?"}`);
     });
+  }
+
+  console.log("\n== 7. tempo do turno quando o Mestre esquece advance_time (faixa escolhida)");
+  const elapsedCases: [string, string, string, keyof typeof ELAPSED_MINUTES][] = [
+    ["pergunta curta", "Pergunto o nome dele.", '**Iruka:** "Me chamo Iruka." Ele sorri e espera você continuar.', "quase_nada"],
+    ["conversa", "Converso com o Iruka sobre o exame.", 'Vocês conversam sobre o exame de genin: os clones, a prova escrita, os colegas que já desistiram. **Iruka:** "Você vai conseguir." Ele se despede e volta para a sala.', "alguns_minutos"],
+    ["refeição", "Vou ao Ichiraku comer.", "Você atravessa a vila até o Ichiraku, pede um lámen grande, come sem pressa ouvindo Teuchi falar do movimento e paga a conta.", "uma_hora"],
+    ["dormir", "Vou dormir até amanhã.", "Você volta para casa, cai na cama e dorme pesado. Acorda com o sol entrando pela janela e os pássaros lá fora.", "meio_dia_ou_mais"],
+  ];
+  for (const [label, action, narration, exp] of elapsedCases) {
+    const a = await ask(label, buildElapsedRequest({ scene: { mode: "exploration", location: "Konoha" }, clock: "Dia 1 · 15:00 (tarde)", playerAction: action, gmNarration: narration }));
+    const e = a.elapsed;
+    const choice = e.type === "choice" ? e.choice : "?";
+    const probs = e.type === "choice" ? JSON.stringify(Object.fromEntries(Object.entries(e.probabilities || {}).map(([k, v]) => [k, +v.toFixed(2)]))) : "";
+    check(`${label}: ${choice} (+${ELAPSED_MINUTES[choice as keyof typeof ELAPSED_MINUTES] ?? "?"} min) ${probs}`, choice === exp, e.type === "choice" ? e.probabilities?.[exp] ?? NaN : NaN, `esperado ${exp}`);
   }
 
   await pool().end();

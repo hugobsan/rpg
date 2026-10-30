@@ -354,3 +354,55 @@ export async function decideGender(g: GenderInput, campaignId: string): Promise<
     if ((a.probabilities?.[k] ?? (a.choice === k ? 1 : 0)) >= GENDER_MIN) return k;
   return null;
 }
+
+// ---------- 7: quanto tempo passou (quando o Mestre esquece advance_time) ----------
+
+// Faixa → minutos somados ao relógio. O Jev escolhe a faixa (choice); a quantidade fica no código.
+export const ELAPSED_MINUTES = {
+  quase_nada: 1,
+  alguns_minutos: 5,
+  quinze_minutos: 15,
+  uma_hora: 60,
+  algumas_horas: 180,
+  meio_dia_ou_mais: 480,
+} as const;
+
+export interface ElapsedInput {
+  scene: { mode: string; location: string | null };
+  clock: string; // "Dia 1 · 08:40 (manhã)"
+  playerAction: string;
+  gmNarration: string;
+}
+
+export function buildElapsedRequest(t: ElapsedInput): DecisionRequest {
+  return {
+    state: {
+      cena: { modo: t.scene.mode, local: t.scene.location },
+      hora_antes_do_turno: t.clock,
+      acao_do_jogador: t.playerAction,
+      narracao_do_mestre: t.gmNarration.slice(-2000),
+    },
+    questions: {
+      elapsed: {
+        type: "choice",
+        instructions:
+          "Quanto tempo se passou dentro da história entre a `acao_do_jogador` e o fim da `narracao_do_mestre`?",
+        criteria: {
+          quase_nada: "Quase nada, segundos: uma pergunta rápida, uma fala curta, um olhar, um único golpe.",
+          alguns_minutos: "Alguns minutos: uma conversa curta, uma troca de golpes, examinar algo, andar até ali perto.",
+          quinze_minutos: "Cerca de 15 minutos: uma conversa longa, um combate inteiro, uma busca num lugar pequeno.",
+          uma_hora: "Cerca de uma hora: uma refeição, uma aula ou treino curto, atravessar a vila a pé.",
+          algumas_horas: "Algumas horas: uma viagem curta, um treino longo, uma tarde ou noite de atividade.",
+          meio_dia_ou_mais: "Meio dia ou mais: dormir a noite, uma viagem longa, um salto de tempo para outro dia.",
+        },
+      },
+    },
+  };
+}
+
+/** Minutos a somar, ou null se o Jev falhar (aí o relógio não anda). */
+export async function decideElapsed(t: ElapsedInput, campaignId: string): Promise<number | null> {
+  const answers = await decide(buildElapsedRequest(t), { campaignId, purpose: "tempo do turno (Mestre esqueceu)" });
+  const a = answers?.elapsed;
+  return a?.type === "choice" ? ELAPSED_MINUTES[a.choice as keyof typeof ELAPSED_MINUTES] : null;
+}

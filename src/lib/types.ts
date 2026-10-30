@@ -231,5 +231,6 @@ export type TurnEvent =
   | { type: "choices"; choices: string[] }
   | { type: "scene"; scene: Partial<Scene> }
   | { type: "state" } // fichas mudaram; cliente deve recarregar
+  | { type: "time"; minutes: number } // relógio da história mudou (minutos desde o Dia 1, 00:00)
   | { type: "done" }
   | { type: "error"; message: string };
