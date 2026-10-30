@@ -1,8 +1,21 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Loader from "@/components/ui/Loader";
 import { toast } from "@/components/ui/Toast";
+import type { DiceResult } from "@/lib/types";
 import s from "./settings.module.css";
+
+// só baixa a caixa 3D quando o jogador pede o teste
+const DiceRoller = dynamic(() => import("@/components/DiceRoller"), { ssr: false });
+
+/** Rolagem de mentira para testar a animação (1d20+3 contra CD 15, com crítico no 20/1). */
+function testRoll(): DiceResult {
+  const d = 1 + Math.floor(Math.random() * 20);
+  const total = d + 3;
+  const crit = d === 20 ? "success" : d === 1 ? "failure" : undefined;
+  return { notation: "1d20+3", rolls: [d], modifier: 3, total, reason: "Teste da animação", dc: 15, success: crit ? crit === "success" : total >= 15, crit };
+}
 
 export interface SettingsShape {
   openrouter: { configured: boolean; apiKeyMasked: string };
@@ -50,6 +63,22 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
     }
     setSaving(false);
   };
+
+  // Ctrl+S / Cmd+S salva (e nunca abre o "salvar página" do navegador)
+  const saveRef = useRef<() => void>(() => {});
+  saveRef.current = () => { if (dirty && !saving) save(); };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        saveRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const [diceTest, setDiceTest] = useState<DiceResult | null>(null);
 
   const testOpenRouter = async () => {
     setTesting(true);
@@ -141,6 +170,11 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
             <b>Animação 3D dos dados</b>
             <span>Quando o Mestre rola, o chat mostra o botão &quot;Rolar dados&quot; e você arremessa os dados numa caixa 3D. O valor é sorteado no servidor; a animação só o mostra. Desligada, o resultado aparece direto no chat.</span>
             <input type="checkbox" role="switch" checked={diceAnimation} onChange={(e) => setDiceAnimation(e.target.checked)} />
+            {/* preventDefault: o clique no botão não liga/desliga o interruptor do label */}
+            <button type="button" className={`btn small ${s.switchAction}`}
+              onClick={(e) => { e.preventDefault(); setDiceTest(testRoll()); }}>
+              Ver animação
+            </button>
           </label>
           <label className={s.switch}>
             <b>Imagens do ambiente</b>
@@ -151,11 +185,13 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
       </section>
 
       <div className={`${s.saveBar} ${dirty ? s.dirty : ""}`}>
-        <span className={s.saveMsg} aria-live="polite">{dirty ? "Há alterações não salvas" : "Tudo salvo"}</span>
+        <span className={s.saveMsg} aria-live="polite">{dirty ? "Há alterações não salvas · Ctrl+S salva" : "Tudo salvo"}</span>
         <button className="btn primary" onClick={save} disabled={saving || !dirty}>
           {saving && <Loader size={16} label="Salvando" />} Salvar configurações
         </button>
       </div>
+
+      {diceTest && <DiceRoller result={diceTest} onDone={() => setDiceTest(null)} />}
     </>
   );
 }
