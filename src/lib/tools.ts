@@ -24,6 +24,7 @@ import {
 import { clockParts, formatClock, formatDuration, getClock, period, toMinutes } from "./clock";
 import { expireObjectives, formatRemaining, getObjectives, Objective, OBJECTIVE_KIND_LABEL, ObjectiveKind } from "./objectives";
 import { executeMapTool, MAP_TOOLS, recordScenePlace } from "./map";
+import { executeLocalMapTool, LOCAL_MAP_TOOLS } from "./cartographer";
 import { dcResultText, getTable, tableDc } from "./table";
 import { queueProfile } from "./characters";
 
@@ -513,6 +514,7 @@ export const GM_TOOLS: ToolDef[] = [
     },
   },
   ...MAP_TOOLS,
+  ...LOCAL_MAP_TOOLS,
 ];
 
 export interface ToolContext {
@@ -1191,6 +1193,8 @@ export async function executeGmTool(
     case "update_map":
     case "set_stage":
       return executeMapTool(name, args, ctx);
+    case "local_map":
+      return executeLocalMapTool(args, ctx);
     default:
       return `Ferramenta desconhecida: ${name}`;
   }

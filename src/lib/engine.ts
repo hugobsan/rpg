@@ -8,6 +8,7 @@ import { attributeCap, attributePoints, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
 import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { getStage, loadMap, mapPromptBlock, normName } from "./map";
+import { localMapsPromptBlock } from "./cartographer";
 import { getTable, tablePromptBlock } from "./table";
 import { takeSnapshot } from "./turnSnapshot";
 import { executeGmTool, findNamed, GM_TOOLS, saveClock, setNpcsActive, ToolContext } from "./tools";
@@ -155,6 +156,7 @@ async function buildGmSystem(
     }\n${MODE_HINTS[scene.mode] || ""}${scene.summary ? `\nResumo do que já aconteceu nesta cena (compactado): ${scene.summary}` : ""}`,
     objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null),
     mapPromptBlock(await loadMap(campaign.id, campaign.state), getStage(scene.state), scene.mode),
+    await localMapsPromptBlock(campaign),
     player
       ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset)}`
       : "",

@@ -8,16 +8,22 @@
  * - scene: lê scene.state.stage (SceneStage) e scene.mode (em batalha o palco vem primeiro)
  * - characters: o jogador (nome do peão) e os NPCs ativos (peões junto do jogador)
  *
- * O diorama 3D (three) carrega sob demanda e só renderiza quando algo se mexe; enquanto carrega,
- * e sem WebGL, fica a visão 2D (SVG). "Ampliar" abre o mapa em tela cheia, com zoom.
+ * - maps / jobs: mapas 3D dos locais (Cartógrafo) e as tarefas rodando; onChanged relê a campanha
+ *
+ * Duas abas: Local (o mapa 3D do lugar da cena, ou de outro lugar com mapa: LocalMap.tsx) e Mundo
+ * (o diorama). O diorama 3D (three) carrega sob demanda e só renderiza quando algo se mexe; enquanto
+ * carrega, e sem WebGL, fica a visão 2D (SVG). "Ampliar" abre o mapa em tela cheia, com zoom.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import Loader from "@/components/ui/Loader";
 import { formatClock, getClock, period } from "@/lib/clock";
-import type { Campaign, Character, MapPlace, Scene, SceneStage, WorldMap } from "@/lib/types";
+import type { LocalMapInfo } from "@/lib/mapSpec";
+import type { Campaign, Character, Job, MapPlace, Scene, SceneStage, WorldMap } from "@/lib/types";
 import type { DioramaData, DioramaHandle, DioramaToken } from "./diorama";
+import LocalMap from "./LocalMap";
 import StageView from "./StageView";
+import s from "./LocalMap.module.css";
 
 const KIND_LABEL: Record<string, string> = {
   cidade: "cidade", vila: "vila", bairro: "bairro", predio: "prédio", casa: "casa", sala: "sala",
@@ -37,7 +43,14 @@ function readStage(state: Record<string, unknown>): SceneStage | null {
   return s && Array.isArray(s.actors) && Array.isArray(s.zones) ? s : null;
 }
 
-export default function MapPanel({ campaign, scene, characters }: { campaign: Campaign; scene: Scene; characters: Character[] }) {
+export default function MapPanel({ campaign, scene, characters, maps = [], jobs = [], onChanged }: {
+  campaign: Campaign;
+  scene: Scene;
+  characters: Character[];
+  maps?: LocalMapInfo[];
+  jobs?: Job[];
+  onChanged?: () => void;
+}) {
   const map = readMap(campaign.state);
   const stage = readStage(scene.state);
   const player = characters.find((c) => c.kind === "player")?.name ?? "";
@@ -46,6 +59,19 @@ export default function MapPanel({ campaign, scene, characters }: { campaign: Ca
   const [selected, setSelected] = useState<string | null>(null);
   const [full, setFull] = useState(false);
   const dio = useRef<DioramaHandle | null>(null);
+  // em destaque, o mapa 3D do lugar da cena (se tiver ou estiver sendo desenhado); senão o mundo
+  const hasLocal = (id?: string) => !!id && (maps.some((m) => m.placeId === id) || jobs.some((j) => j.kind === "map" && j.target === id && j.status === "running"));
+  const [tab, setTab] = useState<"local" | "world">(() => (hasLocal(map?.current) ? "local" : "world"));
+  const [localPlace, setLocalPlace] = useState<string | null>(null); // outro lugar aberto pela galeria (null = o atual)
+  useEffect(() => {
+    setLocalPlace(null);
+    if (hasLocal(map?.current)) setTab("local");
+  }, [map?.current]); // eslint-disable-line react-hooks/exhaustive-deps
+  const openLocal = (id: string | null) => {
+    setLocalPlace(id === map?.current ? null : id);
+    setTab("local");
+  };
+  const localId = localPlace ?? map?.current;
 
   // NPCs ativos e quem está no palco (com a postura), menos o jogador
   const data = useMemo<DioramaData | null>(() => {
@@ -71,7 +97,8 @@ export default function MapPanel({ campaign, scene, characters }: { campaign: Ca
     dio.current?.focus();
   };
   const card = map && shown && (
-    <PlaceCard map={map} id={shown} characters={characters} player={player} onPick={setSelected} onBack={backHome} />
+    <PlaceCard map={map} id={shown} characters={characters} player={player} onPick={setSelected} onBack={backHome}
+      onMap={onChanged ? () => openLocal(shown) : undefined} hasMap={maps.some((m) => m.placeId === shown)} />
   );
   const stageBlock =
     stage || scene.mode === "battle" ? (
@@ -89,7 +116,30 @@ export default function MapPanel({ campaign, scene, characters }: { campaign: Ca
   return (
     <div className="map-panel">
       {battleFirst && stageBlock}
-      {data && places.length ? (
+      {onChanged && localId && map && (
+        <div className={s.tabs} role="tablist" aria-label="Mapa">
+          <button role="tab" className={s.tab} aria-selected={tab === "local"} onClick={() => setTab("local")}>
+            Local · <b>{map.places.find((p) => p.id === localId)?.name ?? "?"}</b>
+          </button>
+          <button role="tab" className={s.tab} aria-selected={tab === "world"} onClick={() => setTab("world")}>
+            Mundo
+          </button>
+        </div>
+      )}
+      {onChanged && localId && map && tab === "local" ? (
+        <LocalMap
+          campaignId={campaign.id}
+          world={map}
+          maps={maps}
+          jobs={jobs}
+          stage={stage}
+          player={player}
+          period={per}
+          placeId={localId}
+          onPlace={openLocal}
+          onChanged={onChanged}
+        />
+      ) : data && places.length ? (
         <section className="map-section" aria-label="Mapa do mundo">
           {full ? (
             <div className="map3d">
@@ -234,13 +284,15 @@ function WorldSvg({ map, selected, onSelect }: { map: WorldMap; selected: string
 }
 
 /** Cartão do local: tipo, onde fica, visitas, descrição, rotas, o que há dentro e quem está lá. */
-function PlaceCard({ map, id, characters, player, onPick, onBack }: {
+function PlaceCard({ map, id, characters, player, onPick, onBack, onMap, hasMap }: {
   map: WorldMap;
   id: string;
   characters: Character[];
   player: string;
   onPick: (id: string) => void;
   onBack: () => void;
+  onMap?: () => void; // abre o mapa 3D do lugar (aba Local)
+  hasMap?: boolean;
 }) {
   const byId = (x?: string) => map.places.find((p) => p.id === x);
   const p = byId(id);
@@ -265,6 +317,7 @@ function PlaceCard({ map, id, characters, player, onPick, onBack }: {
       <div className="map-place-head">
         <h3 className="display">{p.name}</h3>
         {here ? <span className="pill on">Você está aqui</span> : map.current && <button className="btn ghost small" onClick={onBack}>Voltar ao local atual</button>}
+        {onMap && <button className="btn small" onClick={onMap}>{hasMap ? "Ver mapa 3D" : "Mapa 3D"}</button>}
       </div>
       <p className="map-place-meta muted">
         {KIND_LABEL[p.kind] ?? p.kind}

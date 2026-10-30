@@ -362,7 +362,7 @@ export function stageText(s: SceneStage): string {
 
 const DIR8 = ["N", "NE", "L", "SE", "S", "SO", "O", "NO"];
 /** "NE, perto" de `a` até `b`, pelas posições do mapa. */
-function relation(a: MapPlace, b: MapPlace): string {
+export function relation(a: MapPlace, b: MapPlace): string {
   if (b.parent === a.id) return "dentro daqui";
   if (!has(a) || !has(b)) return "";
   const dx = b.x! - a.x!, dy = b.y! - a.y!;

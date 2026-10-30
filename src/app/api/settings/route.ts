@@ -12,7 +12,7 @@ function mask(key: string): string {
 export async function GET() {
   const openrouter = await getSetting<{ apiKey?: string }>("openrouter", {});
   const { enabled, model } = await getEmbeddingConfig();
-  const ui = await getSetting<{ diceAnimation?: boolean; imageGeneration?: boolean }>("ui", {});
+  const ui = await getSetting<{ diceAnimation?: boolean; imageGeneration?: boolean; autoMaps?: boolean }>("ui", {});
   return NextResponse.json({
     openrouter: {
       configured: !!(openrouter.apiKey || process.env.OPENROUTER_API_KEY),
@@ -20,7 +20,7 @@ export async function GET() {
     },
     embeddings: { enabled, model },
     // ligadas por padrão
-    ui: { diceAnimation: ui.diceAnimation !== false, imageGeneration: ui.imageGeneration !== false },
+    ui: { diceAnimation: ui.diceAnimation !== false, imageGeneration: ui.imageGeneration !== false, autoMaps: ui.autoMaps !== false },
   });
 }
 
@@ -37,6 +37,7 @@ export async function PUT(req: NextRequest) {
     await setSetting("ui", {
       diceAnimation: !!body.ui.diceAnimation,
       imageGeneration: body.ui.imageGeneration !== false,
+      autoMaps: body.ui.autoMaps !== false,
     });
   return NextResponse.json({ ok: true });
 }

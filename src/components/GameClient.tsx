@@ -284,7 +284,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
       case "npcs":
         return <NpcList npcs={npcs} onOpen={setOpenNpc} campaignId={campaignId} inbox={state.inbox} onChange={reloadState} />;
       case "map":
-        return <MapPanel campaign={campaign} scene={scene} characters={state.characters} />;
+        return <MapPanel campaign={campaign} scene={scene} characters={state.characters} maps={state.maps} jobs={jobs} onChanged={reloadState} />;
       case "memories":
         return <MemoriesView memories={state.memories} />;
       case "books":
@@ -412,6 +412,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           campaignId={campaignId}
           npc={state?.characters.find((c) => c.id === openNpc.id) ?? openNpc}
           campaign={campaign}
+          profiling={jobs.some((j) => j.kind === "character" && j.target === openNpc.id && j.status === "running")}
           onChanged={reloadState}
           onClose={() => {
             setOpenNpc(null);

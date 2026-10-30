@@ -5,7 +5,9 @@ import { messagePage } from "./messages";
 import { listInbox } from "./npc";
 import { loadMap } from "./map";
 import { listJobs } from "./jobs";
-import type { Campaign, Character, InboxItem, Job, Scene } from "./types";
+import { listLocalMaps } from "./cartographer";
+import type { LocalMapInfo } from "./mapSpec";
+import type { Campaign, Character, InboxItem, Job, Scene, WorldMap } from "./types";
 
 export interface ChatLine {
   id: number;
@@ -27,6 +29,7 @@ export interface CampaignView {
   ui: { diceAnimation: boolean; imageGeneration: boolean }; // Configurações, ligadas por padrão
   inbox: InboxItem[]; // mensagens particulares de NPC não lidas (npc_message)
   jobs: Job[]; // tarefas em segundo plano rodando ou recém-terminadas (lib/jobs.ts)
+  maps: LocalMapInfo[]; // mapas 3D dos locais (Cartógrafo), sem o spec (vem por /maps?map=id)
 }
 
 /** Lança "Campanha não encontrada" se o id não existe. */
@@ -77,5 +80,6 @@ export async function campaignView(id: string): Promise<CampaignView> {
     ui: { diceAnimation: ui.diceAnimation !== false, imageGeneration: ui.imageGeneration !== false },
     inbox,
     jobs,
+    maps: await listLocalMaps(id, campaign.state.map as WorldMap),
   };
 }

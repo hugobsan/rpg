@@ -20,7 +20,7 @@ function testRoll(): DiceResult {
 export interface SettingsShape {
   openrouter: { configured: boolean; apiKeyMasked: string };
   embeddings: { enabled: boolean; model: string };
-  ui: { diceAnimation: boolean; imageGeneration: boolean };
+  ui: { diceAnimation: boolean; imageGeneration: boolean; autoMaps: boolean };
 }
 type Result = { ok: boolean; text: string } | null;
 
@@ -36,6 +36,7 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
   const [emb, setEmb] = useState(initial.embeddings);
   const [diceAnimation, setDiceAnimation] = useState(initial.ui.diceAnimation);
   const [imageGeneration, setImageGeneration] = useState(initial.ui.imageGeneration);
+  const [autoMaps, setAutoMaps] = useState(initial.ui.autoMaps);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [test, setTest] = useState<Result>(null);
@@ -43,11 +44,11 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
   const [re, setRe] = useState<Result>(null);
 
   const embDirty = emb.enabled !== data.embeddings.enabled || emb.model !== data.embeddings.model;
-  const dirty = !!orKey.trim() || embDirty || diceAnimation !== data.ui.diceAnimation || imageGeneration !== data.ui.imageGeneration;
+  const dirty = !!orKey.trim() || embDirty || diceAnimation !== data.ui.diceAnimation || imageGeneration !== data.ui.imageGeneration || autoMaps !== data.ui.autoMaps;
 
   const save = async () => {
     setSaving(true);
-    const body: Record<string, unknown> = { embeddings: emb, ui: { diceAnimation, imageGeneration } };
+    const body: Record<string, unknown> = { embeddings: emb, ui: { diceAnimation, imageGeneration, autoMaps } };
     if (orKey.trim()) body.openrouterApiKey = orKey.trim();
     const res = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
     if (res?.ok) {
@@ -180,6 +181,11 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
             <b>Imagens do ambiente</b>
             <span>O botão &quot;Ver ambiente&quot; gera uma imagem da cena com o Ilustrador; costuma ser a chamada mais cara do jogo. Desligada, o botão some. As imagens que já existem continuam na ficha e na galeria.</span>
             <input type="checkbox" role="switch" checked={imageGeneration} onChange={(e) => setImageGeneration(e.target.checked)} />
+          </label>
+          <label className={s.switch}>
+            <b>O Mestre gera mapas 3D sozinho</b>
+            <span>Quando você chega a um lugar importante, o Mestre pede ao Cartógrafo o mapa 3D dele, e o edita quando a história muda o lugar. Usa um modelo caro (Claude Opus). Desligado, só os botões da aba Mapa geram e editam.</span>
+            <input type="checkbox" role="switch" checked={autoMaps} onChange={(e) => setAutoMaps(e.target.checked)} />
           </label>
         </div>
       </section>

@@ -233,3 +233,16 @@ CREATE TABLE IF NOT EXISTS portraits (
   version INT NOT NULL DEFAULT 1,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- mapas 3D dos locais (Cartógrafo): spec declarativo (lib/mapSpec.ts) ligado a um lugar de campaigns.state.map;
+-- o nome resolve quando o id do lugar muda (junção, gerar novamente). Fora do state, que é lido em todo turno.
+CREATE TABLE IF NOT EXISTS maps (
+  id BIGSERIAL PRIMARY KEY,
+  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  place_id TEXT NOT NULL,   -- id do lugar no mapa do mundo (l1, l2...)
+  place_name TEXT NOT NULL,
+  spec JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS maps_campaign_idx ON maps (campaign_id, updated_at DESC);

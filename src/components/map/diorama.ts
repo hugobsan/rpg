@@ -31,7 +31,7 @@ const noise = (x: number, z: number) =>
   Math.sin(x * 0.9 + 1.3) * Math.cos(z * 0.7 - 0.4) * 0.5 + Math.sin(x * 2.1 + z * 1.7) * 0.22 + Math.cos(x * 0.35 - z * 0.5) * 0.4;
 
 /** Cores do tema: lê o token CSS e resolve qualquer sintaxe (hex, rgb, color-mix) por um pixel de canvas. */
-function palette(el: HTMLElement) {
+export function palette(el: HTMLElement) {
   const cs = getComputedStyle(el);
   const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
   const read = (name: string, fallback: string) => {
