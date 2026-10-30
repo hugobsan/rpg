@@ -103,6 +103,8 @@ O mapa (`campaigns.state.map`, `src/lib/map.ts`) se monta sozinho: todo `set_sce
 
 O palco (`scenes.state.stage`, ferramenta `set_stage`) guarda as zonas do lugar e onde cada personagem está em relação ao jogador: distância (corpo a corpo, perto, médio, longe), postura (aliado, hostil, neutro), cobertura e elevação. É o que mantém a batalha coerente entre os turnos: sem palco em batalha, o contexto pede ao Mestre que monte. Mudar de lugar dentro da mesma cena limpa o palco. O contexto do Mestre leva um bloco curto com o local atual, as rotas daqui, os locais por perto e o palco. O "gerar novamente" volta mapa e palco junto com o resto. Verificação: `npx tsx scripts/map-check.ts`.
 
+Na tela, `src/components/map/MapPanel.tsx` (props: `campaign`, `scene`, `characters`) mostra o mapa como um diorama 3D low-poly (three, carregado sob demanda): cada tipo de lugar vira uma miniatura, rotas são trilhas pontilhadas, o jogador e quem está com ele são peões (cor pela postura no palco), lugares conhecidos e não visitados aparecem translúcidos e a luz segue o período do dia. Arrastar gira, clicar num lugar abre o cartão dele, a câmera desliza até o lugar novo quando você se move, e "Ampliar" abre o mapa em tela cheia com zoom. Cores e fontes vêm dos tokens do tema da campanha. Só renderiza quando algo se mexe; sem WebGL, cai para uma visão 2D em SVG. O palco aparece em 2D no mesmo painel (anéis de distância, zonas, cobertura e elevação), primeiro em batalha.
+
 ### Estilos de campanha
 
 Escolhido na criação: **Aberta** (você descreve tudo livremente), **Híbrida** (opções sugeridas + digitação livre; diálogos sempre livres) ou **Guiada** (o Mestre dá opções concretas e a história fica mais controlada e verossímil).
