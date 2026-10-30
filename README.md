@@ -77,6 +77,8 @@ As decisões 1, 2 e 4 vão numa única chamada antes do turno. Se o Jev falhar (
 5. **Roteiro interno**: para campanhas com cânone, o Roteirista monta arcos ancorados na linha do tempo da obra. O Mestre consulta (`get_script`) e anota progresso (`update_script`) — é assim que ele "sabe onde está" no cânone.
 6. **NPCs com vida própria**: conversas particulares acontecem com o agente NPC (que pode **recusar** conforme a cena). O NPC guarda a conversa inteira; ao encerrar, o Cronista salva só os pontos importantes como memórias — exatamente o que o Mestre "ficaria sabendo".
 
+**Conversa fora do jogo**: o botão "💬 Falar com o Mestre (fora do jogo)" abre uma conversa sua, como jogador, com o Mestre (`gm_notes`, fora da história, do histórico do turno e do "gerar novamente"); ele responde sem spoilers e sem mexer no jogo, e orientações viram diretrizes (memória `directive`, permanentes ou só nesta cena e na próxima) que entram em todo turno em "DIRETRIZES DO JOGADOR" até você desativá-las no ✕.
+
 ### Ritmo por modo de cena
 
 A cena atual tem um modo — `exploration`, `dialogue`, `battle`, `training`, `downtime` — que o Mestre troca via `set_scene`. Cada modo muda as instruções de ritmo (batalha = turnos táticos com recursos honestos; diálogo = falas curtas; treino = progresso incremental com recompensas mecânicas) e a cor/indicador na interface.

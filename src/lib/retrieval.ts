@@ -52,7 +52,8 @@ export async function searchMemories(
   opts: { kind?: string; subject?: string; limit?: number } = {}
 ): Promise<MemoryHit[]> {
   const limit = opts.limit ?? 6;
-  const filters: string[] = ["campaign_id = $1"];
+  // diretrizes do jogador entram sempre por activeDirectives, não pela busca
+  const filters: string[] = ["campaign_id = $1", "kind <> 'directive'"];
   const params: unknown[] = [campaignId];
   if (opts.kind) {
     params.push(opts.kind);
@@ -98,9 +99,24 @@ export async function recentMemories(
 ): Promise<MemoryHit[]> {
   return q<MemoryHit>(
     `SELECT id, kind, subject, content, importance, created_at::text
-     FROM memories WHERE campaign_id = $1
+     FROM memories WHERE campaign_id = $1 AND kind <> 'directive'
      ORDER BY importance DESC, id DESC LIMIT $2`,
     [campaignId, limit]
+  );
+}
+
+/**
+ * Diretrizes do jogador (conversa fora do jogo) que valem agora: memórias kind 'directive',
+ * subject = escopo. "proxima_cena" vale na cena em que foi dada e na seguinte (sai quando
+ * set_scene cria a 2ª cena depois dela). Derivado das cenas, então o "gerar novamente" acompanha.
+ */
+export async function activeDirectives(campaignId: string): Promise<{ id: number; subject: string; content: string }[]> {
+  return q(
+    `SELECT id, subject, content FROM memories m
+     WHERE campaign_id = $1 AND kind = 'directive' AND (subject = 'permanente' OR
+       (SELECT count(*) FROM scenes s WHERE s.campaign_id = m.campaign_id AND s.created_at > m.created_at) < 2)
+     ORDER BY id`,
+    [campaignId]
   );
 }
 

@@ -2,7 +2,7 @@ import { q } from "./db";
 import { getAgent } from "./agents";
 import { chat, ChatMessage, estimateTokens } from "./openrouter";
 import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
-import { addMemory, MemoryHit, recentMemories, searchMemories } from "./retrieval";
+import { activeDirectives, addMemory, MemoryHit, recentMemories, searchMemories } from "./retrieval";
 import { decideElapsed, decideTurn, scoreImportance } from "./decisions";
 import { attributeCap, attributePoints, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
@@ -49,7 +49,7 @@ export async function getCharacters(campaignId: string): Promise<Character[]> {
 
 // ---------- montagem de contexto do Mestre ----------
 
-function sheetSummary(c: Character, full: boolean, rs: Ruleset): string {
+export function sheetSummary(c: Character, full: boolean, rs: Ruleset): string {
   const s = c.sheet;
   const res = Object.entries(s.resources)
     .map(([k, v]) => `${k} ${v.current}/${v.max}`)
@@ -131,6 +131,7 @@ async function buildGmSystem(
 
   const activeArc = campaign.script?.arcs.find((a) => a.status === "active");
   const clock = getClock(campaign.state);
+  const directives = await activeDirectives(campaign.id);
 
   const parts = [
     basePrompt,
@@ -158,6 +159,11 @@ async function buildGmSystem(
     memories.length
       ? `\n--- MEMÓRIAS RELEVANTES ---\n${memories
           .map((m) => `[${m.kind}${m.subject ? `/${m.subject}` : ""}] ${m.content}`)
+          .join("\n")}`
+      : "",
+    directives.length
+      ? `\n--- DIRETRIZES DO JOGADOR (fora do jogo) — siga ---\n${directives
+          .map((d) => `- ${d.content}${d.subject === "proxima_cena" ? " (vale nesta cena e na próxima)" : ""}`)
           .join("\n")}`
       : "",
   ];

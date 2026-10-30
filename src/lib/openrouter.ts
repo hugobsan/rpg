@@ -175,7 +175,10 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
         name: m.name,
         content:
           typeof m.content === "string"
-            ? m.content.slice(0, 4000)
+            ? m.content.length <= 6000
+              ? m.content
+              // começo + fim: o fim do system tem o contexto do turno (memórias, diretrizes)
+              : `${m.content.slice(0, 4000)}\n… [${m.content.length - 6000} caracteres cortados] …\n${m.content.slice(-2000)}`
             : "[multimodal]",
         tool_calls: m.tool_calls?.map((t) => t.function.name),
       })),

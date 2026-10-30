@@ -9,6 +9,7 @@ import type {
   TurnEvent,
 } from "@/lib/types";
 import NpcModal, { playLine } from "./NpcModal";
+import OocModal from "./OocModal";
 import ImageViewer from "./ImageViewer";
 import Gallery from "./Gallery";
 import InventoryView from "./InventoryView";
@@ -113,6 +114,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   const [regenOpen, setRegenOpen] = useState(false);
   const [regenReason, setRegenReason] = useState("");
   const [openNpc, setOpenNpc] = useState<Character | null>(null);
+  const [oocOpen, setOocOpen] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
   const keyCounter = useRef(0);
 
@@ -437,6 +439,12 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
               ➤
             </button>
           </div>
+          <div style={{ maxWidth: 760, margin: "0 auto" }}>
+            <button className="ooc-open" onClick={() => setOocOpen(true)}
+              title="Converse com o Mestre como jogador, não como personagem: nada disso entra na história">
+              💬 Falar com o Mestre (fora do jogo)
+            </button>
+          </div>
         </div>
       </div>
 
@@ -527,6 +535,8 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
       )}
 
       {rolling && <DiceRoller result={rolling} onDone={releaseDice} />}
+
+      {oocOpen && <OocModal campaignId={campaignId} onClose={() => setOocOpen(false)} />}
 
       {openNpc && (
         <NpcModal
@@ -678,6 +688,7 @@ function MemoriesView({
     npc: "🎭",
     discovery: "💡",
     relationship: "🤝",
+    directive: "📌",
   };
   const [filter, setFilter] = useState("all");
   const shown = memories.filter((m) => filter === "all" || m.kind === filter);
@@ -690,6 +701,7 @@ function MemoriesView({
         <option value="npc">🎭 NPCs</option>
         <option value="discovery">💡 Descobertas</option>
         <option value="relationship">🤝 Relações</option>
+        <option value="directive">📌 Diretrizes (fora do jogo)</option>
       </select>
       {shown.length === 0 && <p className="muted">Nada registrado ainda — a memória da campanha cresce conforme você joga.</p>}
       {shown.map((m) => (

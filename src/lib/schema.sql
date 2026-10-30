@@ -106,7 +106,7 @@ CREATE INDEX IF NOT EXISTS npc_chats_idx ON npc_chats (npc_id, session_id, id);
 CREATE TABLE IF NOT EXISTS memories (
   id BIGSERIAL PRIMARY KEY,
   campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL DEFAULT 'event', -- event | npc | discovery | milestone | relationship
+  kind TEXT NOT NULL DEFAULT 'event', -- event | npc | discovery | milestone | relationship | directive (subject = escopo)
   subject TEXT,
   content TEXT NOT NULL,
   importance INT NOT NULL DEFAULT 3,
@@ -165,3 +165,13 @@ CREATE TABLE IF NOT EXISTS tts_cache (
   data BYTEA NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- conversa fora do jogo com o Mestre (jogador como pessoa, não como personagem); não entra na história
+CREATE TABLE IF NOT EXISTS gm_notes (
+  id BIGSERIAL PRIMARY KEY,
+  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  role TEXT NOT NULL, -- player | gm
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS gm_notes_campaign_idx ON gm_notes (campaign_id, id);
