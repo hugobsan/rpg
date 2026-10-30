@@ -1,14 +1,13 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type {
   Campaign,
   CampaignScript,
   Character,
   Scene,
   TurnEvent,
-  VoiceProfile,
 } from "@/lib/types";
-import NpcModal from "./NpcModal";
+import NpcModal, { playLine } from "./NpcModal";
 import ImageViewer from "./ImageViewer";
 import Gallery from "./Gallery";
 
@@ -257,7 +256,23 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
               item.kind === "player" ? (
                 <div key={item.key} className="msg-player">{item.content}</div>
               ) : item.kind === "gm" ? (
-                <div key={item.key} className="msg-gm" dangerouslySetInnerHTML={{ __html: md(item.content) }} />
+                <div key={item.key} className="msg-gm">
+                  {/* linha a linha para pôr o 🔊 nas falas de NPC (**Nome:** "fala") */}
+                  {item.content.split("\n").map((line, i) => {
+                    const m = line.match(/^\*\*([^*]+?):\*\*\s*(.+)$/);
+                    const npc = m && npcs.find((n) => n.name.toLowerCase() === m[1].trim().toLowerCase());
+                    return (
+                      <Fragment key={i}>
+                        {i > 0 && "\n"}
+                        <span dangerouslySetInnerHTML={{ __html: md(line) }} />
+                        {npc && m && (
+                          <button className="speak" title={`Ouvir ${npc.name}`}
+                            onClick={() => playLine(campaignId, npc.id, m[2])}>🔊</button>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </div>
               ) : (
                 <div key={item.key} className={`event-chip ${item.kind}${item.outcome ? ` ${item.outcome}` : ""}`}>{item.content}</div>
               )
@@ -648,5 +663,3 @@ function ScriptView({
     </div>
   );
 }
-
-export type { VoiceProfile };

@@ -52,6 +52,7 @@ Cada agente é um registro editável (modelo + system prompt + parâmetros) na t
 | **Cronista** | `google/gemini-3.5-flash` | Compacta histórico e extrai memórias estruturadas | Roda com frequência; rápido e barato |
 | **Jev (decisões)** | `typesafe/jev-1.14-20261014` | Decide, sem gerar texto: modelo do turno, busca web, memórias relevantes, recusa de NPC, importância de memórias | Modelo de decisão: ~US$0,00005 e <1 s por chamada |
 | **Ilustrador** | `google/gemini-3.1-flash-image-preview` | Gera a imagem do ambiente atual sob demanda | Nano Banana 2: qualidade alta, custo baixo |
+| **Voz** | `heygen/heygen-voice-1-turbo:free` | Lê as falas dos NPCs (TTS), com voz padrão por sexo | Grátis e fala português; áudio em cache |
 
 O seletor de modelos busca a lista viva de `openrouter.ai/api/v1/models` com preço e contexto — os defaults nunca ficam obrigatórios.
 
@@ -92,7 +93,11 @@ Para criar outro cenário (Star Wars, D&D, cyberpunk...), copie o JSON, ajuste o
 
 ## Voz dos NPCs
 
-Cada NPC tem um perfil de voz (voz do navegador, tom, velocidade) configurável no modal do NPC — clique em 🔊 em qualquer fala para ouvi-lo. Usa `speechSynthesis` do navegador: zero custo e zero latência de API.
+Clique em 🔊 numa fala de NPC (no chat do Mestre, linhas `**Nome:** "fala"`, ou na conversa particular) para ouvi-la. A voz vem de um modelo de fala (TTS) do OpenRouter, escolhido no agente **Voz** em /agents junto com a voz masculina e a feminina padrão. O padrão é `heygen/heygen-voice-1-turbo:free` (grátis, fala português), com `lucian` (masculina) e `nadine` (feminina).
+
+- Cada NPC usa a voz padrão do seu sexo (`persona.gender`). O Mestre informa o sexo ao criar o NPC; nos NPCs antigos, o Jev decide pelo nome, persona e obra na primeira fala e o app grava. Sexo desconhecido usa a voz masculina.
+- No modal do NPC (aba 🔊) dá para trocar o sexo, escolher qualquer voz do modelo atual e ouvir uma prévia.
+- Só a fala é lida (os trechos entre aspas, sem o nome e sem markdown). O áudio fica em `tts_cache`: ouvir a mesma fala de novo não chama o OpenRouter.
 
 ## Custos sob controle
 
@@ -114,6 +119,7 @@ src/lib/
   engine.ts                # turno, contexto, compactação, roteirista
   tools.ts                 # ~20 ferramentas do Mestre
   decisions.ts             # Jev (Decisions API): perguntas, limiares e fallbacks
+  tts.ts                   # voz dos NPCs (TTS do OpenRouter) + cache de áudio
   npc.ts                   # conversas particulares com NPCs
   retrieval.ts             # busca vetorial com fallback FTS
   books.ts                 # ingestão/paginação/chunking de livros

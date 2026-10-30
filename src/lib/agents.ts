@@ -8,6 +8,7 @@ import { AgentConfig } from "./types";
  *  - NPC/Roteirista: modelo de ótimo custo para roleplay e planejamento
  *  - Cronista: modelo barato e rápido (sumarização/extração roda com frequência)
  *  - Imagem: modelo de geração de imagem unificada do OpenRouter
+ *  - Voz: modelo de fala (TTS) grátis do OpenRouter
  */
 export const DEFAULT_AGENTS: AgentConfig[] = [
   {
@@ -143,6 +144,19 @@ Regras: memórias são fatos que precisarão ser lembrados muitas sessões depoi
     web_search: false,
     params: {},
     system_prompt: "", // prompts de imagem são montados por chamada
+  },
+  {
+    id: "voice",
+    name: "Voz",
+    description:
+      "Dá voz às falas dos NPCs (🔊) com um modelo de fala (TTS) do OpenRouter. Cada NPC usa a voz padrão do seu sexo, ou a que você escolher no modal dele. O áudio fica em cache: ouvir a mesma fala de novo não cobra.",
+    // grátis e fala português; vozes padrão: lucian (masculina) e nadine (feminina)
+    model: "heygen/heygen-voice-1-turbo:free",
+    temperature: 0,
+    max_tokens: 0,
+    web_search: false,
+    params: { maleVoice: "lucian", femaleVoice: "nadine" },
+    system_prompt: "",
   },
 ];
 

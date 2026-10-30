@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS characters (
   canon BOOLEAN NOT NULL DEFAULT FALSE,
   sheet JSONB NOT NULL DEFAULT '{}',   -- atributos, recursos, habilidades, inventário, rank, xp
   persona JSONB NOT NULL DEFAULT '{}', -- história, personalidade, objetivos, segredos, aparência
-  voice JSONB,                          -- { voiceName, pitch, rate, lang }
+  voice JSONB,                          -- { model, voice } escolhida à mão; NULL = padrão pelo sexo
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (campaign_id, name)
@@ -152,5 +152,16 @@ CREATE TABLE IF NOT EXISTS turn_snapshots (
   campaign_id UUID PRIMARY KEY REFERENCES campaigns(id) ON DELETE CASCADE,
   player_input TEXT NOT NULL,
   data JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- vozes antigas do navegador (speechSynthesis) não valem para o TTS do OpenRouter
+UPDATE characters SET voice = NULL WHERE voice ? 'voiceName';
+
+-- áudio de fala já gerado (TTS): tocar a mesma fala de novo não cobra outra vez
+CREATE TABLE IF NOT EXISTS tts_cache (
+  key TEXT PRIMARY KEY, -- sha256 de modelo + voz + texto
+  mime TEXT NOT NULL,
+  data BYTEA NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

@@ -217,10 +217,14 @@ export type ModelPricing = {
 
 /** Lista modelos disponíveis no OpenRouter (para o seletor da tela de Agentes). */
 export async function listModels(): Promise<
-  { id: string; slug: string; name: string; context: number; pricing: ModelPricing }[]
+  {
+    id: string; slug: string; name: string; context: number; pricing: ModelPricing;
+    speech: boolean; // modelo de fala (TTS)
+    voices: string[] | null; // vozes aceitas (null = o catálogo não lista)
+  }[]
 > {
   const apiKey = await getOpenRouterKey();
-  // output_modalities=all inclui modelos de imagem e de decisão (a lista padrão só traz texto)
+  // output_modalities=all inclui modelos de imagem, de fala e de decisão (a lista padrão só traz texto)
   const res = await fetch("https://openrouter.ai/api/v1/models?output_modalities=all", {
     headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
   });
@@ -232,6 +236,8 @@ export async function listModels(): Promise<
       name: string;
       context_length: number;
       pricing: ModelPricing;
+      architecture?: { output_modalities?: string[] };
+      supported_voices?: string[] | null;
     }[];
   };
   return data.data
@@ -241,6 +247,8 @@ export async function listModels(): Promise<
       name: m.name,
       context: m.context_length,
       pricing: m.pricing,
+      speech: !!m.architecture?.output_modalities?.includes("speech"),
+      voices: m.supported_voices?.length ? m.supported_voices : null,
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
 }

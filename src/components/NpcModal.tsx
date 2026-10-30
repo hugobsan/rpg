@@ -9,7 +9,29 @@ interface ChatMsg {
   refused?: boolean;
 }
 
-const DEFAULT_VOICE: VoiceProfile = { pitch: 1, rate: 1, lang: "pt-BR" };
+let current: HTMLAudioElement | null = null;
+
+/** Toca a fala na voz do NPC (TTS do OpenRouter; o servidor guarda o áudio, repetir não cobra). */
+export async function playLine(campaignId: string, npcId: string, text: string) {
+  current?.pause();
+  const res = await fetch(`/api/campaigns/${campaignId}/npcs/${npcId}/speech`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) return alert(d.error || `Erro ${res.status} ao gerar a voz`);
+  current = new Audio(d.url);
+  current.play().catch(() => {});
+  return d as { voice: string; gender: "male" | "female" | null };
+}
+
+interface TtsInfo {
+  model: string;
+  male: string;
+  female: string;
+  voices: string[] | null; // null = o catálogo não lista: campo livre
+}
 
 export default function NpcModal({
   campaignId,
@@ -28,32 +50,28 @@ export default function NpcModal({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [ending, setEnding] = useState(false);
-  const [voice, setVoice] = useState<VoiceProfile>(npc.voice || DEFAULT_VOICE);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [voice, setVoice] = useState<VoiceProfile | null>(npc.voice);
+  const [gender, setGender] = useState(npc.persona.gender);
+  const [tts, setTts] = useState<TtsInfo | null>(null);
+  const [speaking, setSpeaking] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const load = () => setVoices(window.speechSynthesis?.getVoices() || []);
-    load();
-    window.speechSynthesis?.addEventListener("voiceschanged", load);
-    return () => window.speechSynthesis?.removeEventListener("voiceschanged", load);
-  }, []);
+    if (view === "voice" && !tts)
+      fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}/speech`).then((r) => r.json()).then(setTts);
+  }, [view, tts, campaignId, npc.id]);
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
   }, [msgs]);
 
-  const speak = (text: string) => {
-    const synth = window.speechSynthesis;
-    if (!synth) return alert("Seu navegador não suporta síntese de voz.");
-    synth.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.pitch = voice.pitch;
-    u.rate = voice.rate;
-    u.lang = voice.lang;
-    const v = voices.find((x) => x.name === voice.voiceName);
-    if (v) u.voice = v;
-    synth.speak(u);
+  const saving = useRef<Promise<unknown>>(Promise.resolve());
+  const speak = async (text: string) => {
+    setSpeaking(true);
+    await saving.current; // a prévia logo após trocar a voz espera o save
+    const d = await playLine(campaignId, npc.id, text);
+    if (d?.gender && gender === undefined) setGender(d.gender); // o Jev decidiu o sexo agora
+    setSpeaking(false);
   };
 
   const send = async () => {
@@ -91,18 +109,29 @@ export default function NpcModal({
         body: JSON.stringify({ sessionId }),
       }).catch(() => {});
     }
-    window.speechSynthesis?.cancel();
+    current?.pause();
     onClose();
   };
 
-  const saveVoice = async (v: VoiceProfile) => {
-    setVoice(v);
-    await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}`, {
+  const saveNpc = (body: object) =>
+    (saving.current = fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ voice: v }),
-    });
+      body: JSON.stringify(body),
+    }).catch(() => {}));
+  // voz vazia = padrão pelo sexo
+  const saveVoice = (v: string) => {
+    const next = v && tts ? { model: tts.model, voice: v } : null;
+    setVoice(next);
+    saveNpc({ voice: next });
   };
+  const saveGender = (g: string) => {
+    const next = g === "male" || g === "female" ? g : null;
+    setGender(next);
+    saveNpc({ gender: next });
+  };
+  const chosen = tts && voice?.model === tts.model ? voice.voice : "";
+  const defaultVoice = tts ? (gender === "female" ? tts.female : tts.male) : "";
 
   const toggleActive = async () => {
     await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}`, {
@@ -148,7 +177,7 @@ export default function NpcModal({
                 <div key={i} className={`npc-bubble ${m.role}`}>
                   {m.content}
                   {m.role === "npc" && !m.refused && (
-                    <button className="speak" title="Ouvir" onClick={() => speak(m.content)}>🔊</button>
+                    <button className="speak" title="Ouvir" disabled={speaking} onClick={() => speak(m.content)}>🔊</button>
                   )}
                 </div>
               ))}
@@ -164,39 +193,32 @@ export default function NpcModal({
           {view === "voice" && (
             <div>
               <label className="field">
-                <span>Voz do navegador</span>
-                <select
-                  value={voice.voiceName || ""}
-                  onChange={(e) => saveVoice({ ...voice, voiceName: e.target.value || undefined })}
-                >
-                  <option value="">(padrão do sistema)</option>
-                  {voices.map((v) => (
-                    <option key={v.name} value={v.name}>
-                      {v.name} ({v.lang})
-                    </option>
-                  ))}
+                <span>Sexo (define a voz padrão)</span>
+                <select value={gender ?? ""} onChange={(e) => saveGender(e.target.value)}>
+                  <option value="">
+                    não definido {gender === undefined ? "(o Jev decide na 1ª fala)" : "(usa a voz masculina padrão)"}
+                  </option>
+                  <option value="male">masculino</option>
+                  <option value="female">feminino</option>
                 </select>
               </label>
-              <label className="field">
-                <span>Tom (pitch): {voice.pitch.toFixed(2)}</span>
-                <input
-                  type="range" min={0.5} max={2} step={0.05}
-                  value={voice.pitch}
-                  onChange={(e) => saveVoice({ ...voice, pitch: Number(e.target.value) })}
-                  style={{ width: "100%" }}
-                />
-              </label>
-              <label className="field">
-                <span>Velocidade: {voice.rate.toFixed(2)}</span>
-                <input
-                  type="range" min={0.5} max={2} step={0.05}
-                  value={voice.rate}
-                  onChange={(e) => saveVoice({ ...voice, rate: Number(e.target.value) })}
-                  style={{ width: "100%" }}
-                />
-              </label>
-              <button className="btn small" onClick={() => speak(`Olá. Eu sou ${npc.name}.`)}>
-                ▶ Testar voz
+              {!tts && <p className="muted">Carregando vozes...</p>}
+              {tts && (
+                <label className="field">
+                  <span>Voz ({tts.model}, escolhido no agente Voz)</span>
+                  {tts.voices ? (
+                    <select value={chosen} onChange={(e) => saveVoice(e.target.value)}>
+                      <option value="">padrão pelo sexo ({defaultVoice || "sem voz padrão"})</option>
+                      {tts.voices.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  ) : (
+                    <input type="text" defaultValue={chosen} placeholder={`padrão pelo sexo (${defaultVoice || "sem voz padrão"})`}
+                      onBlur={(e) => saveVoice(e.target.value.trim())} />
+                  )}
+                </label>
+              )}
+              <button className="btn small" disabled={speaking} onClick={() => speak(`Olá. Eu sou ${npc.name}.`)}>
+                {speaking ? "gerando..." : "▶ Ouvir prévia"}
               </button>
             </div>
           )}

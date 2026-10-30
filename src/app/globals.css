@@ -233,8 +233,8 @@ label.field > span { display: block; margin-bottom: 5px; }
 .npc-bubble { max-width: 85%; padding: 9px 13px; border-radius: 12px; font-size: 14px; white-space: pre-wrap; }
 .npc-bubble.player { align-self: flex-end; background: var(--accent-soft); border: 1px solid rgba(212,162,78,0.3); }
 .npc-bubble.npc { align-self: flex-start; background: var(--bg); border: 1px solid var(--border); }
-.npc-bubble .speak { background: none; border: none; cursor: pointer; font-size: 14px; padding: 0 4px; opacity: 0.6; }
-.npc-bubble .speak:hover { opacity: 1; }
+.npc-bubble .speak, .msg-gm .speak { background: none; border: none; cursor: pointer; font-size: 14px; padding: 0 4px; opacity: 0.6; }
+.npc-bubble .speak:hover, .msg-gm .speak:hover { opacity: 1; }
 
 /* ---------- tabelas (agentes/logs) ---------- */
 table.plain { width: 100%; border-collapse: collapse; font-size: 13px; }

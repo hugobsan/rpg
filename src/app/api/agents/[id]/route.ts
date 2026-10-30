@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
 import { getAgent } from "@/lib/agents";
 import { getModelPricing } from "@/lib/openrouter";
+import { modelVoices } from "@/lib/tts";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,19 @@ export async function PUT(
       { error: `Modelo "${model}" não existe no catálogo do OpenRouter. Escolha um id da lista.` },
       { status: 400 }
     );
+  // agente Voz: as vozes padrão precisam existir no modelo escolhido (quando o catálogo lista as vozes)
+  if (id === "voice") {
+    const voices = await modelVoices(model).catch(() => null);
+    const p = body.params ?? current.params;
+    const bad = voices?.length
+      ? [p.maleVoice, p.femaleVoice].map((v) => String(v ?? "")).find((v) => !voices.includes(v))
+      : undefined;
+    if (bad !== undefined)
+      return NextResponse.json(
+        { error: `A voz "${bad || "(vazia)"}" não existe em ${model}. Escolha as vozes padrão de novo.` },
+        { status: 400 }
+      );
+  }
   await q(
     `UPDATE agents SET name=$1, description=$2, model=$3, temperature=$4,
      max_tokens=$5, web_search=$6, system_prompt=$7, params=$8, pricing=$9, updated_at=now()

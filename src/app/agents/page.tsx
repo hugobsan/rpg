@@ -23,6 +23,8 @@ interface Model {
   name: string;
   context: number;
   pricing: { prompt: string; completion: string };
+  speech: boolean;
+  voices: string[] | null;
 }
 
 const usd = (n: number | null) => (n == null ? "-" : `$${n.toFixed(n < 0.01 ? 5 : 4)}`);
@@ -133,6 +135,7 @@ function AgentCard({
   };
 
   const modelInfo = models.find((m) => m.id === form.model);
+  const noPrompt = agent.id === "decider" || agent.id === "voice";
 
   return (
     <div className="card" style={{ marginBottom: 14 }}>
@@ -163,7 +166,8 @@ function AgentCard({
                 onChange={(e) => setForm({ ...form, model: e.target.value })}
               />
               <datalist id={`models-${agent.id}`}>
-                {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {/* agente Voz só lista modelos de fala */}
+                {models.filter((m) => agent.id !== "voice" || m.speech).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </datalist>
               {modelInfo && (
                 <span className="muted">
@@ -171,8 +175,8 @@ function AgentCard({
                 </span>
               )}
             </label>
-            {/* Jev só usa o modelo: sem temperatura, tokens, web ou prompt */}
-            {agent.id !== "decider" && <>
+            {/* Jev e Voz só usam o modelo: sem temperatura, tokens, web ou prompt */}
+            {!noPrompt && <>
             <label className="field">
               <span>Temperatura</span>
               <input type="number" step={0.1} min={0} max={2} value={form.temperature}
@@ -200,7 +204,27 @@ function AgentCard({
               />
             </label>
           )}
-          {agent.id !== "decider" && (
+          {agent.id === "voice" && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {([["maleVoice", "Voz masculina padrão"], ["femaleVoice", "Voz feminina padrão"]] as const).map(([k, label]) => (
+                <label key={k} className="field">
+                  <span>{label}</span>
+                  {/* vozes do modelo escolhido; sem lista no catálogo, campo livre */}
+                  {modelInfo?.voices ? (
+                    <select value={String(form.params[k] ?? "")}
+                      onChange={(e) => setForm({ ...form, params: { ...form.params, [k]: e.target.value } })}>
+                      {!modelInfo.voices.includes(String(form.params[k] ?? "")) && <option value="">(escolha)</option>}
+                      {modelInfo.voices.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  ) : (
+                    <input type="text" value={String(form.params[k] ?? "")}
+                      onChange={(e) => setForm({ ...form, params: { ...form.params, [k]: e.target.value } })} />
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
+          {!noPrompt && (
             <label className="field">
               <span>System prompt</span>
               <textarea rows={12} value={form.system_prompt}

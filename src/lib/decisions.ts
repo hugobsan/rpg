@@ -303,3 +303,54 @@ export async function scoreImportance(
   });
   return fallback.map((f, i) => importanceLevel(answers?.[`m${i}`]) ?? f);
 }
+
+// ---------- 6: sexo do NPC (escolhe a voz padrão) ----------
+
+// Sexo só vale se P >= limiar; abaixo disso fica desconhecido (voz masculina padrão; o usuário troca no modal).
+// Probe (2026-10-30): Iruka Umino male 1.00, Tsunade female 0.99, "Kai" quieto unknown 0.74 (male 0.26),
+// golem de pedra unknown 0.86. Errar a voz é barato: o usuário troca no modal.
+export const GENDER_MIN = 0.7;
+
+export interface GenderInput {
+  name: string;
+  canon: boolean;
+  setting: string;
+  persona: { appearance?: string; personality?: string; backstory?: string };
+}
+
+export function buildGenderRequest(g: GenderInput): DecisionRequest {
+  return {
+    state: {
+      obra_ou_cenario: g.setting,
+      personagem: {
+        nome: g.name,
+        canonico_da_obra: g.canon,
+        aparencia: g.persona.appearance || null,
+        personalidade: g.persona.personality || null,
+        historia: g.persona.backstory?.slice(0, 800) || null,
+      },
+    },
+    questions: {
+      gender: {
+        type: "choice",
+        instructions:
+          "Qual é o sexo do `personagem`, pelo nome, pela descrição e pelo que se sabe dele na `obra_ou_cenario`? Ele define a voz (masculina ou feminina) do personagem.",
+        criteria: {
+          male: "Masculino: homem, menino ou criatura apresentada como macho.",
+          female: "Feminino: mulher, menina ou criatura apresentada como fêmea.",
+          unknown: "Não dá para saber: nome neutro sem descrição que indique, ou ser sem sexo definido.",
+        },
+      },
+    },
+  };
+}
+
+/** "male" | "female" | null (desconhecido). undefined = o Jev falhou (não grave, tente na próxima). */
+export async function decideGender(g: GenderInput, campaignId: string): Promise<"male" | "female" | null | undefined> {
+  const answers = await decide(buildGenderRequest(g), { campaignId, purpose: `sexo do NPC (${g.name})` });
+  const a = answers?.gender;
+  if (a?.type !== "choice") return undefined;
+  for (const k of ["male", "female"] as const)
+    if ((a.probabilities?.[k] ?? (a.choice === k ? 1 : 0)) >= GENDER_MIN) return k;
+  return null;
+}

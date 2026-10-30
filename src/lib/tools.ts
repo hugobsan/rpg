@@ -218,6 +218,11 @@ export const GM_TOOLS: ToolDef[] = [
         {
           name: { type: "string" },
           canon: { type: "boolean" },
+          gender: {
+            type: "string",
+            enum: ["male", "female", "unknown"],
+            description: "sexo do NPC (define a voz); unknown só se não houver como saber",
+          },
           rank: { type: "string", description: "key do rank do ruleset" },
           appearance: { type: "string" },
           personality: { type: "string" },
@@ -245,7 +250,7 @@ export const GM_TOOLS: ToolDef[] = [
             },
           },
         },
-        ["name", "personality"]
+        ["name", "gender", "personality"]
       ),
     },
   },
@@ -581,6 +586,8 @@ export async function executeGmTool(
         backstory: args.backstory ? String(args.backstory) : undefined,
         goals: args.goals ? String(args.goals) : undefined,
         secrets: args.secrets ? String(args.secrets) : undefined,
+        // sem o parâmetro fica undefined e o Jev decide na 1ª fala
+        gender: args.gender === "male" || args.gender === "female" ? args.gender : args.gender === "unknown" ? null : undefined,
       };
       await q(
         `INSERT INTO characters (campaign_id, kind, name, active, canon, sheet, persona)

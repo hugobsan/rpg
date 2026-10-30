@@ -93,13 +93,14 @@ export interface Persona {
   backstory?: string;
   goals?: string;
   secrets?: string; // só o Mestre vê
+  // sexo: define a voz padrão. undefined = ainda não decidido (o Jev decide na 1ª fala); null = desconhecido
+  gender?: "male" | "female" | null;
 }
 
+/** Voz escolhida à mão; só vale para o modelo em que foi escolhida. null no personagem = padrão pelo sexo. */
 export interface VoiceProfile {
-  voiceName?: string; // voz do navegador (speechSynthesis)
-  pitch: number;
-  rate: number;
-  lang: string;
+  model: string;
+  voice: string;
 }
 
 export interface Character {
