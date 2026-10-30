@@ -228,6 +228,57 @@ export interface Scene {
   is_current: boolean;
 }
 
+// ---------- Mapa do mundo (campaigns.state.map) e palco da cena (scenes.state.stage) ----------
+
+/** Um local do mapa. x/y em unidades do mapa (x = leste, y = norte), calculados pelo código (map.ts). */
+export interface MapPlace {
+  id: string; // "l1", "l2"...
+  name: string;
+  aliases?: string[];
+  /** cidade, vila, bairro, predio, casa, sala, torre, templo, floresta, campo, montanha, agua, caverna, ruina, estrada, base, nave, portal, regiao, lugar — ou texto livre */
+  kind: string;
+  parent?: string; // id do local que contém este
+  description?: string;
+  x?: number;
+  y?: number;
+  /** dica de posição do Mestre: para que lado (N, NE, L...) e a que distância de outro local */
+  near?: { of: string; dir?: string; dist?: string };
+  discoveredAt?: number; // minutos do relógio do jogo
+  visits: number;
+}
+
+export interface MapRoute {
+  from: string;
+  to: string;
+  label?: string;
+  travel?: string; // tempo de viagem, ex.: "20 min a pé"
+}
+
+export interface WorldMap {
+  places: MapPlace[];
+  routes: MapRoute[];
+  current?: string; // id do local atual
+}
+
+export type StageDistance = "corpo_a_corpo" | "perto" | "medio" | "longe";
+export type StageStance = "aliado" | "hostil" | "neutro";
+
+/** Personagem no palco; a distância é sempre até o jogador. */
+export interface StageActor {
+  name: string;
+  zone?: string;
+  distance: StageDistance;
+  stance: StageStance;
+  cover?: "parcial" | "total";
+  elevated?: boolean;
+  note?: string;
+}
+
+export interface SceneStage {
+  zones: { name: string; note?: string }[];
+  actors: StageActor[];
+}
+
 export interface GameMessage {
   id: number;
   role: "player" | "gm" | "system" | "tool";

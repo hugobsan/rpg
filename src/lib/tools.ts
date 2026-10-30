@@ -22,6 +22,7 @@ import {
 } from "./progression";
 import { clockParts, formatClock, formatDuration, getClock, period, toMinutes } from "./clock";
 import { expireObjectives, formatRemaining, getObjectives, Objective, OBJECTIVE_KIND_LABEL, ObjectiveKind } from "./objectives";
+import { executeMapTool, MAP_TOOLS, recordScenePlace } from "./map";
 
 const MILESTONE_SCHEMA = {
   type: "array",
@@ -523,6 +524,7 @@ export const GM_TOOLS: ToolDef[] = [
       parameters: S({}, []),
     },
   },
+  ...MAP_TOOLS,
 ];
 
 export interface ToolContext {
@@ -1006,6 +1008,7 @@ export async function executeGmTool(
     }
     case "set_scene": {
       const moved = !!args.newScene || (args.location !== undefined && String(args.location) !== ctx.scene.location);
+      await recordScenePlace(ctx, args); // mapa: local novo e rota desde o anterior (antes de a cena mudar)
       if (args.newScene) {
         await q(`UPDATE scenes SET is_current = FALSE WHERE campaign_id = $1`, [cid]);
         const rows = await q<Scene>(
@@ -1195,6 +1198,9 @@ export async function executeGmTool(
       if (!books.length) return "Nenhum livro indexado nesta campanha.";
       return books.map((b) => `${b.title} — bookId=${b.id}, ${b.pages} páginas`).join("\n");
     }
+    case "update_map":
+    case "set_stage":
+      return executeMapTool(name, args, ctx);
     default:
       return `Ferramenta desconhecida: ${name}`;
   }

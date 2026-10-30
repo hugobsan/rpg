@@ -7,6 +7,7 @@ import { decideCast, decideElapsed, decideTurn, scoreImportance } from "./decisi
 import { attributeCap, attributePoints, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
 import { getObjectives, objectivesPromptBlock } from "./objectives";
+import { getStage, loadMap, mapPromptBlock } from "./map";
 import { takeSnapshot } from "./turnSnapshot";
 import { executeGmTool, findNamed, GM_TOOLS, saveClock, setNpcsActive, ToolContext } from "./tools";
 import {
@@ -144,6 +145,7 @@ async function buildGmSystem(
         : "Hora na história: AINDA NÃO DEFINIDA. Chame set_time neste turno com uma hora coerente com a história até aqui."
     }\n${MODE_HINTS[scene.mode] || ""}${scene.summary ? `\nResumo do que já aconteceu nesta cena (compactado): ${scene.summary}` : ""}`,
     objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null),
+    mapPromptBlock(await loadMap(campaign.id, campaign.state), getStage(scene.state), scene.mode),
     player
       ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset)}`
       : "",

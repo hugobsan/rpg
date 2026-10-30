@@ -95,6 +95,12 @@ A história tem dia e hora (`campaigns.state.clock`, minutos desde o "Dia 1, 00:
 
 **Missões e prazos** (`campaigns.state.objectives`, aba **Missões**): o Mestre registra missões, eventos marcados e compromissos com `add_objective` (prazo absoluto ou relativo, em tempo do jogo) e conclui ou cancela com `update_objective`; toda mudança do relógio passa por `saveClock`, que marca como perdido o que venceu (treinar ou viajar demais faz perder a missão) e avisa o Mestre para narrar a consequência. Verificação: `npx tsx scripts/objectives-check.ts`.
 
+### Mapa do mundo e palco da cena
+
+O mapa (`campaigns.state.map`, `src/lib/map.ts`) se monta sozinho: todo `set_scene` com local novo registra o lugar e a rota a partir do anterior. "Sala 3, Academia, Konoha" vira uma cadeia (a sala dentro da academia, dentro de Konoha), e variações de nome caem no mesmo lugar ("a Academia" = "Academia Ninja de Konoha"; "Konoha" não). O tipo sai do nome (floresta, torre, casa...) e vira o ícone. Campanhas antigas montam o mapa inicial com as cenas passadas. O Mestre enriquece com `update_map` (tipo, descrição, local que contém, outros nomes, direção e distância em relação a outro local, rotas com tempo de viagem); as posições são calculadas pelo código (a dica do Mestre ou o primeiro ponto livre em volta do vizinho) e os locais já posicionados não se mexem.
+
+O palco (`scenes.state.stage`, ferramenta `set_stage`) guarda as zonas do lugar e onde cada personagem está em relação ao jogador: distância (corpo a corpo, perto, médio, longe), postura (aliado, hostil, neutro), cobertura e elevação. É o que mantém a batalha coerente entre os turnos: sem palco em batalha, o contexto pede ao Mestre que monte. Mudar de lugar dentro da mesma cena limpa o palco. O contexto do Mestre leva um bloco curto com o local atual, as rotas daqui, os locais por perto e o palco. O "gerar novamente" volta mapa e palco junto com o resto. Verificação: `npx tsx scripts/map-check.ts`.
+
 ### Estilos de campanha
 
 Escolhido na criação: **Aberta** (você descreve tudo livremente), **Híbrida** (opções sugeridas + digitação livre; diálogos sempre livres) ou **Guiada** (o Mestre dá opções concretas e a história fica mais controlada e verossímil).
@@ -140,6 +146,7 @@ Clique em 🔊 numa fala de NPC (no chat do Mestre, linhas `**Nome:** "fala"`, o
 naruto-ruleset.json        # preset de mecânica de Naruto (importável)
 scripts/jev-check.ts       # probe do Jev (rodar ao trocar o modelo de decisão)
 scripts/progression-check.ts # checagem da progressão (domínio, nível, teto, treino) sem IA
+scripts/map-check.ts       # mapa e palco: nomes, layout, ferramentas e "gerar novamente", sem IA
 docker-compose.yml         # Postgres + pgvector (porta 5433)
 src/lib/
   schema.sql               # schema idempotente (aplicado no boot)
@@ -154,5 +161,6 @@ src/lib/
   books.ts                 # ingestão/paginação/chunking de livros
   ruleset.ts               # mecânica agnóstica + normalização
   progression.ts           # domínio, nível de poder, pontos livres, teto e treino
+  map.ts                   # mapa do mundo (locais, rotas, layout) e palco da cena
 src/app/                   # telas + rotas de API (Next.js App Router)
 ```
