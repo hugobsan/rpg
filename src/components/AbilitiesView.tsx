@@ -1,8 +1,28 @@
 "use client";
 import { useState } from "react";
 import type { Ability, Character, Ruleset } from "@/lib/types";
-import { costsByRankText, currentMilestone, nextMilestone } from "@/lib/ruleset";
+import { costsByRankText } from "@/lib/ruleset";
 import { costAdjustText, DEFAULT_MASTERY_BONUS, effectiveCost, mastery, masteryBonus } from "@/lib/progression";
+import s from "./AbilitiesView.module.css";
+
+const NO_RANK = "sem rank";
+
+/** Anel de domínio 0-100 com o número no meio. */
+function Ring({ value, estimated }: { value: number; estimated: boolean }) {
+  const r = 17;
+  const c = 2 * Math.PI * r;
+  return (
+    <span className={`${s.ring}${value >= 100 ? ` ${s.full}` : ""}`}
+      title={`Domínio ${value}%${estimated ? " (estimado)" : ""}`}>
+      <svg viewBox="0 0 40 40" width="44" height="44" aria-hidden="true">
+        <circle cx="20" cy="20" r={r} className={s.ringTrack} />
+        <circle cx="20" cy="20" r={r} className={s.ringFill} strokeDasharray={`${(value / 100) * c} ${c}`} />
+      </svg>
+      <span className={`${s.ringN} num`}>{value}<small>%</small></span>
+      <span className="sr-only">Domínio {value}%</span>
+    </span>
+  );
+}
 
 /** Aba de habilidades (Jutsus em Naruto): visível mesmo vazia, com o que cada uma custa e faz. */
 export default function AbilitiesView({ char, ruleset }: { char: Character; ruleset: Ruleset }) {
@@ -12,10 +32,11 @@ export default function AbilitiesView({ char, ruleset }: { char: Character; rule
   const abilities = char.sheet.abilities;
   const [rank, setRank] = useState<string | null>(null); // null = todos
   const [type, setType] = useState<string | null>(null);
-  const NO_RANK = "—";
   const rankOf = (a: Ability) => a.rank || NO_RANK;
   // só as opções que existem na ficha, na ordem do ruleset, com a contagem
-  const rankOpts = [...ruleset.abilityRanks, NO_RANK].filter((r) => abilities.some((a) => rankOf(a) === r));
+  // ranks fora do ruleset (ex.: "E" vindo do Mestre) também viram filtro
+  const rankOpts = [...new Set([...ruleset.abilityRanks, ...abilities.map(rankOf).filter((r) => r !== NO_RANK), NO_RANK])]
+    .filter((r) => abilities.some((a) => rankOf(a) === r));
   const typeOpts = [...new Set(abilities.map((a) => a.type))].sort(
     (x, y) => ruleset.abilityTypes.findIndex((t) => t.key === x) - ruleset.abilityTypes.findIndex((t) => t.key === y)
   );
@@ -28,84 +49,107 @@ export default function AbilitiesView({ char, ruleset }: { char: Character; rule
     set: (v: string | null) => void,
     count: (o: string) => number,
     label: (o: string) => string
-  ) => (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center", marginBottom: 6 }}>
-      <span className="muted" style={{ fontSize: 12, minWidth: 34 }}>{title}</span>
-      {[null, ...opts].map((o) => (
-        <button key={o ?? "*"} className={`pill filter-pill${value === o ? " on" : ""}`} aria-pressed={value === o}
-          onClick={() => set(o)}>
-          {o === null ? "Todos" : `${label(o)} · ${count(o)}`}
-        </button>
-      ))}
-    </div>
-  );
+  ) =>
+    opts.length > 1 && (
+      <div className={s.filters} role="group" aria-label={title}>
+        <span className={s.filterTitle}>{title}</span>
+        {[null, ...opts].map((o) => (
+          <button key={o ?? "*"} className={`pill filter-pill${value === o ? " on" : ""}`} aria-pressed={value === o}
+            onClick={() => set(o)}>
+            {o === null ? "Todos" : <>{label(o)} <span className="num">{count(o)}</span></>}
+          </button>
+        ))}
+      </div>
+    );
 
-  const item = (a: Ability) => {
+  const item = (a: Ability, i: number) => {
     const cost = effectiveCost(ruleset, a);
     const progress = mastery(a);
     const bonus = masteryBonus(ruleset, a);
     const adj = cost?.base ? costAdjustText(cost.mult) : "";
-    const cur = currentMilestone(a);
-    const next = nextMilestone(a);
+    const marks = [...(a.milestones || [])].sort((x, y) => x.threshold - y.threshold);
     return (
-      <div key={a.name} className="ability-item">
-        <div className="name">
-          {a.name} {a.rank && <span className="pill">{a.rank}</span>}
+      <article key={a.name} className={s.item} style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}>
+        <div className={s.top}>
+          <Ring value={progress} estimated={a.progress === undefined} />
+          <div className={s.title}>
+            <h4 className={s.name}>{a.name}</h4>
+            <div className={s.meta}>
+              {a.rank && <span className={s.rank}>{a.rank}</span>}
+              <span>{typeLabel(a.type)}</span>
+            </div>
+          </div>
+        </div>
+        <div className={s.stats}>
           {cost && (
-            <span className="pill" title={adj ? `Custo base ${cost.base}; ${adj}` : "Custo por uso"}>
-              {cost.amount || cost.base ? `${cost.amount} ${resLabel(cost.resource)}${adj ? ` (${adj.split(" ")[0]})` : ""}` : "sem custo"}
+            <span className={s.stat} title={adj ? `Custo base ${cost.base}; ${adj}` : "Custo por uso"}>
+              <span className={s.statK}>custo</span>
+              {cost.amount || cost.base ? (
+                <span><b className="num">{cost.amount}</b> {resLabel(cost.resource)}{adj && cost.amount !== cost.base && <del className={s.base}>{cost.base}</del>}</span>
+              ) : <span>livre</span>}
             </span>
           )}
-          {a.damage && <span className="pill">dano {a.damage}</span>}
-          <span className="pill" title="Bônus do domínio no teste (somado a 1d20 + atributo)">+{bonus} no teste</span>
+          <span className={s.stat} title="Bônus do domínio no teste (somado a 1d20 + atributo)">
+            <span className={s.statK}>teste</span><b className="num">+{bonus}</b>
+          </span>
+          {a.damage && (
+            <span className={s.stat}><span className={s.statK}>dano</span><b className="num">{a.damage}</b></span>
+          )}
         </div>
-        <div className="sub">{ruleset.abilityTypes.find((t) => t.key === a.type)?.label || a.type}</div>
-        {a.effect && <div className="sub" style={{ marginTop: 4 }}><b>Efeito:</b> {a.effect}</div>}
-        {a.requirements && <div className="sub"><b>Requisitos:</b> {a.requirements}</div>}
-        {a.description && <div className="sub" style={{ marginTop: 4, opacity: 0.8 }}>{a.description}</div>}
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 12 }}>
-          <span className="muted">Domínio{a.progress === undefined ? " (estimado)" : ""}</span><span>{progress}%</span>
-        </div>
-        <div className="bar-outer" style={{ height: 7 }}>
-          <div className="bar-inner" style={{ width: `${progress}%`, background: "var(--accent)" }} />
-        </div>
-        {cur && <div className="sub" style={{ marginTop: 5 }}>▸ {cur.description}</div>}
-        {next && (
-          <div className="sub" style={{ opacity: 0.7 }}>
-            próximo marco aos {next.threshold}%: {next.description}
-          </div>
+        {a.effect && <p className={s.text}>{a.effect}</p>}
+        {a.requirements && <p className={s.req}><span>Requisitos</span> {a.requirements}</p>}
+        {a.description && <p className={s.desc}>{a.description}</p>}
+        {marks.length > 0 && (
+          <ol className={s.marks} aria-label="Marcos de domínio">
+            {marks.map((m) => {
+              const got = progress >= m.threshold;
+              return (
+                <li key={m.threshold} className={got ? s.got : undefined}>
+                  <span className={`${s.markAt} num`}>{m.threshold}%</span>
+                  <span>{m.description}</span>
+                </li>
+              );
+            })}
+          </ol>
         )}
-      </div>
+      </article>
     );
   };
 
   // na ficha de NPC (modal) basta o título; a explicação é para o jogador
   if (char.kind === "npc")
     return (
-      <div>
-        <h4 style={{ margin: "14px 0 8px" }}>{label}</h4>
+      <section className={s.wrap}>
+        <h4 className={s.npcTitle}>{label}</h4>
         {abilities.map(item)}
-      </div>
+      </section>
     );
   return (
-    <div>
-      <p className="muted" style={{ marginTop: 0 }}>
-        {label} que {char.name} sabe usar. O Mestre registra aqui o que você usa ou aprende na história, com o custo e o efeito.
-        {costs &&
-          ` Custo por rank (${resLabel(costs.resource)}): ${costsByRankText(ruleset)}.`}
-        {` O domínio sobe com o uso e o treino e dá bônus no teste (${(ruleset.masteryBonus ?? DEFAULT_MASTERY_BONUS)
-          .map((b) => `${b.min}%: +${b.value}`)
-          .join(", ")}); domínio baixo encarece o custo e domínio total o barateia.`}
-      </p>
-      {!abilities.length && <p className="muted">Nenhuma registrada ainda.</p>}
+    <section className={s.wrap}>
+      <details className={s.how}>
+        <summary>Como funcionam {label.toLowerCase()}</summary>
+        <p>
+          {label} que {char.name} sabe usar. O Mestre registra aqui o que você usa ou aprende na história, com o custo e o efeito.
+          {costs && ` Custo por rank (${resLabel(costs.resource)}): ${costsByRankText(ruleset)}.`}
+          {` O domínio sobe com o uso e o treino e dá bônus no teste (${(ruleset.masteryBonus ?? DEFAULT_MASTERY_BONUS)
+            .map((b) => `${b.min}%: +${b.value}`)
+            .join(", ")}); domínio baixo encarece o custo e domínio total o barateia.`}
+        </p>
+      </details>
+      {!abilities.length && (
+        <div className={s.empty}>
+          <p>Nenhuma registrada ainda.</p>
+          <p className="muted">Use uma técnica na história ou peça ao Mestre para treinar uma nova: ela aparece aqui com custo, efeito e domínio.</p>
+        </div>
+      )}
       {abilities.length > 1 && (
-        <div style={{ marginBottom: 6 }}>
+        <div className={s.filterBox}>
           {filterRow("Rank", rankOpts, rank, setRank, (o) => abilities.filter((a) => rankOf(a) === o).length, (o) => o)}
           {filterRow("Tipo", typeOpts, type, setType, (o) => abilities.filter((a) => a.type === o).length, typeLabel)}
         </div>
       )}
-      {abilities.length > 0 && !shown.length && <p className="muted">Nenhum com esses filtros.</p>}
+      {abilities.length > 0 && !shown.length && <p className="muted">Nenhuma com esses filtros.</p>}
       {shown.map(item)}
-    </div>
+    </section>
   );
 }
