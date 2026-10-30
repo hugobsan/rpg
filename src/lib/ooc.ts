@@ -5,7 +5,8 @@ import { formatClock, getClock, period } from "./clock";
 import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { activeDirectives, addMemory } from "./retrieval";
 import { getCampaign, getCharacters, getCurrentScene, sheetSummary } from "./engine";
-import { executeGmTool, GM_TOOLS } from "./tools";
+import { executeGmTool, GM_TOOLS, saveTable } from "./tools";
+import { DIFFICULTIES, getTable, mergeCategories, normalizeTable, tablePromptBlock, tableSummary } from "./table";
 
 // as ferramentas do turno, menos as que leem o roteiro e os segredos dos NPCs (spoiler) e a mensagem de NPC
 // (é jogada, não conversa fora do jogo), mais remover habilidade
@@ -41,7 +42,44 @@ const OOC_PROMPT = `Você é o Mestre desta mesa de RPG, conversando FORA DO JOG
 - Você tem as mesmas ferramentas do turno. Use-as SÓ quando o jogador pedir algo explícito: registrar uma missão ou um lembrete com prazo (add_objective), corrigir ficha (dele ou de NPC: habilidades, domínio, atributos, recursos, itens, XP), ajustar o relógio, registrar um NPC, guardar uma memória. Não narre, não role dados por conta própria e não avance a história daqui. Só diga que mudou algo que você mudou de fato com uma ferramenta.
 - Se a fala trouxer uma orientação de como conduzir a mesa daqui para a frente (o que ele quer que aconteça, como o personagem dele deve ser retratado, ritmo, tom, estilo, algo que você deve parar de fazer ou corrigir), chame save_directive uma vez por orientação (uma para o momento atual e outra geral são duas), reescrevendo cada pedido como instrução curta e autossuficiente para você mesmo ler no turno, e confirme na resposta. Pergunta, dúvida, elogio ou comentário não viram diretriz. Não salve de novo o que já está em DIRETRIZES ATIVAS.
 - Se a orientação contrariar a coerência do mundo ou as regras, salve o que der e explique o limite.
-- Habilidade que falta, sobra ou com domínio errado: add_ability (acrescenta ou redefine pelo nome), remove_ability ou update_ability_progress. Se a correção contrariar o momento do cânone, avise em uma frase, mas aplique se ele confirmar ou insistir.`;
+- Habilidade que falta, sobra ou com domínio errado: add_ability (acrescenta ou redefine pelo nome), remove_ability ou update_ability_progress. Se a correção contrariar o momento do cânone, avise em uma frase, mas aplique se ele confirmar ou insistir.
+- Dificuldade e dados são REGRAS DA MESA, não diretriz: "deixa os combates mais difíceis", "quero modo história", "sem críticos", "furtividade mais fácil" vão por set_table_rules: pedido sobre um tipo de ação (combate, furtividade, social...) vai em setCategories, sobre o jogo todo em difficulty/dcOffset; críticos em crits. Orientação de dificuldade que não cabe em número ("inimigos mais espertos", "pode matar meu personagem") vai em notes. Diga em números o que mudou.`;
+
+const TABLE_TOOL: ToolDef = {
+  type: "function",
+  function: {
+    name: "set_table_rules",
+    description: "Muda as REGRAS DA MESA a pedido do jogador. Mande só o que muda; o resto fica como está em REGRAS DA MESA.",
+    parameters: {
+      type: "object",
+      properties: {
+        difficulty: {
+          type: "string",
+          enum: DIFFICULTIES.map((d) => d.key),
+          description: `preset geral (${DIFFICULTIES.map((d) => `${d.key} = ${d.label}, CD ${d.dcOffset >= 0 ? "+" : ""}${d.dcOffset}`).join("; ")}); traz o ajuste de CD dele`,
+        },
+        dcOffset: { type: "number", description: "ajuste geral da CD, -10 a 10 (troca o do preset)" },
+        setCategories: {
+          type: "array",
+          description: "cria ou muda o ajuste de CD de um tipo de ação (ex: Combate +2, Furtividade -1)",
+          items: {
+            type: "object",
+            properties: {
+              label: { type: "string", description: "nome do tipo de ação" },
+              key: { type: "string", description: "opcional; sem ela, vem do label" },
+              offset: { type: "number", description: "-10 a 10 somado à CD desse tipo" },
+            },
+            required: ["label", "offset"],
+          },
+        },
+        removeCategories: { type: "array", items: { type: "string" }, description: "keys ou nomes de tipos de ação para tirar" },
+        crits: { type: "boolean", description: "20 natural passa e 1 natural falha" },
+        notes: { type: "string", description: "orientação livre de dificuldade; substitui a anterior (inclua o que manter; \"\" apaga)" },
+      },
+      required: [],
+    },
+  },
+};
 
 const SAVE_DIRECTIVE: ToolDef = {
   type: "function",
@@ -106,6 +144,21 @@ async function runTool(
   }
   if (HIDDEN.includes(name)) return "Erro: indisponível fora do jogo.";
   try {
+    if (name === "set_table_rules") {
+      const current = getTable(ctx.campaign.state);
+      const patch: Record<string, unknown> = { ...args };
+      if (args.setCategories || args.removeCategories)
+        patch.categories = mergeCategories(
+          current.categories,
+          Array.isArray(args.setCategories) ? args.setCategories : [],
+          Array.isArray(args.removeCategories) ? args.removeCategories.map(String) : []
+        );
+      const table = normalizeTable(patch, current);
+      if (typeof table === "string") return `Erro: ${table}. Nada mudou.`;
+      await saveTable(ctx.campaign.id, table);
+      ctx.campaign.state = { ...ctx.campaign.state, table };
+      return `✓ Regras da mesa: ${tableSummary(table)}`;
+    }
     if (name === "remove_ability") {
       const target = chars.find((c) => c.name.toLowerCase() === String(args.character || "").toLowerCase());
       if (!target) return `Erro: personagem "${args.character}" não existe.`;
@@ -152,6 +205,7 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
       clock ? `${formatClock(clock.minutes)} (${period(clock.minutes)})` : "ainda não definida"
     }\nNPCs em cena: ${npcs.join(", ") || "nenhum"}${scene.summary ? `\nResumo da cena: ${scene.summary}` : ""}`,
     objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null),
+    tablePromptBlock(getTable(campaign.state)),
     player ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset)}` : "",
     story.length
       ? `\n--- ÚLTIMOS TRECHOS DA HISTÓRIA ---\n${story
@@ -182,7 +236,7 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
       messages,
       temperature: 0.5,
       max_tokens: gm.max_tokens, // modelos com raciocínio gastam tokens antes da resposta curta
-      tools: [SAVE_DIRECTIVE, ...OOC_GAME_TOOLS],
+      tools: [SAVE_DIRECTIVE, TABLE_TOOL, ...OOC_GAME_TOOLS],
       agentId: "gm",
       campaignId,
       purpose: "conversa fora do jogo",

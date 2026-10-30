@@ -8,6 +8,7 @@ import { attributeCap, attributePoints, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
 import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { getStage, loadMap, mapPromptBlock } from "./map";
+import { getTable, tablePromptBlock } from "./table";
 import { takeSnapshot } from "./turnSnapshot";
 import { executeGmTool, findNamed, GM_TOOLS, saveClock, setNpcsActive, ToolContext } from "./tools";
 import {
@@ -139,6 +140,7 @@ async function buildGmSystem(
     `\n====== CAMPANHA: ${campaign.name} ======`,
     STYLE_INSTRUCTIONS[campaign.style] || STYLE_INSTRUCTIONS.hybrid,
     `\n--- MECÂNICA ---\n${rulesetPromptSummary(campaign.ruleset)}`,
+    tablePromptBlock(getTable(campaign.state)),
     `\n--- CENA ATUAL (nº ${scene.seq}) ---\nModo: ${scene.mode} | Local: ${scene.location || "?"} | Título: ${scene.title || "-"}\n${
       clock
         ? `Hora na história: ${formatClock(clock.minutes)} (${period(clock.minutes)})`

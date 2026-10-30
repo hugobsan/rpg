@@ -297,7 +297,23 @@ export interface DiceResult {
   total: number;
   reason?: string;
   dc?: number; // dificuldade do teste; sem ela (ex: disputa direta) não há passou/falhou
-  success?: boolean; // total >= dc
+  success?: boolean; // total >= dc (ou o crítico)
+  baseDc?: number; // CD pedida pelo Mestre, antes das regras da mesa (só quando houve ajuste; dc = efetiva)
+  dcAdjust?: { label: string; value: number }[]; // ajustes da mesa, ex: [{ "Difícil", 2 }, { "Combate", 3 }]
+  crit?: "success" | "failure"; // 20 natural passa / 1 natural falha (regras da mesa com crits)
+}
+
+// ---------- Regras da mesa (campaign.state.table; helpers em lib/table.ts) ----------
+
+export type Difficulty = "story" | "easy" | "normal" | "hard" | "brutal";
+
+/** Ausente = normal, sem ajustes e sem críticos. */
+export interface TableRules {
+  difficulty: Difficulty;
+  dcOffset: number; // somado a toda CD (-10 a 10); trocar o preset traz o dele
+  categories: { key: string; label: string; offset: number }[]; // ajuste da CD por tipo de ação (até 12)
+  crits: boolean; // 20 natural passa, 1 natural falha (só 1d20 com CD)
+  notes?: string; // orientação livre de dificuldade para o Mestre
 }
 
 /** Mensagem particular de NPC não lida (sessão aberta pelo NPC com npc_message). */

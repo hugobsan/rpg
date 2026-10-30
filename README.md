@@ -125,6 +125,18 @@ As contas ficam no servidor (`src/lib/progression.ts`); o Mestre só escolhe a C
 
 Verificação sem IA: `npx tsx scripts/progression-check.ts`.
 
+### Regras da mesa (dificuldade e dados)
+
+A dificuldade muda a qualquer momento (`campaigns.state.table`, helpers em `src/lib/table.ts`, rota `GET/PUT /api/campaigns/[id]/table`). Ausente = Normal, sem ajustes e sem críticos.
+
+- **Preset**: História (CD −5), Fácil (−2), Normal (0), Difícil (+2), Brutal (+5). Trocar o preset traz o ajuste dele, que dá para editar (`dcOffset`, −10 a 10). O preset também diz ao Mestre o tom: letalidade, recursos dos inimigos, generosidade de pistas.
+- **Tipos de ação**: ajuste próprio da CD (Combate +2, Furtividade −1...), livres por campanha. O Mestre informa `category` em `roll_dice`/`use_ability`.
+- **A conta é do servidor**: CD efetiva = CD do Mestre + ajuste geral + ajuste do tipo (mínimo 1). O resultado da ferramenta diz a base, os ajustes e a efetiva (para o Mestre não compensar), e o dado leva `baseDc`/`dcAdjust` para a UI mostrar "CD 15 +2 Difícil = 17".
+- **Críticos** (opcional): em 1d20 com CD, 20 natural passa e 1 natural falha.
+- **Notas**: orientação livre de dificuldade para o Mestre.
+
+Tudo entra no bloco REGRAS DA MESA do prompt do turno. Na conversa fora do jogo, "deixa os combates mais difíceis" ou "quero modo história" viram `set_table_rules`, e a resposta mostra o que mudou. O "gerar novamente" não desfaz regra da mesa nem tema. Verificação: `npx tsx scripts/table-check.ts`.
+
 ## Voz dos NPCs
 
 Clique em 🔊 numa fala de NPC (no chat do Mestre, linhas `**Nome:** "fala"`, ou na conversa particular) para ouvi-la. A voz vem de um modelo de fala (TTS) do OpenRouter, escolhido no agente **Voz** em /agents junto com a voz masculina e a feminina padrão. O padrão é `heygen/heygen-voice-1-turbo:free` (grátis, fala português), com `lucian` (masculina) e `nadine` (feminina).

@@ -7,7 +7,7 @@ import { db, q } from "./db";
  *
  * ponytail: volta o estado inteiro da campanha; uma conversa particular com NPC
  * feita depois do turno também é desfeita (falas, memórias novas e mudanças nas fichas).
- * Diretrizes da conversa fora do jogo ficam (não são estado da história).
+ * Diretrizes da conversa fora do jogo, regras da mesa e tema ficam (não são estado da história).
  */
 interface Snapshot {
   characters: Record<string, unknown>[];
@@ -74,11 +74,16 @@ export async function restoreSnapshot(campaignId: string): Promise<string> {
         );
       }
     }
-    await client.query(`UPDATE campaigns SET script = $1, state = $2 WHERE id = $3`, [
-      JSON.stringify(s.campaign.script),
-      JSON.stringify(s.campaign.state),
-      campaignId,
-    ]);
+    await client.query(
+      `UPDATE campaigns SET script = $1,
+         state = ($2::jsonb - 'table' - 'theme') || jsonb_strip_nulls(jsonb_build_object('table', state->'table', 'theme', state->'theme'))
+       WHERE id = $3`,
+      [
+        JSON.stringify(s.campaign.script),
+        JSON.stringify(s.campaign.state),
+        campaignId,
+      ]
+    );
     await client.query(`DELETE FROM messages WHERE campaign_id = $1 AND id > $2`, [campaignId, s.maxMessageId]);
     await client.query(`DELETE FROM memories WHERE campaign_id = $1 AND id > $2 AND kind <> 'directive'`, [campaignId, s.maxMemoryId]);
     // mensagens de NPC (npc_message) e falas de conversa particular depois da foto

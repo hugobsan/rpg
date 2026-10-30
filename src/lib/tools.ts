@@ -4,7 +4,7 @@ import { ToolDef } from "./openrouter";
 import { rollDice } from "./dice";
 import { addMemory, searchMemories, searchBookChunks } from "./retrieval";
 import { listBooks, readPages } from "./books";
-import { Ability, Campaign, Character, Scene, Sheet, TurnEvent } from "./types";
+import { Ability, Campaign, Character, Scene, Sheet, TableRules, TurnEvent } from "./types";
 import { abilityPromptLine, blankSheet, currentMilestone, nextMilestone } from "./ruleset";
 import {
   abilityAttribute,
@@ -23,6 +23,7 @@ import {
 import { clockParts, formatClock, formatDuration, getClock, period, toMinutes } from "./clock";
 import { expireObjectives, formatRemaining, getObjectives, Objective, OBJECTIVE_KIND_LABEL, ObjectiveKind } from "./objectives";
 import { executeMapTool, MAP_TOOLS, recordScenePlace } from "./map";
+import { dcResultText, getTable, tableDc } from "./table";
 
 const MILESTONE_SCHEMA = {
   type: "array",
@@ -58,8 +59,9 @@ export const GM_TOOLS: ToolDef[] = [
           dc: {
             type: "number",
             description:
-              "dificuldade (CD) do teste, quando houver uma só: o resultado sai como SUCESSO/FALHA e o jogador vê verde/vermelho. Omita em disputas diretas (rolagens opostas).",
+              "dificuldade (CD) do teste, quando houver uma só: o resultado sai como SUCESSO/FALHA e o jogador vê verde/vermelho. Omita em disputas diretas (rolagens opostas). O servidor soma o ajuste das REGRAS DA MESA.",
           },
+          category: { type: "string", description: "tipo de ação, uma das keys das REGRAS DA MESA (se houver): soma o ajuste dele na CD" },
         },
         ["notation"]
       ),
@@ -163,7 +165,8 @@ export const GM_TOOLS: ToolDef[] = [
           character: { type: "string" },
           ability: { type: "string", description: "nome exato da técnica na ficha" },
           attribute: { type: "string", description: "key do atributo do teste, só para trocar o padrão do tipo" },
-          dc: { type: "number", description: "dificuldade (CD). Omita só em disputa direta (rolagem oposta)" },
+          dc: { type: "number", description: "dificuldade (CD). Omita só em disputa direta (rolagem oposta). O servidor soma o ajuste das REGRAS DA MESA" },
+          category: { type: "string", description: "tipo de ação, uma das keys das REGRAS DA MESA (se houver)" },
           target: { type: "string", description: "alvo, se houver" },
           note: { type: "string", description: "contexto curto do uso" },
         },
@@ -593,6 +596,11 @@ export async function saveClock(campaignId: string, minutes: number, emit?: (e: 
     .join("; ")}. Narre a consequência na história; a perda não se desfaz.`;
 }
 
+/** Grava só state.table (regras da mesa já validadas por normalizeTable). */
+export async function saveTable(campaignId: string, table: TableRules): Promise<void> {
+  await q(`UPDATE campaigns SET state = state || jsonb_build_object('table', $1::jsonb) WHERE id = $2`, [JSON.stringify(table), campaignId]);
+}
+
 async function loadObjectives(campaignId: string): Promise<Objective[]> {
   const [row] = await q<{ state: Record<string, unknown> }>(`SELECT state FROM campaigns WHERE id = $1`, [campaignId]);
   return getObjectives(row?.state);
@@ -646,10 +654,11 @@ export async function executeGmTool(
   const cid = ctx.campaign.id;
   switch (name) {
     case "roll_dice": {
-      const dc = typeof args.dc === "number" ? args.dc : undefined;
-      const result = rollDice(String(args.notation), args.reason as string | undefined, dc);
+      const table = getTable(ctx.campaign.state);
+      const adj = tableDc(table, typeof args.dc === "number" ? args.dc : undefined, args.category);
+      const result = { ...rollDice(String(args.notation), args.reason as string | undefined, adj.dc, table.crits), ...adj.dice };
       ctx.emit({ type: "dice", result });
-      return `Rolagem ${result.notation}${result.reason ? ` (${result.reason})` : ""}: dados [${result.rolls.join(", ")}] ${result.modifier ? `mod ${result.modifier} ` : ""}= TOTAL ${result.total}${result.dc !== undefined ? ` contra CD ${result.dc}: ${result.success ? "SUCESSO" : "FALHA"}` : ""}`;
+      return `Rolagem ${result.notation}${result.reason ? ` (${result.reason})` : ""}: dados [${result.rolls.join(", ")}] ${result.modifier ? `mod ${result.modifier} ` : ""}= TOTAL ${result.total}${dcResultText(result, adj.note)}`;
     }
     case "update_resource": {
       const c = await getChar(cid, String(args.character));
@@ -770,13 +779,18 @@ export async function executeGmTool(
       const mult = rs.attributeMultiplier ?? 1;
       const bonus = masteryBonus(rs, ability);
       const mod = attr * mult + bonus;
-      const dc = typeof args.dc === "number" && Number.isFinite(args.dc) ? args.dc : undefined;
+      const table = getTable(ctx.campaign.state);
+      const adj = tableDc(table, typeof args.dc === "number" ? args.dc : undefined, args.category);
       const attrLabel = rs.attributes.find((a) => a.key === attrKey)?.label || attrKey;
-      const result = rollDice(
-        `1d20${mod >= 0 ? "+" : ""}${mod}`,
-        `${ability.name}${args.target ? ` em ${args.target}` : ""} (${attrLabel} ${attr}${mult !== 1 ? `×${mult}` : ""} + domínio +${bonus})`,
-        dc
-      );
+      const result = {
+        ...rollDice(
+          `1d20${mod >= 0 ? "+" : ""}${mod}`,
+          `${ability.name}${args.target ? ` em ${args.target}` : ""} (${attrLabel} ${attr}${mult !== 1 ? `×${mult}` : ""} + domínio +${bonus})`,
+          adj.dc,
+          table.crits
+        ),
+        ...adj.dice,
+      };
       const clock = getClock(ctx.campaign.state);
       const g = gainMastery(rs, c.sheet, ability, useGain(rs, ability), clock ? clockParts(clock.minutes).day : 0);
       await saveSheet(c.id, c.sheet);
@@ -791,7 +805,7 @@ export async function executeGmTool(
           summary: `${ability.name}: domínio ${g.before}% → ${g.after}%${g.milestone ? ` — novo marco: ${g.milestone.description}` : ""}`,
         });
       let msg = `${ability.name} (${c.name}${args.target ? ` → ${args.target}` : ""}): dados [${result.rolls.join(", ")}] + ${attrLabel} ${attr}${mult !== 1 ? `×${mult}` : ""} + domínio ${bonus} = TOTAL ${result.total}`;
-      msg += dc !== undefined ? ` contra CD ${dc}: ${result.success ? "SUCESSO" : "FALHA"}.` : " (disputa: compare com a rolagem oposta).";
+      msg += result.dc !== undefined ? `${dcResultText(result, adj.note)}.` : `${adj.note} (disputa: compare com a rolagem oposta).`;
       msg += pool ? ` Custo pago: ${cost!.amount} ${cost!.resource}${cost!.mult !== 1 ? ` (base ${cost!.base}, ${costAdjustText(cost!.mult)})` : ""}; resta ${pool.current}/${pool.max}.` : " Sem custo.";
       msg += g.after > g.before ? ` Domínio ${g.before}% → ${g.after}%.` : g.capped ? ` Domínio ${g.after}% (já rendeu o máximo hoje).` : ` Domínio ${g.after}%.`;
       if (g.milestone) msg += ` NOVO MARCO ALCANÇADO: ${g.milestone.description} — narre esse avanço.`;
