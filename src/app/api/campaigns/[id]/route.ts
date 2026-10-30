@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
-import { getCampaign, getCharacters, getCurrentScene } from "@/lib/engine";
-import { listBooks } from "@/lib/books";
-import { messagePage } from "@/lib/messages";
+import { campaignView } from "@/lib/campaignView";
 
 export const dynamic = "force-dynamic";
 
@@ -13,34 +11,7 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const campaign = await getCampaign(id);
-    const [scene, characters, books, page, milestones, images] = await Promise.all([
-      getCurrentScene(id),
-      getCharacters(id),
-      listBooks(id),
-      messagePage(id),
-      q(
-        `SELECT id, kind, subject, content, importance, created_at::text FROM memories
-         WHERE campaign_id = $1 ORDER BY id DESC LIMIT 100`,
-        [id]
-      ),
-      // só o id: a imagem vai por URL (binário com cache longo), nunca em base64 no JSON
-      q<{ id: string }>(`SELECT id FROM scene_images WHERE campaign_id = $1 ORDER BY id DESC LIMIT 1`, [id]),
-    ]);
-    return NextResponse.json({
-      campaign,
-      scene,
-      characters,
-      books,
-      messages: page.messages, // só o lote mais recente; as anteriores vêm de /messages?before=
-      hasMore: page.hasMore,
-      memories: milestones,
-      // a ficha mostra a última imagem, a menos que o jogador a tenha tirado de lá (✕); ela segue na galeria
-      lastImage:
-        images[0] && Number(images[0].id) !== Number(campaign.state?.hiddenSheetImageId)
-          ? { id: Number(images[0].id), url: `/api/campaigns/${id}/images/${images[0].id}` }
-          : null,
-    });
+    return NextResponse.json(await campaignView(id));
   } catch {
     return NextResponse.json({ error: "Campanha não encontrada" }, { status: 404 });
   }

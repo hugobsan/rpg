@@ -1,12 +1,8 @@
 "use client";
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import type {
-  Campaign,
-  Character,
-  DiceResult,
-  Scene,
-  TurnEvent,
-} from "@/lib/types";
+import { Fragment, memo, useEffect, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import type { Character } from "@/lib/types";
+import type { CampaignView } from "@/lib/campaignView";
+import { useTurn, type FeedItem } from "./game/useTurn";
 import NpcModal, { playLine } from "./NpcModal";
 import OocModal from "./OocModal";
 import ImageViewer from "./ImageViewer";
@@ -19,7 +15,7 @@ import NpcList from "./NpcList";
 import MemoriesView from "./MemoriesView";
 import BooksView from "./BooksView";
 import ScriptView from "./ScriptView";
-import DiceRoller, { diceText } from "./DiceRoller";
+import DiceRoller from "./DiceRoller";
 import { formatClock, getClock, period, PERIOD_ICON } from "@/lib/clock";
 
 // ---------- helpers ----------
@@ -49,29 +45,31 @@ function md(text: string): string {
     .replace(/\*(.+?)\*/g, "<em>$1</em>");
 }
 
-interface FeedItem {
-  key: string;
-  kind: "player" | "gm" | "chip" | "dice";
-  content: string;
-  outcome?: "ok" | "fail"; // rolagem com CD: passou ou não
-}
-
-interface StateShape {
-  campaign: Campaign;
-  scene: Scene;
-  characters: Character[];
-  books: { id: string; title: string; pages: number }[];
-  messages: { id: number; role: string; content: string; meta: { choices?: string[] } }[];
-  hasMore: boolean; // há mensagens anteriores às carregadas
-  memories: { id: number; kind: string; subject: string | null; content: string; importance: number }[];
-  lastImage: { id: number; url: string } | null;
-}
-
-const toFeed = (messages: StateShape["messages"]): FeedItem[] =>
-  messages.map((m) => ({ key: `m${m.id}`, kind: m.role === "player" ? "player" : "gm", content: m.content }));
-
-// o feed guarda mensagens salvas com chave "m<id>"; os eventos ao vivo do turno usam "k<n>"
-const savedId = (i: FeedItem) => (i.key[0] === "m" ? Number(i.key.slice(1)) : null);
+/** Item do chat; memo: o streaming da narração re-renderiza a tela a cada pedaço e o feed não muda. */
+const FeedLine = memo(function FeedLine({ item, npcs, campaignId }: { item: FeedItem; npcs: Character[]; campaignId: string }) {
+  if (item.kind === "player") return <div className="msg-player">{item.content}</div>;
+  if (item.kind !== "gm")
+    return <div className={`event-chip ${item.kind}${item.outcome ? ` ${item.outcome}` : ""}`}>{item.content}</div>;
+  return (
+    <div className="msg-gm">
+      {/* linha a linha para pôr o 🔊 nas falas de NPC (**Nome:** "fala") */}
+      {item.content.split("\n").map((line, i) => {
+        const m = line.match(/^\*\*([^*]+?):\*\*\s*(.+)$/);
+        const npc = m && npcs.find((n) => n.name.toLowerCase() === m[1].trim().toLowerCase());
+        return (
+          <Fragment key={i}>
+            {i > 0 && "\n"}
+            <span dangerouslySetInnerHTML={{ __html: md(line) }} />
+            {npc && m && (
+              <button className="speak" title={`Ouvir ${npc.name}`}
+                onClick={() => playLine(campaignId, npc, m[2])}>🔊</button>
+            )}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+});
 
 const SIDE_KEY = "chronicle.sideWidth";
 const SIDE_DEFAULT = 340;
@@ -79,14 +77,14 @@ const SIDE_DEFAULT = 340;
 const clampSide = (w: number) =>
   Math.round(Math.min(Math.max(w, 260), Math.min(760, (typeof window !== "undefined" ? window.innerWidth : 1400) - 420)));
 
-export default function GameClient({ campaignId }: { campaignId: string }) {
-  const [state, setState] = useState<StateShape | null>(null);
-  const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [choices, setChoices] = useState<string[]>([]);
+export default function GameClient({ campaignId, initial }: { campaignId: string; initial?: CampaignView | null }) {
+  const {
+    state, setState, reload: reloadState, error, setError,
+    feed, draft, choices, busy, status: statusText, send, regenerate,
+    pendingDice, rolling, roll, releaseDice,
+    feedRef, hasMore, loadingOlder, loadOlder,
+  } = useTurn(campaignId, { initial });
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [statusText, setStatusText] = useState("");
-  const [error, setError] = useState("");
   const [tab, setTab] = useState<"sheet" | "abilities" | "inventory" | "objectives" | "npcs" | "memories" | "books" | "script" | "gallery">("sheet");
   const [imageFull, setImageFull] = useState(false);
   // largura da barra lateral, ajustável pela alça entre ela e o chat (lembrada neste navegador)
@@ -115,233 +113,20 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
     el.addEventListener("pointerup", up);
   };
   const [imageBusy, setImageBusy] = useState(false);
-  const [sceneImage, setSceneImage] = useState<string | null>(null);
-  const [sceneImageId, setSceneImageId] = useState<number | null>(null);
-  const [imageGen, setImageGen] = useState(false); // só mostra "Ver ambiente" depois de ler a config
   const [regenOpen, setRegenOpen] = useState(false);
   const [regenReason, setRegenReason] = useState("");
   const [openNpc, setOpenNpc] = useState<Character | null>(null);
   const [oocOpen, setOocOpen] = useState(false);
-  const feedRef = useRef<HTMLDivElement>(null);
-  const [hasMore, setHasMore] = useState(false); // há mensagens anteriores ainda não carregadas
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const loadingOlderRef = useRef(false); // evita pedido duplicado enquanto um lote carrega
-  const anchor = useRef<{ h: number; top: number } | null>(null); // posição do scroll antes de prepender
-  const firstScroll = useRef(true);
-  const keyCounter = useRef(0);
+  const characters = state?.characters;
+  const npcs = useMemo(() => characters?.filter((c) => c.kind === "npc") ?? [], [characters]);
+  const sceneImage = state?.lastImage ?? null;
 
-  const nextKey = () => `k${++keyCounter.current}`;
-
-  // Animação 3D dos dados: a partir de um evento "dice", o resto do turno fica retido
-  // até o jogador rolar (um botão por rolagem, em fila).
-  const diceAnim = useRef(true);
-  const held = useRef<TurnEvent[]>([]);
-  const reloadAfterHeld = useRef(false);
-  const [pendingDice, setPendingDice] = useState<DiceResult | null>(null);
-  const [rolling, setRolling] = useState<DiceResult | null>(null);
-
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((d) => {
-        diceAnim.current = d.ui?.diceAnimation !== false;
-        setImageGen(d.ui?.imageGeneration !== false);
-      })
-      .catch(() => {});
-  }, []);
-
-  const showEvent = (ev: TurnEvent) => {
-    if (ev.type === "tool") setFeed((f) => [...f, { key: nextKey(), kind: "chip", content: ev.summary }]);
-    else if (ev.type === "dice")
-      setFeed((f) => [
-        ...f,
-        {
-          key: nextKey(),
-          kind: "dice",
-          content: diceText(ev.result),
-          outcome: ev.result.dc === undefined ? undefined : ev.result.success ? "ok" : "fail",
-        },
-      ]);
-    else if (ev.type === "narration") setFeed((f) => [...f, { key: nextKey(), kind: "gm", content: ev.content }]);
-    else if (ev.type === "choices") setChoices(ev.choices);
-    else if (ev.type === "time")
-      setState((s) => s && { ...s, campaign: { ...s.campaign, state: { ...s.campaign.state, clock: { minutes: ev.minutes } } } });
+  const sendTurn = (text: string) => {
+    if (send(text)) setInput("");
   };
-
-  // libera os eventos retidos até a próxima rolagem (all: libera tudo, sem animar)
-  const drainHeld = (all = false) => {
-    while (held.current.length) {
-      const ev = held.current[0];
-      if (ev.type === "dice" && !all) return setPendingDice(ev.result);
-      held.current.shift();
-      showEvent(ev);
-    }
-    setPendingDice(null);
-    if (reloadAfterHeld.current) {
-      reloadAfterHeld.current = false;
-      reloadState();
-    }
-  };
-
-  const releaseDice = () => {
-    const ev = held.current.shift();
-    if (ev) showEvent(ev);
-    setRolling(null);
-    drainHeld();
-  };
-
-  const reloadState = useCallback(async () => {
-    const res = await fetch(`/api/campaigns/${campaignId}`);
-    if (!res.ok) {
-      setError("Campanha não encontrada.");
-      return;
-    }
-    const data = (await res.json()) as StateShape;
-    setState(data);
-    setSceneImage(data.lastImage?.url ?? null); // null quando apagada ou tirada da ficha
-    setSceneImageId(data.lastImage?.id ?? null);
-    return data;
-  }, [campaignId]);
-
-  useEffect(() => {
-    reloadState().then((data) => {
-      if (!data) return;
-      setFeed(toFeed(data.messages));
-      setHasMore(data.hasMore);
-      const last = data.messages[data.messages.length - 1];
-      if (last?.meta?.choices?.length) setChoices(last.meta.choices);
-    });
-  }, [reloadState]);
-
-  // Rola até o fim quando chega mensagem nova; ao prepender anteriores, só compensa a altura
-  // acrescentada (scroll instantâneo: o .feed tem scroll-behavior: smooth).
-  useLayoutEffect(() => {
-    const el = feedRef.current;
-    if (!el) return;
-    if (anchor.current) {
-      el.scrollTo({ top: anchor.current.top + el.scrollHeight - anchor.current.h, behavior: "instant" });
-      anchor.current = null;
-      return;
-    }
-    // na primeira carga vai direto ao fim (rolar suave desde o topo dispararia o carregamento das anteriores)
-    el.scrollTo({ top: el.scrollHeight, behavior: firstScroll.current ? "instant" : "smooth" });
-    if (feed.length) firstScroll.current = false;
-  }, [feed, statusText]);
-
-  const loadOlder = async () => {
-    const el = feedRef.current;
-    const oldest = feed.map(savedId).find((id) => id !== null);
-    if (loadingOlderRef.current || !hasMore || !el || !oldest) return;
-    loadingOlderRef.current = true;
-    setLoadingOlder(true);
-    try {
-      const res = await fetch(`/api/campaigns/${campaignId}/messages?before=${oldest}`);
-      if (!res.ok) throw new Error(`Erro ${res.status}`);
-      const page = (await res.json()) as { messages: StateShape["messages"]; hasMore: boolean };
-      anchor.current = { h: el.scrollHeight, top: el.scrollTop };
-      setFeed((f) => [...toFeed(page.messages), ...f]);
-      setHasMore(page.hasMore);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      loadingOlderRef.current = false;
-      setLoadingOlder(false);
-    }
-  };
-
-  // ---------- turno ----------
-
-  // regen: gera de novo a resposta do último turno (o servidor volta o estado de antes dele)
-  const sendTurn = async (text: string, regen?: { feedback: string }) => {
-    if (busy || (!regen && !text.trim())) return;
+  const regen = (feedback: string) => {
     setRegenOpen(false);
-    setBusy(true);
-    setError("");
-    setChoices([]);
-    setRolling(null);
-    drainHeld(true);
-    if (regen) {
-      // tira do chat o que veio depois da última ação do jogador
-      setFeed((f) => {
-        const lastPlayer = f.map((i) => i.kind).lastIndexOf("player");
-        return lastPlayer >= 0 ? f.slice(0, lastPlayer + 1) : f;
-      });
-    } else {
-      setFeed((f) => [...f, { key: nextKey(), kind: "player", content: text }]);
-      setInput("");
-    }
-    setStatusText("O Mestre está pensando...");
-    let stateDirty = false;
-    let failed = false;
-    try {
-      const res = await fetch(`/api/campaigns/${campaignId}/turn`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(regen ? { regenerate: true, feedback: regen.feedback } : { input: text }),
-      });
-      if (!res.ok || !res.body) throw new Error(`Erro ${res.status}`);
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() || "";
-        for (const part of parts) {
-          const line = part.split("\n").find((l) => l.startsWith("data: "));
-          if (!line) continue;
-          const ev = JSON.parse(line.slice(6)) as TurnEvent;
-          switch (ev.type) {
-            case "status":
-              setStatusText(ev.text);
-              break;
-            case "tool":
-            case "dice":
-            case "narration":
-            case "choices":
-            case "time":
-              if (diceAnim.current && (ev.type === "dice" || held.current.length)) {
-                held.current.push(ev);
-                if (ev.type === "dice" && held.current.length === 1) setPendingDice(ev.result);
-              } else showEvent(ev);
-              break;
-            case "scene":
-              stateDirty = true;
-              break;
-            case "state":
-              stateDirty = true;
-              break;
-            case "error":
-              failed = true;
-              setError(ev.message);
-              break;
-            case "done":
-              break;
-          }
-        }
-      }
-    } catch (e) {
-      failed = true;
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-      setStatusText("");
-      // ficha/cena só atualizam depois da rolagem, para não adiantar o resultado
-      if (held.current.length && !failed) {
-        reloadAfterHeld.current = true;
-        return;
-      }
-      drainHeld(true);
-      const data = await reloadState();
-      // se o "gerar novamente" falhou, o chat volta a refletir o que está salvo
-      // (mantém as anteriores já carregadas, antes da janela recente)
-      if (regen && failed && data) {
-        const first = data.messages[0]?.id ?? 0;
-        setFeed((f) => [...f.filter((i) => (savedId(i) ?? Infinity) < first), ...toFeed(data.messages)]);
-      }
-    }
+    regenerate(feedback);
   };
 
   const generateImage = async () => {
@@ -351,8 +136,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
       const res = await fetch(`/api/campaigns/${campaignId}/image`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Falha ao gerar imagem");
-      setSceneImage(data.url);
-      setSceneImageId(Number(data.id));
+      setState((s) => s && { ...s, lastImage: { id: Number(data.id), url: data.url } });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -363,9 +147,8 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   if (error && !state) return <div className="container"><div className="error-box">{error}</div></div>;
   if (!state) return <div className="container"><p className="muted">Carregando campanha...</p></div>;
 
-  const { campaign, scene, characters } = state;
-  const player = characters.find((c) => c.kind === "player");
-  const npcs = characters.filter((c) => c.kind === "npc");
+  const { campaign, scene } = state;
+  const player = state.characters.find((c) => c.kind === "player");
   const modeColor = MODE_COLOR[scene.mode] || "var(--accent)";
   const clock = getClock(campaign.state);
 
@@ -386,7 +169,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
             <span className="loc" title="O Mestre define a hora no próximo turno">🕐 hora ainda não definida</span>
           )}
           <span style={{ flex: 1 }} />
-          {imageGen && (
+          {state.ui.imageGeneration && (
             <button className="btn ghost small" onClick={() => generateImage()} disabled={imageBusy}>
               {imageBusy ? "pintando..." : "🖼 Ver ambiente"}
             </button>
@@ -418,33 +201,12 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
                 </button>
               </div>
             )}
-            {feed.map((item) =>
-              item.kind === "player" ? (
-                <div key={item.key} className="msg-player">{item.content}</div>
-              ) : item.kind === "gm" ? (
-                <div key={item.key} className="msg-gm">
-                  {/* linha a linha para pôr o 🔊 nas falas de NPC (**Nome:** "fala") */}
-                  {item.content.split("\n").map((line, i) => {
-                    const m = line.match(/^\*\*([^*]+?):\*\*\s*(.+)$/);
-                    const npc = m && npcs.find((n) => n.name.toLowerCase() === m[1].trim().toLowerCase());
-                    return (
-                      <Fragment key={i}>
-                        {i > 0 && "\n"}
-                        <span dangerouslySetInnerHTML={{ __html: md(line) }} />
-                        {npc && m && (
-                          <button className="speak" title={`Ouvir ${npc.name}`}
-                            onClick={() => playLine(campaignId, npc, m[2])}>🔊</button>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div key={item.key} className={`event-chip ${item.kind}${item.outcome ? ` ${item.outcome}` : ""}`}>{item.content}</div>
-              )
+            {feed.map((item) => <FeedLine key={item.key} item={item} npcs={npcs} campaignId={campaignId} />)}
+            {draft && (
+              <div className="msg-gm"><span dangerouslySetInnerHTML={{ __html: md(draft) }} /></div>
             )}
             {pendingDice && (
-              <button className="btn primary" style={{ alignSelf: "center" }} onClick={() => setRolling(pendingDice)}>
+              <button className="btn primary" style={{ alignSelf: "center" }} onClick={roll}>
                 🎲 Rolar dados · {pendingDice.reason ? `${pendingDice.reason} ` : ""}({pendingDice.notation})
               </button>
             )}
@@ -530,18 +292,16 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
         <div className="side-body">
           {sceneImage && tab === "sheet" && (
             <div style={{ marginBottom: 12, position: "relative" }}>
-              <img src={sceneImage} alt="Cena atual" className="scene-image" onClick={() => setImageFull(true)} />
-              {sceneImageId && (
-                <button className="scene-image-close" title="Tirar da ficha (continua na Galeria)" aria-label="Tirar imagem da ficha"
-                  onClick={async () => {
-                    setSceneImage(null);
-                    await fetch(`/api/campaigns/${campaignId}`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ hideSheetImageId: sceneImageId }),
-                    });
-                  }}>✕</button>
-              )}
+              <img src={sceneImage.url} alt="Cena atual" className="scene-image" onClick={() => setImageFull(true)} />
+              <button className="scene-image-close" title="Tirar da ficha (continua na Galeria)" aria-label="Tirar imagem da ficha"
+                onClick={async () => {
+                  setState((s) => s && { ...s, lastImage: null });
+                  await fetch(`/api/campaigns/${campaignId}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ hideSheetImageId: sceneImage.id }),
+                  });
+                }}>✕</button>
             </div>
           )}
           {tab === "sheet" && player && <SheetView char={player} campaign={campaign} onChange={reloadState} />}
@@ -557,13 +317,13 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
           {tab === "books" && (
             <BooksView campaignId={campaignId} books={state.books} onChange={reloadState} />
           )}
-          {tab === "gallery" && <Gallery campaignId={campaignId} refreshKey={sceneImage} onDeleted={reloadState} />}
+          {tab === "gallery" && <Gallery campaignId={campaignId} refreshKey={sceneImage?.id} onDeleted={reloadState} />}
           {tab === "script" && <ScriptView script={campaign.script} campaignId={campaignId} onChange={reloadState} />}
         </div>
       </aside>
 
       {imageFull && sceneImage && (
-        <ImageViewer items={[{ src: sceneImage }]} index={0} onIndex={() => {}} onClose={() => setImageFull(false)} />
+        <ImageViewer items={[{ src: sceneImage.url }]} index={0} onIndex={() => {}} onClose={() => setImageFull(false)} />
       )}
       {regenOpen && (
         <div className="modal-backdrop" onClick={() => setRegenOpen(false)}>
@@ -582,9 +342,9 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
             </div>
             <div className="modal-foot">
               <button className="btn ghost small" onClick={() => setRegenOpen(false)}>Cancelar</button>
-              <button className="btn ghost small" onClick={() => sendTurn("", { feedback: "" })}>Gerar sem motivo</button>
+              <button className="btn ghost small" onClick={() => regen("")}>Gerar sem motivo</button>
               <button className="btn primary small" disabled={!regenReason.trim()}
-                onClick={() => sendTurn("", { feedback: regenReason })}>Gerar com esse ajuste</button>
+                onClick={() => regen(regenReason)}>Gerar com esse ajuste</button>
             </div>
           </div>
         </div>
