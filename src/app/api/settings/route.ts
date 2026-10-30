@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSetting, setSetting } from "@/lib/db";
 import { getEmbeddingConfig } from "@/lib/embeddings";
-import { getSources } from "@/lib/openrouter";
+import { getSources, sourceView } from "@/lib/openrouter";
+import { chatgptStatus } from "@/lib/chatgptAuth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ function mask(key: string): string {
 export async function GET() {
   const openrouter = await getSetting<{ apiKey?: string }>("openrouter", {});
   const { enabled, model, source } = await getEmbeddingConfig();
-  const sources = (await getSources()).map(({ id, name }) => ({ id, name })); // fontes para os embeddings (sem chave)
+  const sources = (await getSources()).map(sourceView); // fontes de modelos (chave mascarada), também para os embeddings
   const ui = await getSetting<{ diceAnimation?: boolean; imageGeneration?: boolean; autoMaps?: boolean; diceForce?: number }>("ui", {});
   return NextResponse.json({
     openrouter: {
@@ -22,6 +23,7 @@ export async function GET() {
     },
     embeddings: { enabled, model, source },
     sources,
+    chatgpt: await chatgptStatus(), // Login com ChatGPT (sem token)
     // ligadas por padrão
     ui: { diceAnimation: ui.diceAnimation !== false, imageGeneration: ui.imageGeneration !== false, autoMaps: ui.autoMaps !== false, diceForce: ui.diceForce ?? 1 },
   });

@@ -112,7 +112,7 @@ async function main() {
 
   // ---------- 2. callback: troca do code com o client_id emitido e o mesmo verifier/redirect ----------
   const ok = await login(1);
-  assert.deepEqual(ok.r, { returnTo: `${ORIGIN}/agents`, email: "hugo@example.com" });
+  assert.deepEqual(ok.r, { returnTo: `${ORIGIN}/settings`, email: "hugo@example.com" });
   const f = ok.form();
   assert.equal(f.grant_type, "authorization_code");
   assert.equal(f.client_id, "oaiapp_1", "troca com o client_id emitido, não o dynamic");
@@ -172,7 +172,7 @@ async function main() {
     const d = params(await startLogin(ORIGIN));
     const denied = await finishLogin(new URLSearchParams({ error: "access_denied", state: d.state }));
     assert.match(denied.error!, /não autorizou/);
-    assert.equal(denied.returnTo, `${ORIGIN}/agents`);
+    assert.equal(denied.returnTo, `${ORIGIN}/settings`);
     const n = params(await startLogin(ORIGIN));
     assert.match((await finishLogin(new URLSearchParams({ error: "not_eligible", error_description: "plano", state: n.state }))).error!, /not_eligible: plano.*preview/);
   }

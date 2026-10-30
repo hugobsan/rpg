@@ -14,10 +14,10 @@ export default async function AgentsPage() {
       <h1>Agentes</h1>
       <p className={`muted ${s.lede}`}>
         Cada agente é um modelo com system prompt e parâmetros, numa fonte de modelos (o OpenRouter ou outra API compatível com a
-        da OpenAI). Toda chamada fica registrada (fonte, tokens, custo, duração, request e resposta) em{" "}
+        da OpenAI, cadastradas em <Link href="/settings#fontes">Configurações</Link>). Toda chamada fica registrada (fonte, tokens, custo, duração, request e resposta) em{" "}
         <Link href="/usage">Custos e uso</Link>, para você comparar e trocar modelos e prompts.
       </p>
-      <AgentsClient initialAgents={agents} initialSources={sources.map(sourceView)} />
+      <AgentsClient initialAgents={agents} sources={sources.map(sourceView)} />
     </main>
   );
 }

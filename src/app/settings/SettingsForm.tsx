@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import Loader from "@/components/ui/Loader";
 import { toast } from "@/components/ui/Toast";
-import type { DiceResult } from "@/lib/types";
+import type { ChatgptStatus, DiceResult, SourceView } from "@/lib/types";
+import SourcesPanel from "./SourcesPanel";
 import s from "./settings.module.css";
 
 // só baixa a caixa 3D quando o jogador pede o teste
@@ -20,7 +22,8 @@ function testRoll(): DiceResult {
 export interface SettingsShape {
   openrouter: { configured: boolean; apiKeyMasked: string };
   embeddings: { enabled: boolean; model: string; source: string };
-  sources: { id: string; name: string }[]; // fontes de modelos cadastradas em Agentes
+  sources: SourceView[]; // fontes cadastradas (chave mascarada)
+  chatgpt: ChatgptStatus; // Login com ChatGPT (sem token)
   ui: { diceAnimation: boolean; imageGeneration: boolean; autoMaps: boolean; diceForce: number };
 }
 type Result = { ok: boolean; text: string } | null;
@@ -31,31 +34,31 @@ function ResultText({ r }: { r: Result }) {
 }
 
 /** Formulário com os dados já vindos do servidor (sem tela de carregando). */
-export default function SettingsForm({ initial }: { initial: SettingsShape }) {
+export default function SettingsForm({ initial, usedBy, notice }: {
+  initial: SettingsShape;
+  usedBy: Record<string, string[]>; // agentes por fonte
+  notice: { ok: boolean; text: string } | null; // retorno do Login com ChatGPT
+}) {
   const [data, setData] = useState(initial);
-  const [orKey, setOrKey] = useState("");
+  const [sources, setSources] = useState(initial.sources);
   const [emb, setEmb] = useState(initial.embeddings);
   const [diceAnimation, setDiceAnimation] = useState(initial.ui.diceAnimation);
   const [diceForce, setDiceForce] = useState(initial.ui.diceForce);
   const [imageGeneration, setImageGeneration] = useState(initial.ui.imageGeneration);
   const [autoMaps, setAutoMaps] = useState(initial.ui.autoMaps);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [test, setTest] = useState<Result>(null);
   const [reRunning, setReRunning] = useState(false);
   const [re, setRe] = useState<Result>(null);
 
   const embDirty = emb.enabled !== data.embeddings.enabled || emb.model !== data.embeddings.model || emb.source !== data.embeddings.source;
-  const dirty = !!orKey.trim() || embDirty || diceAnimation !== data.ui.diceAnimation || diceForce !== data.ui.diceForce || imageGeneration !== data.ui.imageGeneration || autoMaps !== data.ui.autoMaps;
+  const dirty = embDirty || diceAnimation !== data.ui.diceAnimation || diceForce !== data.ui.diceForce || imageGeneration !== data.ui.imageGeneration || autoMaps !== data.ui.autoMaps;
 
   const save = async () => {
     setSaving(true);
-    const body: Record<string, unknown> = { embeddings: emb, ui: { diceAnimation, diceForce, imageGeneration, autoMaps } };
-    if (orKey.trim()) body.openrouterApiKey = orKey.trim();
+    const body = { embeddings: emb, ui: { diceAnimation, diceForce, imageGeneration, autoMaps } };
     const res = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
     if (res?.ok) {
       toast("Configurações salvas.", { kind: "sucesso" });
-      setOrKey("");
       const fresh = await fetch("/api/settings").then((r) => r.json() as Promise<SettingsShape>).catch(() => null);
       if (fresh) {
         setData(fresh);
@@ -83,13 +86,10 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
 
   const [diceTest, setDiceTest] = useState<DiceResult | null>(null);
 
-  const testOpenRouter = async () => {
-    setTesting(true);
-    setTest(null);
-    const res = await fetch("/api/models?fresh=1").catch(() => null);
-    const d = res && (await res.json().catch(() => ({})));
-    setTest(res?.ok ? { ok: true, text: `Conexão OK, ${d.length} modelos disponíveis` } : { ok: false, text: `Falhou: ${d?.error || res?.status || "sem resposta"}` });
-    setTesting(false);
+  // a chave do OpenRouter salva na hora (no painel de fontes): relê só a versão mascarada
+  const reloadOpenrouter = async () => {
+    const fresh = await fetch("/api/settings").then((r) => r.json() as Promise<SettingsShape>).catch(() => null);
+    if (fresh) setData((d) => ({ ...d, openrouter: fresh.openrouter }));
   };
 
   const reprocess = async () => {
@@ -112,27 +112,18 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
 
   return (
     <>
-      <section className={s.section} aria-labelledby="sec-or">
+      <section className={s.section} aria-labelledby="sec-src" id="fontes">
         <div className={s.aside}>
-          <h2 id="sec-or">OpenRouter</h2>
-          <p>Todos os agentes chamam a IA pelo OpenRouter. A chave fica só no seu banco local.</p>
-          <span className={`pill ${data.openrouter.configured ? "on" : "err"} ${s.status}`}>
-            {data.openrouter.configured ? `Chave ${data.openrouter.apiKeyMasked}` : "Sem chave"}
-          </span>
+          <h2 id="sec-src">Fontes de modelos</h2>
+          <p>
+            Onde os agentes chamam a IA: o OpenRouter (embutido) ou qualquer API compatível com a da OpenAI. As chaves ficam só
+            no seu banco local; cada agente escolhe a fonte em <Link href="/agents">Agentes</Link>. Só o OpenRouter informa o custo:
+            das outras fontes, Custos e uso mostra os tokens.
+          </p>
+          <p className={s.note}>Cada fonte salva na hora, pelos próprios botões (fora do Salvar configurações).</p>
         </div>
-        <div>
-          <label className="field">
-            <span>API key (sk-or-...)</span>
-            <input type="password" value={orKey} onChange={(e) => setOrKey(e.target.value)} autoComplete="off"
-              placeholder={data.openrouter.configured ? "Preencha só para substituir a atual" : "sk-or-v1-..."} />
-          </label>
-          <div className={s.row}>
-            <button className="btn small" onClick={testOpenRouter} disabled={testing}>
-              {testing && <Loader size={14} label="Testando" />} Testar conexão
-            </button>
-            <ResultText r={test} />
-          </div>
-        </div>
+        <SourcesPanel sources={sources} setSources={setSources} openrouter={data.openrouter} onOpenrouterKey={reloadOpenrouter}
+          usedBy={usedBy} initialChatgpt={initial.chatgpt} notice={notice} />
       </section>
 
       <section className={s.section} aria-labelledby="sec-emb">
@@ -147,12 +138,17 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
             <input type="checkbox" role="switch" checked={emb.enabled} onChange={(e) => setEmb({ ...emb, enabled: e.target.checked })} />
           </label>
           <label className="field" style={{ marginTop: 16 }}>
-            <span>Fonte (cadastre outras em Agentes)</span>
+            <span>Fonte (as de Fontes de modelos, acima)</span>
             <select value={emb.source} onChange={(e) => setEmb({ ...emb, source: e.target.value })}>
               <option value="openrouter">OpenRouter</option>
-              {data.sources.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              {sources.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </select>
           </label>
+          {sources.find((x) => x.id === emb.source)?.auth === "chatgpt" && (
+            <div className={s.warn}>
+              <span>Esta fonte está no Login com ChatGPT, que só faz texto pela Responses API: embeddings não funcionam nela. Escolha outra fonte.</span>
+            </div>
+          )}
           <label className="field">
             <span>Modelo de embeddings</span>
             <input type="text" value={emb.model} onChange={(e) => setEmb({ ...emb, model: e.target.value })} spellCheck={false} />

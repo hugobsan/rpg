@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { AgentConfig, SourceView } from "@/lib/types";
-import { presetOf, SOURCE_PRESETS } from "@/lib/sourcePresets";
 import Loader from "@/components/ui/Loader";
 import { toast } from "@/components/ui/Toast";
 import AgentsDiagram from "./AgentsDiagram";
@@ -35,22 +34,24 @@ const TONE: Record<string, string> = {
   items: "color-mix(in srgb, var(--mode-battle) 50%, var(--warn))", pixel: "color-mix(in srgb, var(--ok) 50%, var(--mode-dialogue))",
   cartographer: "var(--mode-downtime)", adventure: "color-mix(in srgb, var(--mode-exploration) 50%, var(--info))",
 };
+// Login com ChatGPT (fonte OpenAI): só texto, pela Responses API
+const USAGE = "https://chatgpt.com/settings/usage";
+const TEXT_ONLY = ["image", "voice", "decider"];
 const rank = (id: string) => (ORDER.includes(id) ? ORDER.indexOf(id) : 99);
 const usd = (n: number | null | undefined) =>
   n == null ? "?" : n === 0 ? "grátis" : `US$ ${n.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}`;
 const ctx = (n: number) => `${Math.round(n / 1000).toLocaleString("pt-BR")} mil`;
 
-export default function AgentsClient({ initialAgents, initialSources }: { initialAgents: AgentConfig[]; initialSources: SourceView[] }) {
+export default function AgentsClient({ initialAgents, sources }: { initialAgents: AgentConfig[]; sources: SourceView[] }) {
   const [agents, setAgents] = useState(() => [...initialAgents].sort((a, b) => rank(a.id) - rank(b.id)));
-  const [sources, setSources] = useState(initialSources);
   // modelos por fonte, só para o editor (seletor de modelo e preço ao vivo): ausente = carregando, null = a fonte não listou
   const [models, setModels] = useState<Record<string, Model[] | null>>({});
   const asked = useRef(new Set<string>());
   const [open, setOpen] = useState<string | null>(null);
 
-  const fetchModels = useCallback(async (src: string, fresh = false): Promise<Model[]> => {
+  const fetchModels = useCallback(async (src: string): Promise<Model[]> => {
     asked.current.add(src);
-    const r = await fetch(`/api/models?source=${encodeURIComponent(src)}${fresh ? "&fresh=1" : ""}`).catch(() => null);
+    const r = await fetch(`/api/models?source=${encodeURIComponent(src)}`).catch(() => null);
     const d = await r?.json().catch(() => null);
     const list: Model[] | null = r?.ok && Array.isArray(d) ? d : null;
     setModels((m) => ({ ...m, [src]: list }));
@@ -66,7 +67,6 @@ export default function AgentsClient({ initialAgents, initialSources }: { initia
   return (
     <>
       <AgentsDiagram />
-      <SourcesPanel sources={sources} setSources={setSources} agents={agents} fetchModels={fetchModels} />
       <div className={s.grid}>
         {agents.map((a) => (
           <AgentCard
@@ -85,179 +85,6 @@ export default function AgentsClient({ initialAgents, initialSources }: { initia
   );
 }
 
-type Draft = { id?: string; kind?: string; name: string; url: string; apiKey: string };
-
-/** Fontes OpenAI-compatíveis: adicionar, editar, testar (GET /models) e remover (só sem uso). */
-function SourcesPanel({ sources, setSources, agents, fetchModels }: {
-  sources: SourceView[];
-  setSources: React.Dispatch<React.SetStateAction<SourceView[]>>;
-  agents: AgentConfig[];
-  fetchModels: (src: string, fresh?: boolean) => Promise<Model[]>;
-}) {
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [confirmDel, setConfirmDel] = useState("");
-  const [tests, setTests] = useState<Record<string, { ok: boolean; text: string } | "testing">>({});
-
-  const test = async (id: string) => {
-    setTests((t) => ({ ...t, [id]: "testing" }));
-    const r = await fetchModels(id, true).then(
-      (l) => ({ ok: true, text: `Conectou: ${l.length} ${l.length === 1 ? "modelo" : "modelos"} em GET /models.` }),
-      (e: Error) => ({ ok: false, text: `Falhou: ${e.message}` })
-    );
-    setTests((t) => ({ ...t, [id]: r }));
-  };
-
-  const save = async () => {
-    if (!draft) return;
-    setBusy(true);
-    setError("");
-    const res = await fetch("/api/sources", {
-      method: draft.id ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(draft),
-    }).catch(() => null);
-    const d = await res?.json().catch(() => null);
-    setBusy(false);
-    if (!res?.ok) return setError(d?.error || `Erro ${res?.status ?? "de rede"} ao salvar a fonte`);
-    setSources((list) => (draft.id ? list.map((x) => (x.id === d.id ? d : x)) : [...list, d]));
-    setDraft(null);
-    toast(`Fonte ${d.name} salva.`, { kind: "sucesso" });
-    test(d.id); // confere a conexão já com a URL e a chave novas
-  };
-
-  const remove = async (id: string) => {
-    setBusy(true);
-    setError("");
-    const res = await fetch(`/api/sources?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => null);
-    const d = await res?.json().catch(() => null);
-    setBusy(false);
-    setConfirmDel("");
-    if (!res?.ok) return setError(d?.error || `Erro ${res?.status ?? "de rede"} ao remover a fonte`);
-    setSources((list) => list.filter((x) => x.id !== id));
-    toast("Fonte removida.", { kind: "sucesso" });
-  };
-
-  const edit = (x: Draft | null) => {
-    setDraft(x);
-    setError("");
-  };
-
-  return (
-    <details className={`card ${s.diagram}`}>
-      <summary>
-        <div>
-          <h2>Fontes de modelos</h2>
-          <p className="muted">
-            OpenRouter (embutida){sources.length ? ` e mais ${sources.length} ${sources.length === 1 ? "fonte" : "fontes"}` : ""}. Cada agente escolhe a sua no editor.
-          </p>
-        </div>
-        <svg className={s.chev} width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-          <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </summary>
-      <div className={s.diagramBody}>
-        <p className={s.warnBox} role="note">
-          A API precisa ser <b>compatível com a da OpenAI</b>: <code>POST {"{URL}"}/chat/completions</code> e, de preferência,{" "}
-          <code>GET {"{URL}"}/models</code> para listar os modelos (sem ela, digite o id do modelo). Use a URL base, como{" "}
-          <code>https://api.openai.com/v1</code> ou <code>http://localhost:11434/v1</code>. Só o OpenRouter informa o custo: das
-          outras fontes, Custos e uso mostra os tokens.
-        </p>
-        <div className={s.srcRow}>
-          <div className={s.srcInfo}>
-            <span><b>OpenRouter</b><span className="pill">embutida</span></span>
-            <span className={s.srcMeta}><code>https://openrouter.ai/api/v1</code> · chave em <Link href="/settings">Configurações</Link></span>
-          </div>
-        </div>
-        {sources.map((x) => {
-          const used = agents.filter((a) => a.source === x.id).map((a) => a.name);
-          const t = tests[x.id];
-          return (
-            <div key={x.id} className={s.srcRow}>
-              <div className={s.srcInfo}>
-                <span><b>{x.name}</b><span className="pill">{x.id}</span></span>
-                <span className={s.srcMeta}>
-                  <code>{x.url}</code> · {x.apiKeyMasked ? <>chave <code>{x.apiKeyMasked}</code></> : "sem chave"}
-                </span>
-                <span className={s.srcMeta}>{used.length ? `Usada por: ${used.join(", ")}` : "Nenhum agente usa esta fonte."}</span>
-                {presetOf(x.kind) && <span className={s.srcMeta}>{presetOf(x.kind)!.note}</span>}
-              </div>
-              <div className={s.srcActions}>
-                {confirmDel === x.id ? (
-                  <>
-                    <span className="muted">Remover {x.name}?</span>
-                    <button className="btn small danger" disabled={busy} onClick={() => remove(x.id)}>Remover</button>
-                    <button className="btn small ghost" disabled={busy} onClick={() => setConfirmDel("")}>Cancelar</button>
-                  </>
-                ) : (
-                  <>
-                    <button className="btn small" disabled={t === "testing"} onClick={() => test(x.id)}>
-                      {t === "testing" && <Loader size={14} label="Testando" />} Testar
-                    </button>
-                    <button className="btn small ghost" onClick={() => edit({ id: x.id, kind: x.kind, name: x.name, url: x.url, apiKey: "" })}>Editar</button>
-                    {/* em uso por agente: troque a fonte deles antes (os embeddings o servidor confere) */}
-                    {!used.length && <button className="btn small ghost" onClick={() => setConfirmDel(x.id)}>Remover</button>}
-                  </>
-                )}
-              </div>
-              {t && t !== "testing" && <p className={`${s.srcTest} ${t.ok ? s.ok : s.err}`} role="status">{t.text}</p>}
-            </div>
-          );
-        })}
-        {draft ? (
-          <form className={s.srcAdd} onSubmit={(e) => { e.preventDefault(); save(); }}>
-            {/* tipo conhecido: nome e URL já vêm preenchidos, só falta a chave; o tipo não muda depois */}
-            {!draft.id && (
-              <label className={`field ${s.srcKind}`}>
-                <span>Tipo</span>
-                <select value={draft.kind ?? ""} onChange={(e) => {
-                  const p = presetOf(e.target.value);
-                  setDraft({ ...draft, kind: p?.kind, name: p?.name ?? "", url: p?.url ?? "" });
-                }}>
-                  {SOURCE_PRESETS.map((p) => <option key={p.kind} value={p.kind}>{p.name}</option>)}
-                  <option value="">Personalizada</option>
-                </select>
-              </label>
-            )}
-            {presetOf(draft.kind) && <p className={s.warnBox} role="note">{presetOf(draft.kind)!.note}</p>}
-            <div className={s.srcForm}>
-              <label className="field">
-                <span>Nome</span>
-                <input type="text" value={draft.name} maxLength={60} placeholder="Ollama local"
-                  onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-              </label>
-              <label className="field">
-                <span>URL base</span>
-                <input type="url" value={draft.url} spellCheck={false} placeholder="http://localhost:11434/v1"
-                  onChange={(e) => setDraft({ ...draft, url: e.target.value })} />
-              </label>
-              <label className="field">
-                <span>API key</span>
-                <input type="password" value={draft.apiKey} autoComplete="off" spellCheck={false}
-                  placeholder={draft.id ? "em branco: mantém a atual" : draft.kind ? "cole a chave da sua conta" : "opcional (Ollama local não usa)"}
-                  onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })} />
-              </label>
-            </div>
-            <div className={s.actions}>
-              <button type="submit" className="btn primary small"
-                disabled={busy || !draft.name.trim() || !draft.url.trim() || (!draft.id && !!draft.kind && !draft.apiKey.trim())}>
-                {busy && <Loader size={14} label="Salvando" />} {draft.id ? "Salvar fonte" : "Adicionar fonte"}
-              </button>
-              <button type="button" className="btn small ghost" disabled={busy} onClick={() => edit(null)}>Cancelar</button>
-            </div>
-          </form>
-        ) : (
-          <div className={s.srcRow}>
-            <button className="btn small" onClick={() => { const p = SOURCE_PRESETS[0]; edit({ kind: p.kind, name: p.name, url: p.url, apiKey: "" }); }}>Adicionar fonte</button>
-          </div>
-        )}
-        {error && <div className="error-box">{error}</div>}
-      </div>
-    </details>
-  );
-}
-
 function AgentCard({ agent, sources, models, loadModels, open, onToggle, onSaved }: {
   agent: AgentConfig;
   sources: SourceView[];
@@ -271,6 +98,7 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onSaved
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const or = form.source === "openrouter";
+  const viaGpt = sources.find((x) => x.id === form.source)?.auth === "chatgpt";
 
   const save = async () => {
     setSaving(true);
@@ -354,6 +182,7 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onSaved
                   <option value="openrouter">OpenRouter</option>
                   {sources.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
                 </select>
+                <span className={s.hint}><Link href="/settings#fontes">Gerenciar fontes</Link> (em Configurações)</span>
               </label>
               <label className="field">
                 <span>Modelo</span>
@@ -373,7 +202,14 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onSaved
                 </span>
               </label>
             </div>
-            {!or && SPECIAL[agent.id] && <p className={`${s.warnBox} ${s.full}`} role="note">{SPECIAL[agent.id]}</p>}
+            {viaGpt ? (
+              <p className={`${s.warnBox} ${s.full}`} role="note">
+                {TEXT_ONLY.includes(agent.id)
+                  ? `O Login com ChatGPT só faz texto, pela Responses API: ${agent.name} não funciona nesta fonte. Escolha outra para ele.`
+                  : "Usando o plano do ChatGPT: temperatura e máximo de tokens são ignorados nesta fonte. "}
+                {!TEXT_ONLY.includes(agent.id) && <a href={USAGE} target="_blank" rel="noreferrer">Gerenciar uso</a>}
+              </p>
+            ) : !or && SPECIAL[agent.id] && <p className={`${s.warnBox} ${s.full}`} role="note">{SPECIAL[agent.id]}</p>}
             {/* Jev e Voz só usam o modelo: sem temperatura, tokens, web ou prompt */}
             {!noPrompt && <>
               <label className="field">

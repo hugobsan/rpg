@@ -59,7 +59,7 @@ export function chatgptError(e: RespError): string {
     case "subscription_sharing_invalid_user":
     case "chatpass_v2_scope_not_authorized":
     case "chatpass_v2_invalid_authorization_context":
-      return "O ChatGPT não aceitou a autorização deste app. Em Agentes > Fontes de modelos, desconecte e clique em Continuar com o ChatGPT de novo.";
+      return "O ChatGPT não aceitou a autorização deste app. Em Configurações > Fontes de modelos, desconecte e clique em Continuar com o ChatGPT de novo.";
   }
   return e.message || e.detail || e.code || "erro";
 }

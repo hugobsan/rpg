@@ -14,7 +14,7 @@ const SCOPE = `openid profile email offline_access resource.invoke ${PLAN_SCOPE}
 const DYNAMIC = "dynamic_agent_client"; // só para o 1º login (registro); depois vale o client_id emitido
 const SKEW = 5 * 60_000; // renova o access token (1 h) quando faltam 5 min
 const SESSION_MS = 30 * 86_400_000; // o refresh token vale 30 dias e renova a cada refresh
-const NOT_CONNECTED = "Login com ChatGPT não conectado. Em Agentes > Fontes de modelos, clique em Continuar com o ChatGPT.";
+const NOT_CONNECTED = "Login com ChatGPT não conectado. Em Configurações > Fontes de modelos, clique em Continuar com o ChatGPT.";
 // refresh token que não serve mais: limpar e refazer o login
 const TERMINAL = new Set(["invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired", "refresh_token_invalidated", "refresh_token_reused"]);
 
@@ -52,7 +52,7 @@ class OAuthError extends Error {
 /**
  * URL de autorização para abrir no navegador. `origin` é de onde o login partiu (http://localhost:3000): o callback
  * usa a mesma porta em 127.0.0.1 (a doc exige 127.0.0.1, nunca localhost, e o caminho exato /auth/callback) e no
- * fim volta para {origin}/agents.
+ * fim volta para {origin}/settings (Configurações, onde fica o botão).
  */
 export async function startLogin(origin: string): Promise<string> {
   const c = await load();
@@ -65,7 +65,7 @@ export async function startLogin(origin: string): Promise<string> {
   const [state, nonce, verifier] = [rand(), rand(), rand(64)];
   const clientId = c.clientId || DYNAMIC;
   for (const [k, p] of pending) if (p.expires < Date.now()) pending.delete(k);
-  pending.set(state, { verifier, nonce, clientId, redirectUri, returnTo: new URL("/agents", origin).href, expires: Date.now() + 10 * 60_000 });
+  pending.set(state, { verifier, nonce, clientId, redirectUri, returnTo: new URL("/settings", origin).href, expires: Date.now() + 10 * 60_000 });
   const q = new URLSearchParams({
     response_type: "code", client_id: clientId, redirect_uri: redirectUri, scope: SCOPE, resource: RESOURCE,
     state, nonce, code_challenge_method: "S256", code_challenge: pkceChallenge(verifier), ext_agent_host_id: c.hostId,
@@ -139,7 +139,7 @@ async function refresh(): Promise<string> {
   } catch (e) {
     if (e instanceof OAuthError && TERMINAL.has(e.code)) {
       await save({ hostId: c.hostId, clientId: c.clientId, sub: c.sub, email: c.email, idToken: c.idToken });
-      throw new Error("A sessão do ChatGPT expirou ou foi desconectada. Em Agentes > Fontes de modelos, clique em Continuar com o ChatGPT.");
+      throw new Error("A sessão do ChatGPT expirou ou foi desconectada. Em Configurações > Fontes de modelos, clique em Continuar com o ChatGPT.");
     }
     if (c.accessToken && (c.expiresAt ?? 0) > Date.now()) return c.accessToken; // falha passageira: o token atual ainda vale
     throw new Error(`Não foi possível renovar o acesso ao ChatGPT agora (${message(e)}). Tente de novo em instantes.`);

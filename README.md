@@ -15,7 +15,7 @@ npm run db:up              # sobe o Postgres + pgvector em container (porta 5433
 npm run dev                # http://localhost:3000
 ```
 
-Depois, em **Configurações**, informe sua API key do [OpenRouter](https://openrouter.ai/keys). Opcionalmente habilite os embeddings (também via OpenRouter, só escolher o modelo) para busca semântica de verdade — sem eles, o sistema usa full-text search do Postgres como fallback e continua 100% funcional.
+Depois, em **Configurações** > Fontes de modelos, informe sua API key do [OpenRouter](https://openrouter.ai/keys). Opcionalmente habilite os embeddings (também via OpenRouter, só escolher o modelo) para busca semântica de verdade — sem eles, o sistema usa full-text search do Postgres como fallback e continua 100% funcional.
 
 O schema do banco é aplicado automaticamente no primeiro acesso — não há passo de migração.
 
@@ -44,7 +44,9 @@ O schema do banco é aplicado automaticamente no primeiro acesso — não há pa
 
 ### Os agentes
 
-Cada agente é um registro editável (fonte + modelo + system prompt + parâmetros) na tela **/agents**. A fonte padrão é o OpenRouter; em **Fontes de modelos**, na mesma tela, dá para cadastrar qualquer API compatível com a da OpenAI (nome, URL base e API key; OpenAI, Anthropic, Gemini e OpenCode já vêm com a URL, só falta a chave) e escolher a fonte de cada agente, inclusive Jev, Voz, Ilustrador e os embeddings (em Configurações), que chamam na fonte o mesmo caminho que usam no OpenRouter. O histórico completo de chamadas (fonte, custo, tokens, duração, request/response) fica em **/usage** (Custos e uso), para você avaliar o gasto e trocar modelos quando quiser; só o OpenRouter informa o custo, das outras fontes ficam os tokens.
+Cada agente é um registro editável (fonte + modelo + system prompt + parâmetros) na tela **/agents**. As fontes e as chaves ficam num lugar só, em **Configurações > Fontes de modelos**: o OpenRouter (embutido, padrão) e qualquer API compatível com a da OpenAI (nome, URL base e API key; OpenAI, Anthropic, Gemini e OpenCode já vêm com a URL, só falta a chave). Em /agents cada agente escolhe a sua fonte, inclusive Jev, Voz e Ilustrador, que chamam na fonte o mesmo caminho que usam no OpenRouter; a fonte dos embeddings fica logo abaixo, nas Configurações.
+
+**Login com ChatGPT** (preview): a fonte OpenAI pode usar o plano do ChatGPT em vez da API key (Sign in with ChatGPT para apps open source locais). Em Configurações > Fontes de modelos, adicione a fonte OpenAI com a autenticação "Login com ChatGPT" e clique em **Continuar com o ChatGPT**; o retorno vem em `http://127.0.0.1:3000/auth/callback` e os tokens ficam só no banco local, renovados sozinhos. Os agentes de texto dessa fonte vão pela Responses API (`src/lib/responsesApi.ts`); temperatura e máximo de tokens são ignorados, e Ilustrador, Voz, Jev e embeddings não funcionam nela. No Plus, o limite de 5 h é dividido com os outros apps que usam o plano; uso e limites em [chatgpt.com/settings/usage](https://chatgpt.com/settings/usage). Verificação sem IA: `npx tsx scripts/chatgpt-auth-check.ts`. O histórico completo de chamadas (fonte, custo, tokens, duração, request/response) fica em **/usage** (Custos e uso), para você avaliar o gasto e trocar modelos quando quiser; só o OpenRouter informa o custo, das outras fontes ficam os tokens.
 
 | Agente | Modelo default | Papel | Por quê |
 |---|---|---|---|
@@ -200,6 +202,8 @@ src/lib/
   schema.sql               # schema idempotente (aplicado no boot)
   openrouter.ts            # cliente de chat (OpenRouter ou outra fonte OpenAI-compatível) + logging obrigatório em api_logs
   sourcePresets.ts         # fontes conhecidas (OpenAI, Anthropic, Gemini, OpenCode): URL pronta, só falta a chave
+  chatgptAuth.ts           # Login com ChatGPT: OAuth com PKCE, tokens só no servidor, refresh e logout
+  responsesApi.ts          # tradutor chat() ↔ Responses API (modo Login com ChatGPT)
   agents.ts                # agentes default (modelos + prompts)
   engine.ts                # turno, contexto, compactação, roteirista
   tools.ts                 # ~20 ferramentas do Mestre
