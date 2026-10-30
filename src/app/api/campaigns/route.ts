@@ -4,17 +4,12 @@ import { blankSheet, normalizeRuleset, startingKit } from "@/lib/ruleset";
 import { generateScript, getCampaign } from "@/lib/engine";
 import { EXTRA_MASTERY } from "@/lib/progression";
 import { Ability, Campaign, Persona } from "@/lib/types";
+import { listCampaigns } from "@/app/(home)/campaignList";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const rows = await q(
-    `SELECT c.id, c.name, c.style, c.created_at::text, c.updated_at::text,
-            c.ruleset->>'name' AS ruleset_name,
-            (SELECT count(*) FROM messages m WHERE m.campaign_id = c.id) AS message_count
-     FROM campaigns c ORDER BY c.updated_at DESC`
-  );
-  return NextResponse.json(rows);
+  return NextResponse.json(await listCampaigns());
 }
 
 interface CreateBody {

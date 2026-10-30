@@ -1,0 +1,137 @@
+/* Home: campanhas como cartões pintados no tema de cada uma (data-theme no cartão). Só tokens do DESIGN.md. */
+
+.head {
+  display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap;
+  gap: var(--s-4); margin-bottom: var(--s-6);
+}
+.head h1 { margin: 0 0 var(--s-1); }
+.head p { margin: 0; font-size: 14.5px; }
+
+.grid {
+  display: grid; gap: var(--s-4);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr));
+}
+
+/* ---------- cartão ---------- */
+.card {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: flex; flex-direction: column; min-height: 236px;
+  padding: var(--s-5); border-radius: var(--r-lg);
+  background: var(--texture), var(--grain) 0 0 / 180px 180px, var(--panel-grad);
+  border: 1px solid var(--border); box-shadow: var(--hl), var(--shadow-1);
+  color: var(--text);
+  transition: transform var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+  animation: rise var(--dur-enter) var(--ease-out) backwards;
+}
+.card:nth-child(2) { animation-delay: 60ms; }
+.card:nth-child(3) { animation-delay: 120ms; }
+.card:nth-child(n+4) { animation-delay: 180ms; }
+.card:hover, .card:focus-within {
+  transform: translateY(-3px); border-color: var(--accent-line);
+  box-shadow: var(--hl), var(--shadow-2), 0 0 0 1px var(--accent-soft);
+}
+/* marca d'água: o glifo do tema no canto */
+.card::before {
+  content: var(--glyph); position: absolute; right: -0.08em; bottom: -0.32em; z-index: -1;
+  font: 400 170px/1 var(--font-display); color: var(--accent); opacity: 0.06; pointer-events: none;
+  transition: opacity var(--dur-slow) var(--ease-out), transform var(--dur-slow) var(--ease-out);
+}
+.card:hover::before { opacity: 0.1; transform: translateY(-4px); }
+
+/* imagem da última cena por trás do cartão, desbotando para o painel */
+.cover {
+  position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; object-fit: cover;
+  opacity: 0.34; -webkit-mask-image: linear-gradient(180deg, #000 10%, transparent 78%); mask-image: linear-gradient(180deg, #000 10%, transparent 78%);
+  transition: transform var(--dur-slow) var(--ease-out), opacity var(--dur-slow) var(--ease-out);
+}
+.card:hover .cover { transform: scale(1.03); opacity: 0.44; }
+
+.top { padding-right: 40px; }
+
+.name {
+  font-family: var(--font-display); font-weight: var(--display-weight); letter-spacing: var(--display-tracking);
+  font-size: calc(25px * var(--display-scale)); line-height: 1.1; margin: var(--s-3) 0 var(--s-1);
+  text-wrap: balance; overflow-wrap: anywhere;
+}
+/* link esticado: o cartão inteiro abre a campanha; os botões ficam acima dele */
+.link { color: inherit; }
+.link:hover { text-decoration: none; }
+.link::after { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: inherit; }
+.link:focus-visible { outline: none; }
+.link:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -3px; }
+
+.char { margin: 0; color: var(--text-dim); font-size: 13.5px; }
+.char b { color: var(--text); font-weight: 600; }
+
+.where {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4);
+  margin-top: var(--s-4); font-size: 13.5px; color: var(--text-dim);
+}
+.where .meta { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.where svg { flex-shrink: 0; color: var(--accent); opacity: 0.8; }
+.loc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 34ch; }
+
+.foot {
+  margin-top: auto; padding-top: var(--s-4);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s-3);
+  font-size: 12.5px; color: var(--text-dim);
+}
+.stats { font-variant-numeric: tabular-nums; }
+.cta {
+  display: inline-flex; align-items: center; gap: 6px; color: var(--accent);
+  font-size: 13.5px; font-weight: 600; white-space: nowrap;
+}
+.cta svg { transition: transform var(--dur) var(--ease-out); }
+.card:hover .cta svg { transform: translateX(3px); }
+
+/* destaque: a campanha mais recente ocupa a linha inteira */
+.featured { grid-column: 1 / -1; min-height: 300px; padding: var(--s-6); }
+.featured .name { font-size: calc(clamp(30px, 2.4vw + 16px, 42px) * var(--display-scale)); }
+.featured::before { font-size: 260px; }
+.featured .where, .featured .char { max-width: 60ch; }
+@media (min-width: 760px) {
+  .featured .cover { -webkit-mask-image: linear-gradient(90deg, transparent 22%, #000 78%); mask-image: linear-gradient(90deg, transparent 22%, #000 78%); opacity: 0.5; }
+  .featured:hover .cover { opacity: 0.6; }
+}
+.body { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+
+/* ---------- excluir com confirmação no próprio cartão ---------- */
+.actions { position: absolute; top: var(--s-3); right: var(--s-3); z-index: 2; opacity: 0; transition: opacity var(--dur) var(--ease-out); }
+.card:hover .actions, .card:focus-within .actions { opacity: 1; }
+@media (hover: none) { .actions { opacity: 1; } }
+.iconBtn { width: 34px; padding: 0; }
+.iconBtn:hover:not(:disabled) { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, transparent); }
+
+.confirm {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; flex-direction: column; justify-content: center; gap: var(--s-3);
+  padding: var(--s-5); background: color-mix(in srgb, var(--bg-sunken) 96%, transparent);
+  animation: fade var(--dur) var(--ease-out);
+}
+.confirm p { margin: 0; max-width: 46ch; }
+.confirm .row { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+
+/* ---------- vazio ---------- */
+.empty {
+  position: relative; isolation: isolate; overflow: hidden; text-align: center;
+  padding: var(--s-8) var(--s-5); border-radius: var(--r-lg);
+  background: var(--texture), var(--panel-grad); border: 1px solid var(--border); box-shadow: var(--hl), var(--shadow-1);
+}
+.empty h2 { margin: var(--s-3) 0 var(--s-2); font-size: calc(28px * var(--display-scale)); }
+.empty p { margin: 0 auto var(--s-5); max-width: 52ch; color: var(--text-dim); }
+.seal { font: 400 44px/1 var(--font-display); color: var(--accent); }
+.seal::before { content: var(--glyph); }
+.swatches { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s-2); margin-top: var(--s-6); }
+.swatch {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px;
+  border-radius: var(--r-pill); border: 1px solid var(--accent-line);
+  background: var(--texture), var(--bg-panel); color: var(--text); font-size: 12.5px;
+}
+.swatch::before { content: var(--glyph); color: var(--accent); font-family: var(--font-display); }
+
+@media (max-width: 640px) {
+  .head { margin-bottom: var(--s-5); }
+  .card, .featured { padding: var(--s-4); }
+  .featured { min-height: 260px; }
+  .loc { max-width: 26ch; }
+}
