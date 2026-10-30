@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type {
   Campaign,
   CampaignScript,
@@ -61,6 +61,12 @@ interface StateShape {
 const toFeed = (messages: StateShape["messages"]): FeedItem[] =>
   messages.map((m) => ({ key: `m${m.id}`, kind: m.role === "player" ? "player" : "gm", content: m.content }));
 
+const SIDE_KEY = "chronicle.sideWidth";
+const SIDE_DEFAULT = 340;
+// entre 260px e o que deixa pelo menos 420px para o chat (máx. 760px)
+const clampSide = (w: number) =>
+  Math.round(Math.min(Math.max(w, 260), Math.min(760, (typeof window !== "undefined" ? window.innerWidth : 1400) - 420)));
+
 export default function GameClient({ campaignId }: { campaignId: string }) {
   const [state, setState] = useState<StateShape | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
@@ -71,6 +77,31 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   const [error, setError] = useState("");
   const [tab, setTab] = useState<"sheet" | "inventory" | "npcs" | "memories" | "books" | "script" | "gallery">("sheet");
   const [imageFull, setImageFull] = useState(false);
+  // largura da barra lateral, ajustável pela alça entre ela e o chat (lembrada neste navegador)
+  const [sideW, setSideW] = useState(SIDE_DEFAULT);
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem(SIDE_KEY));
+      if (saved) setSideW(clampSide(saved));
+    } catch {}
+  }, []);
+  const saveSide = (w: number) => {
+    try { localStorage.setItem(SIDE_KEY, String(w)); } catch {}
+  };
+  const startResize = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    let w = sideW;
+    const move = (ev: PointerEvent) => setSideW((w = clampSide(window.innerWidth - ev.clientX)));
+    const up = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      saveSide(w);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+  };
   const [imageBusy, setImageBusy] = useState(false);
   const [sceneImage, setSceneImage] = useState<string | null>(null);
   const [sceneImageId, setSceneImageId] = useState<number | null>(null);
@@ -280,7 +311,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   const modeColor = MODE_COLOR[scene.mode] || "var(--accent)";
 
   return (
-    <div className="game-layout">
+    <div className="game-layout" style={{ "--side-w": `${sideW}px` } as CSSProperties}>
       <div className="game-main">
         <div className="scene-banner">
           <span className="mode-badge" style={{ color: modeColor }}>
@@ -395,6 +426,9 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
       </div>
 
       <aside className="game-side">
+        <div className="side-resizer" onPointerDown={startResize}
+          onDoubleClick={() => { setSideW(SIDE_DEFAULT); saveSide(SIDE_DEFAULT); }}
+          title="Arraste para ajustar a largura · duplo clique volta ao padrão" />
         <div className="side-tabs">
           {(
             [
