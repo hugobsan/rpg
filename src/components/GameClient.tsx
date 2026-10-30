@@ -9,6 +9,8 @@ import type {
   VoiceProfile,
 } from "@/lib/types";
 import NpcModal from "./NpcModal";
+import ImageViewer from "./ImageViewer";
+import Gallery from "./Gallery";
 
 // ---------- helpers ----------
 
@@ -61,7 +63,8 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   const [busy, setBusy] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<"sheet" | "npcs" | "memories" | "books" | "script">("sheet");
+  const [tab, setTab] = useState<"sheet" | "npcs" | "memories" | "books" | "script" | "gallery">("sheet");
+  const [imageFull, setImageFull] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [sceneImage, setSceneImage] = useState<string | null>(null);
   const [regenOpen, setRegenOpen] = useState(false);
@@ -302,6 +305,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
               ["memories", "Marcos"],
               ["books", "Livros"],
               ["script", "Roteiro"],
+              ["gallery", "Galeria"],
             ] as const
           ).map(([k, label]) => (
             <button key={k} className={tab === k ? "active" : ""} onClick={() => setTab(k)}>
@@ -312,11 +316,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
         <div className="side-body">
           {sceneImage && tab === "sheet" && (
             <div style={{ marginBottom: 12 }}>
-              <img src={sceneImage} alt="Cena atual" className="scene-image" />
-              <button className="btn ghost small" style={{ marginTop: 6 }} disabled={imageBusy}
-                onClick={() => { setRegenReason(""); setRegenOpen(true); }}>
-                {imageBusy ? "pintando..." : "↻ Gerar novamente"}
-              </button>
+              <img src={sceneImage} alt="Cena atual" className="scene-image" onClick={() => setImageFull(true)} />
             </div>
           )}
           {tab === "sheet" && player && <SheetView char={player} campaign={campaign} />}
@@ -327,10 +327,14 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
           {tab === "books" && (
             <BooksView campaignId={campaignId} books={state.books} onChange={reloadState} />
           )}
+          {tab === "gallery" && <Gallery campaignId={campaignId} refreshKey={sceneImage} />}
           {tab === "script" && <ScriptView script={campaign.script} campaignId={campaignId} onChange={reloadState} />}
         </div>
       </aside>
 
+      {imageFull && sceneImage && (
+        <ImageViewer items={[{ src: sceneImage }]} index={0} onIndex={() => {}} onClose={() => setImageFull(false)} />
+      )}
       {regenOpen && (
         <div className="modal-backdrop" onClick={() => setRegenOpen(false)}>
           <div className="modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
