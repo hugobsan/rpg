@@ -4,7 +4,7 @@ import { chat } from "./openrouter";
 import { startJob } from "./jobs";
 import { costsByRankText } from "./ruleset";
 import { DEFAULT_MASTERY_BONUS } from "./progression";
-import type { Campaign, LibraryAbility, LibraryEntry, LibraryItem, LibraryKind, Ruleset } from "./types";
+import type { Campaign, LibraryAbility, LibraryEntry, LibraryItem, LibraryKind, Ruleset, Sheet } from "./types";
 
 /**
  * Biblioteca da campanha (tabela library): habilidades e itens do mundo/cânone.
@@ -37,13 +37,38 @@ export async function findLibrary(campaignId: string, kind: LibraryKind, name: s
 }
 
 /** Grava uma entrada; false se o nome já existe (índice único por nome). */
-async function saveLibrary(campaignId: string, kind: LibraryKind, data: LibraryAbility | LibraryItem, canon: boolean): Promise<boolean> {
+async function saveLibrary(campaignId: string, kind: LibraryKind, data: LibraryAbility | LibraryItem, canon: boolean, source: "agent" | "gm" = "agent"): Promise<boolean> {
   const rows = await q(
-    `INSERT INTO library (campaign_id, kind, name, data, canon, source) VALUES ($1,$2,$3,$4,$5,'agent')
+    `INSERT INTO library (campaign_id, kind, name, data, canon, source) VALUES ($1,$2,$3,$4,$5,$6)
      ON CONFLICT DO NOTHING RETURNING id`,
-    [campaignId, kind, data.name, JSON.stringify(data), canon]
+    [campaignId, kind, data.name, JSON.stringify(data), canon, source]
   );
   return rows.length > 0;
+}
+
+/**
+ * Copia para a biblioteca, sem IA, as habilidades que já estão nas fichas (jogador e NPCs), com
+ * quem usa cada uma. As que já existem na biblioteca ficam como estão.
+ */
+export async function importSheetAbilities(campaign: Campaign): Promise<{ added: string[]; total: number }> {
+  const chars = await q<{ name: string; canon: boolean; sheet: Sheet }>(
+    `SELECT name, canon, sheet FROM characters WHERE campaign_id = $1 ORDER BY canon DESC, kind DESC, name`,
+    [campaign.id]
+  );
+  const seen = new Map<string, { data: LibraryAbility; users: string[]; canon: boolean }>();
+  for (const c of chars)
+    for (const a of c.sheet?.abilities ?? []) {
+      const data = normalizeAbility(campaign.ruleset, a);
+      if (!data) continue;
+      const e = seen.get(data.name.toLowerCase()) ?? { data, users: [], canon: false };
+      e.users.push(c.name);
+      e.canon ||= c.canon;
+      seen.set(data.name.toLowerCase(), e);
+    }
+  const added: string[] = [];
+  for (const { data, users, canon } of seen.values())
+    if (await saveLibrary(campaign.id, "ability", { ...data, users: data.users || users.join(", ") }, canon, "gm")) added.push(data.name);
+  return { added, total: seen.size };
 }
 
 export async function deleteLibrary(campaignId: string, id: number): Promise<boolean> {

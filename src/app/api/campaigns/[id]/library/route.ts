@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCampaign } from "@/lib/engine";
-import { generateLibrary, listLibrary } from "@/lib/library";
+import { generateLibrary, importSheetAbilities, listLibrary } from "@/lib/library";
 
 export const dynamic = "force-dynamic";
 
@@ -11,12 +11,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ ability, item });
 }
 
-/** POST { kind, count, focus, canon } → o Criador de habilidades/itens gera em segundo plano (tarefa 'library'). */
+/**
+ * POST { kind, count, focus, canon } → o Criador de habilidades/itens gera em segundo plano (tarefa 'library').
+ * POST { from: "sheets" } → copia as habilidades das fichas, sem IA: { added, total }.
+ */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const body = (await req.json().catch(() => ({}))) as { kind?: string; count?: number; focus?: string; canon?: boolean };
+  const body = (await req.json().catch(() => ({}))) as { kind?: string; count?: number; focus?: string; canon?: boolean; from?: string };
   try {
     const campaign = await getCampaign(id);
+    if (body.from === "sheets") return NextResponse.json(await importSheetAbilities(campaign));
     const job = await generateLibrary(
       campaign,
       body.kind === "item" ? "item" : "ability",

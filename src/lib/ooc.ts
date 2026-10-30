@@ -6,7 +6,7 @@ import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { activeDirectives, addMemory } from "./retrieval";
 import { getCampaign, getCharacters, getCurrentScene, sheetSummary } from "./engine";
 import { executeGmTool, GM_TOOLS, saveTable } from "./tools";
-import { generateLibrary } from "./library";
+import { generateLibrary, importSheetAbilities } from "./library";
 import { DIFFICULTIES, getTable, mergeCategories, normalizeTable, tablePromptBlock, tableSummary } from "./table";
 
 // as ferramentas do turno, menos as que leem o roteiro e os segredos dos NPCs (spoiler) e a mensagem de NPC
@@ -42,6 +42,15 @@ const OOC_GAME_TOOLS: ToolDef[] = [
         },
         required: ["kind", "count"],
       },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "import_sheet_abilities",
+      description:
+        "A pedido do jogador, copia para a biblioteca as habilidades que já estão nas fichas (dele e dos NPCs), com quem usa cada uma, sem criar nada novo. As que já estão na biblioteca ficam como estão.",
+      parameters: { type: "object", properties: {} },
     },
   },
 ];
@@ -182,6 +191,10 @@ async function runTool(
       const canon = typeof args.canon === "boolean" ? args.canon : ctx.campaign.ruleset.canonBased;
       const job = await generateLibrary(ctx.campaign, args.kind === "item" ? "item" : "ability", Number(args.count) || 10, String(args.focus || ""), canon);
       return job.started ? `✓ ${job.label}: começou em segundo plano; o resultado aparece na aba Biblioteca.` : `Já está rodando: ${job.label}.`;
+    }
+    if (name === "import_sheet_abilities") {
+      const r = await importSheetAbilities(ctx.campaign);
+      return `✓ Biblioteca: ${r.added.length} de ${r.total} habilidades das fichas entraram${r.added.length ? ` (${r.added.join(", ")})` : " (as outras já estavam lá)"}.`;
     }
     if (name === "remove_ability") {
       const target = chars.find((c) => c.name.toLowerCase() === String(args.character || "").toLowerCase());

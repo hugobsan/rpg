@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { pool, q } from "../src/lib/db";
 import { normalizeRuleset, blankSheet } from "../src/lib/ruleset";
-import { fallbackAbility, fillLibrary, listLibrary, normalizeAbility, normalizeItem, parseCreatorJson } from "../src/lib/library";
+import { fallbackAbility, fillLibrary, importSheetAbilities, listLibrary, normalizeAbility, normalizeItem, parseCreatorJson } from "../src/lib/library";
 import { executeGmTool, type ToolContext } from "../src/lib/tools";
 import type { Campaign, Character, LibraryAbility, Scene, TurnEvent } from "../src/lib/types";
 
@@ -158,6 +158,27 @@ async function db() {
     assert.match(await run("search_library", { kind: "ability" }), /^7 na biblioteca: Bunshin, Chidori/);
     assert.match(await run("search_library", { kind: "item", query: "nada" }), /Nada na biblioteca/);
     ok("search_library: por texto com custo e usuários; sem query, os nomes");
+
+    // trazer das fichas: técnica que só existe na ficha entra com quem usa; a que já está fica igual
+    const npcSheet = blankSheet(rs);
+    npcSheet.abilities = [
+      { name: "Rasengan", type: "ninjutsu", rank: "A", progress: 40, cost: { resource: "chakra", amount: 15 } },
+      { name: "Chidori", type: "ninjutsu", rank: "S", progress: 90 },
+      { name: "Fora da mecânica", type: "inexistente" },
+    ];
+    await q(`INSERT INTO characters (campaign_id, kind, name, canon, sheet, persona) VALUES ($1,'npc','Naruto',true,$2,'{}')`, [camp.id, JSON.stringify(npcSheet)]);
+    const pc = await char();
+    pc.sheet.abilities.push({ name: "rasengan", type: "ninjutsu", progress: 10 });
+    await q(`UPDATE characters SET sheet = $1 WHERE id = $2`, [JSON.stringify(pc.sheet), pc.id]);
+    const imp = await importSheetAbilities(camp);
+    assert.deepEqual(imp, { added: ["Rasengan"], total: 2 });
+    const [ras] = await q<{ data: LibraryAbility; canon: boolean; source: string }>(`SELECT data, canon, source FROM library WHERE campaign_id = $1 AND name = 'Rasengan'`, [camp.id]);
+    assert.equal(ras.data.users, "Naruto, Teste", "a versão de quem é do cânone vem primeiro");
+    assert.deepEqual(ras.data.cost, { resource: "chakra", amount: 15 });
+    assert.equal((ras.data as { progress?: number }).progress, undefined, "o domínio é de quem aprende, não da biblioteca");
+    assert.deepEqual([ras.canon, ras.source], [true, "gm"]);
+    assert.deepEqual(await importSheetAbilities(camp), { added: [], total: 2 }, "de novo não duplica");
+    ok("trazer das fichas: entra com quem usa e sem domínio; tipo fora da mecânica fica de fora; repetir não duplica");
   } finally {
     await q(`DELETE FROM campaigns WHERE id = $1`, [camp.id]);
   }

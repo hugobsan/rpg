@@ -35,6 +35,7 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
   const [focus, setFocus] = useState("");
   const [canon, setCanon] = useState(ruleset.canonBased);
   const [sending, setSending] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [genError, setGenError] = useState("");
 
   const libJobs = jobs.filter((j) => j.kind === "library");
@@ -93,6 +94,25 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
     } finally {
       setSending(false);
     }
+  };
+
+  // sem IA: as habilidades que já estão nas fichas (jogador e NPCs) entram com quem usa
+  const fromSheets = async () => {
+    setImporting(true);
+    const res = await fetch(`/api/campaigns/${campaignId}/library`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "sheets" }),
+    }).catch(() => null);
+    const data = res && (await res.json().catch(() => ({})));
+    setImporting(false);
+    if (!res?.ok) return toast(data?.error || "Tente de novo.", { kind: "alerta", title: "Não deu para trazer das fichas" });
+    toast(data.added.length ? data.added.join(", ") : "Todas já estavam aqui.", {
+      kind: data.added.length ? "sucesso" : "info",
+      title: `${data.added.length} de ${data.total} vieram das fichas`,
+    });
+    setLib(null);
+    fetch(`/api/campaigns/${campaignId}/library`).then((r) => r.json()).then(setLib).catch(() => {});
   };
 
   const remove = async (e: LibraryEntry) => {
@@ -214,6 +234,13 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
           {genError && <div className="error-box" style={{ flex: "1 1 100%" }}>{genError}</div>}
         </form>
       </details>
+
+      {kind === "ability" && (
+        <button className={`btn ghost small ${s.fromSheets}`} onClick={fromSheets} disabled={importing}
+          title="Copia para cá, sem IA, as que você e os NPCs já têm na ficha">
+          {importing ? <Loader size={14} label="Copiando" /> : <Icon name="sheet" size={14} />} Trazer das fichas
+        </button>
+      )}
 
       {running.map((j) => (
         <div key={j.id} className={s.job} aria-live="polite">
