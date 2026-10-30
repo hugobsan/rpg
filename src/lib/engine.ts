@@ -323,6 +323,7 @@ export async function runTurn(
   const maxRounds = params.maxToolRounds ?? 8;
   let finalText = "";
   let timeMoved = false; // o Mestre chamou advance_time/set_time/train neste turno
+  let npcGate = false; // a narração já voltou uma vez por NPC sem registro
 
   for (let round = 0; round <= maxRounds; round++) {
     // :online só na 1ª rodada: o plugin cobra por requisição e repetiria a mesma busca a cada rodada
@@ -340,7 +341,16 @@ export async function runTurn(
 
     if (!result.toolCalls.length || round === maxRounds) {
       finalText = result.content || finalText;
-      break;
+      // NPC com nome falando sem estar registrado: devolve uma vez para o Mestre registrar e reescrever
+      const missing = !npcGate && round < maxRounds ? unregisteredSpeakers(finalText, await getCharacters(campaignId)) : [];
+      if (!missing.length) break;
+      npcGate = true;
+      messages.push({ role: "assistant", content: finalText });
+      messages.push({
+        role: "user",
+        content: `(Sistema, fora do jogo: ${missing.join(", ")} fala${missing.length > 1 ? "m" : ""} na narração mas não está${missing.length > 1 ? "ão" : ""} registrado${missing.length > 1 ? "s" : ""}. Chame create_npc agora para cada um (canon=true se for da obra; se já existir com outro nome, use set_npc_active nesse nome) e então escreva a narração final de novo, completa. Se for figurante sem nome, só repita a narração.)`,
+      });
+      continue;
     }
     const sources = useWeb && round === 0 ? webSources(result.raw) : "";
     messages.push({
@@ -387,6 +397,22 @@ export async function runTurn(
     timeMoved ? null : fallbackClock(campaignId, campaign, scene, playerInput, narration, emit).catch(() => {}),
   ]);
   emit({ type: "done" });
+}
+
+/**
+ * Quem fala no formato **Nome:** e não bate com nenhum personagem registrado.
+ * Compara o 1º nome sem honoríficos ("Iruka-sensei" = "Iruka Umino"); "Hugo (como Daiki)" conta como Hugo.
+ */
+export function unregisteredSpeakers(text: string, chars: { name: string }[]): string[] {
+  const key = (s: string) =>
+    s.replace(/\(.*?\)/g, "").trim().split(/\s+/)[0]?.replace(/-(sensei|sama|kun|chan|san|dono|senpai|hime)$/i, "").toLowerCase() || "";
+  const known = new Set(chars.flatMap((c) => [key(c.name), ...c.name.toLowerCase().split(/\s+/)]));
+  const out = new Set<string>();
+  for (const m of text.matchAll(/^\s*\*\*([^*\n]{2,40}?):\*\*/gm)) {
+    const name = m[1].trim();
+    if (!known.has(key(name))) out.add(name.replace(/\s*\(.*?\)/g, ""));
+  }
+  return [...out];
 }
 
 /** O Mestre esqueceu de mexer no relógio: o Jev escolhe uma faixa de tempo e o código soma. Falhou = não anda. */
