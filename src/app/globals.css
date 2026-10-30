@@ -513,7 +513,9 @@ hr { border: none; height: 1px; background: var(--border); margin: var(--s-5) 0;
   .topnav .brand { margin-right: var(--s-2); }
   .topnav .brand-name { display: none; }
   .topnav a.nav { padding: 0 9px; font-size: 13px; }
+  .topnav .nav-full { display: none; }
 }
+@media (min-width: 521px) { .topnav .nav-short { display: none; } }
 
 .container { max-width: 1080px; margin: 0 auto; padding: var(--s-6) var(--s-5) var(--s-8); animation: rise var(--dur-enter) var(--ease-out); }
 @media (max-width: 640px) { .container { padding: var(--s-5) var(--s-4) var(--s-7); } .topnav { padding: 0 var(--s-3); } }
