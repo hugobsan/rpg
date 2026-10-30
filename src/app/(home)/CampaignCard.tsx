@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { formatClock, period } from "@/lib/clock";
@@ -44,14 +45,18 @@ export default function CampaignCard({ c, featured, actions, href = `/campaign/$
   return (
     <article className={`${s.card}${featured ? ` ${s.featured}` : ""}`} data-theme={c.theme} data-mode={c.mode ?? undefined}>
       {c.image_id && (
-        <img className={s.cover} src={`/api/campaigns/${c.id}/images/${c.image_id}`} alt="" loading={featured ? "eager" : "lazy"} decoding="async" />
+        // redimensionada pelo Next (webp no tamanho do cartão), como as miniaturas da galeria
+        <Image className={s.cover} src={`/api/campaigns/${c.id}/images/${c.image_id}`} alt="" fill priority={featured}
+          sizes={featured ? "(max-width: 760px) 100vw, 1040px" : "(max-width: 760px) 100vw, 360px"} />
       )}
       <div className={s.body}>
         <div className={`overline ${s.top}`}>{c.ruleset_name}</div>
         <h2 className={s.name}>
           {href ? <Link href={href} className={s.link}>{c.name}</Link> : c.name || "Sua campanha"}
         </h2>
-        {c.character_name && <p className={s.char}>com <b>{c.character_name}</b></p>}
+        <p className={s.char}>
+          {c.character_name && <>com <b>{c.character_name}</b> · </>}campanha {(STYLE_LABEL[c.style] || c.style).toLowerCase()}
+        </p>
         {(c.mode || c.location || c.clock != null) && (
           <div className={s.where}>
             {c.mode && <span className="mode-badge" style={{ color: "var(--mode)" }}>{MODE_LABEL[c.mode] || c.mode}</span>}
@@ -61,8 +66,7 @@ export default function CampaignCard({ c, featured, actions, href = `/campaign/$
         )}
         <div className={s.foot}>
           <span className={s.stats}>
-            {STYLE_LABEL[c.style] || c.style}
-            {href && ` · ${msgs} ${msgs === 1 ? "mensagem" : "mensagens"} · ${ago(c.last_played)}`}
+            {href ? `${msgs} ${msgs === 1 ? "mensagem" : "mensagens"} · ${ago(c.last_played)}` : "Prévia"}
           </span>
           {href && <span className={s.cta}>{msgs ? "Continuar" : "Começar"}{Icon.arrow}</span>}
         </div>
