@@ -2,19 +2,17 @@
 import { useState } from "react";
 import type { Character, InboxItem } from "@/lib/types";
 import { toast } from "./ui/Toast";
+import Portrait from "./Portrait";
 import s from "./NpcList.module.css";
 
-export const initials = (name: string) =>
-  name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+export { initials } from "./Portrait";
 
-/** Monograma do NPC na forma do tema; com `unread`, o número de mensagens não lidas. */
-export function NpcAvatar({ npc, unread, size }: { npc: Pick<Character, "name" | "active">; unread?: number; size?: number }) {
+/** Retrato do NPC (ou o monograma, sem retrato) na moldura do tema; com `unread`, o número de mensagens não lidas. */
+export function NpcAvatar({ npc, unread, size }: { npc: Parameters<typeof Portrait>[0]["char"]; unread?: number; size?: number }) {
   return (
-    <span className={`${s.avatar}${npc.active ? ` ${s.on}` : ""}`} aria-hidden="true"
-      style={size ? { width: size, height: size, fontSize: size * 0.38 } : undefined}>
-      {initials(npc.name)}
+    <Portrait char={npc} size={size}>
       {!!unread && <span className={s.badge}>{unread}</span>}
-    </span>
+    </Portrait>
   );
 }
 

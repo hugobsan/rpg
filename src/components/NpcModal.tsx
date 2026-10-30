@@ -4,7 +4,7 @@ import type { Campaign, Character, VoiceFx, VoiceProfile } from "@/lib/types";
 import { FX_DEFAULT, fxOf, playVoice, stopVoice } from "@/lib/voiceFx";
 import SheetView from "./SheetView";
 import AbilitiesView from "./AbilitiesView";
-import { NpcAvatar } from "./NpcList";
+import Portrait, { PortraitButton } from "./Portrait";
 import Loader from "./ui/Loader";
 import { toast } from "./ui/Toast";
 import s from "./NpcModal.module.css";
@@ -68,11 +68,13 @@ export default function NpcModal({
   campaignId,
   npc,
   campaign,
+  onChanged,
   onClose,
 }: {
   campaignId: string;
   npc: Character;
   campaign: Campaign;
+  onChanged?: () => void;
   onClose: () => void;
 }) {
   const [view, setView] = useState<"chat" | "sheet" | "voice">("chat");
@@ -210,7 +212,7 @@ export default function NpcModal({
     <div className="modal-backdrop" onClick={endChat}>
       <div className={`modal ${s.modal}`} role="dialog" aria-modal="true" aria-label={`Conversa com ${npc.name}`} onClick={(e) => e.stopPropagation()}>
         <div className={s.head}>
-          <NpcAvatar npc={npc} size={44} />
+          <Portrait char={npc} size={72} />
           <div className={s.who}>
             <h3 className={s.name}>{npc.name}</h3>
             <div className={s.status}>
@@ -218,6 +220,7 @@ export default function NpcModal({
               {npc.active ? "em cena" : "fora de cena"}
               {npc.canon && <> · cânone</>}
             </div>
+            <div className={s.portraitAction}><PortraitButton char={npc} onChange={onChanged} /></div>
           </div>
           <button className={s.icon} onClick={toggleActive} title={npc.active ? "Tirar de cena" : "Trazer para a cena"}
             aria-label={npc.active ? `Tirar ${npc.name} de cena` : `Trazer ${npc.name} para a cena`}>

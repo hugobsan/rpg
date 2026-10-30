@@ -3,7 +3,7 @@ import { memo, useEffect, useState, type CSSProperties } from "react";
 import type { Character, Scene } from "@/lib/types";
 import type { FeedItem } from "./useTurn";
 import { playLine } from "../NpcModal";
-import { initials } from "../NpcList";
+import { initials, portraitUrl } from "../Portrait";
 import Loader from "../ui/Loader";
 import Icon from "./Icon";
 import { chipIcon, chipText, draftSafe, excerpt, md, narrationBlocks, PHASES, speakerColor, type Phase } from "./feedModel";
@@ -40,7 +40,10 @@ function Say({ name, line, cast, cursor }: { name: string; line: string; cast: C
   return (
     <div className={`${s.say} ${you ? s.you : ""}`} style={style}>
       {npc ? (
-        <button className={s.mono} onClick={() => cast.onNpc(npc)} aria-label={`Abrir ${npc.name}`}>{initials(name)}</button>
+        <button className={s.mono} onClick={() => cast.onNpc(npc)} aria-label={`Abrir ${npc.name}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- retrato pixel art pequeno */}
+          {portraitUrl(npc) ? <img src={portraitUrl(npc)!} alt="" decoding="async" /> : initials(name)}
+        </button>
       ) : (
         <span className={s.mono} aria-hidden="true">{initials(name)}</span>
       )}

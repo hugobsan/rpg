@@ -13,14 +13,7 @@
 .confirm span { flex: 1 1 100%; color: var(--text-dim); }
 .none { margin: 0; font-size: 12.5px; color: var(--text-faint); padding: 4px 0; }
 
-/* monograma: iniciais na forma do tema (o raio muda por tema) */
-.avatar {
-  position: relative; flex-shrink: 0; width: 38px; height: 38px; display: grid; place-items: center;
-  border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--bg-sunken);
-  font: var(--display-weight) calc(14px * var(--display-scale)) / 1 var(--font-display); letter-spacing: var(--display-tracking);
-  color: var(--text-dim);
-}
-.avatar.on { border-color: var(--accent-line); color: var(--accent); background: radial-gradient(circle at 50% 25%, var(--accent-soft), transparent 70%), var(--bg-sunken); }
+/* contador de não lidas sobre o retrato (NpcAvatar) */
 .badge {
   position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; display: grid; place-items: center;
   border-radius: var(--r-pill); background: var(--accent-fill); color: var(--accent-ink); border: 2px solid var(--bg-raise);

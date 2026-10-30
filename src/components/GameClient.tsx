@@ -406,8 +406,9 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
       {openNpc && (
         <NpcModal
           campaignId={campaignId}
-          npc={openNpc}
+          npc={state?.characters.find((c) => c.id === openNpc.id) ?? openNpc}
           campaign={campaign}
+          onChanged={reloadState}
           onClose={() => {
             setOpenNpc(null);
             reloadState();

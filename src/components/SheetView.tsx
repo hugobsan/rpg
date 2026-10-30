@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { Campaign, Character } from "@/lib/types";
 import { attributeCap, attributePoints, DEFAULT_XP_PER_POINT, levelThatAllows, powerLevel, trainingRules } from "@/lib/progression";
 import { toast } from "./ui/Toast";
+import Portrait, { PortraitButton } from "./Portrait";
 import s from "./SheetView.module.css";
 
 const reduced = () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -58,9 +59,6 @@ function Meter({ label, color, cur, max, hint }: { label: string; color: string;
   );
 }
 
-const initials = (name: string) =>
-  name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
-
 /** Ficha. Com onChange (só o jogador), mostra os pontos livres e o + por atributo. Também é a ficha do NPC no modal. */
 export default function SheetView({ char, campaign, onChange }: { char: Character; campaign: Campaign; onChange?: () => void }) {
   const rs = campaign.ruleset;
@@ -103,10 +101,11 @@ export default function SheetView({ char, campaign, onChange }: { char: Characte
       {/* no modal do NPC o nome já está no cabeçalho */}
       {!npc ? (
         <header className={s.head}>
-          <span className={s.crest} aria-hidden="true">{initials(char.name)}</span>
+          <Portrait char={char} size={64} />
           <div className={s.who}>
             <h3 className={s.name}>{char.name}</h3>
             <div className={s.rank}>{rank?.label || sh.rank || "sem cargo"}</div>
+            {onChange && <div className={s.portraitAction}><PortraitButton char={char} onChange={onChange} /></div>}
           </div>
         </header>
       ) : (

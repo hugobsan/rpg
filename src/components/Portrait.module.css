@@ -1,0 +1,42 @@
+/* Retrato do personagem (Portrait.tsx): moldura no tema, pixel art nítida e o estado "desenhando". Só tokens do DESIGN.md. */
+.frame {
+  --size: 38px;
+  position: relative; flex-shrink: 0; width: var(--size); height: var(--size); display: grid; place-items: center;
+  border-radius: var(--r-md); border: 1px solid var(--accent-line);
+  background: radial-gradient(circle at 50% 28%, var(--accent-soft), transparent 72%), var(--bg-sunken);
+  box-shadow: var(--hl);
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+}
+/* grande (ficha, modal): moldura dupla, como um brasão */
+.lg { box-shadow: var(--hl), var(--shadow-1), 0 0 0 3px var(--bg-raise), 0 0 0 4px var(--accent-soft); }
+.off { border-color: var(--border-strong); background: var(--bg-sunken); }
+
+.img {
+  width: 100%; height: 100%; display: block; border-radius: inherit; object-fit: cover;
+  image-rendering: pixelated; animation: pop var(--dur-slow) var(--ease-out);
+}
+.off .img { filter: grayscale(0.6) brightness(0.8); }
+.mono {
+  font: var(--display-weight) calc(var(--size) * 0.37 * var(--display-scale)) / 1 var(--font-display);
+  letter-spacing: var(--display-tracking); color: var(--accent);
+}
+.off .mono { color: var(--text-dim); }
+
+/* desenhando: uma faixa de luz varre uma grade de pixels (8×8) por cima do retrato antigo ou das iniciais */
+.busy { border-color: var(--accent); box-shadow: var(--hl), var(--glow); }
+.busy.lg { box-shadow: var(--hl), var(--glow), 0 0 0 3px var(--bg-raise), 0 0 0 4px var(--accent-line); }
+.busy > .img, .busy > .mono { opacity: 0.3; transition: opacity var(--dur-slow) var(--ease-out); }
+.busy::after {
+  --cell: calc(var(--size) / 8);
+  content: ""; position: absolute; inset: 2px; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(110deg, transparent 30%, var(--accent) 50%, transparent 70%) 0 0 / 260% 100%;
+  -webkit-mask:
+    linear-gradient(90deg, var(--text) 78%, transparent 0) 0 0 / var(--cell) var(--cell),
+    linear-gradient(var(--text) 78%, transparent 0) 0 0 / var(--cell) var(--cell);
+  -webkit-mask-composite: source-in;
+  mask:
+    linear-gradient(90deg, var(--text) 78%, transparent 0) 0 0 / var(--cell) var(--cell),
+    linear-gradient(var(--text) 78%, transparent 0) 0 0 / var(--cell) var(--cell);
+  mask-composite: intersect;
+  animation: shimmer 1.5s var(--ease-in-out) infinite;
+}
