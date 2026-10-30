@@ -163,6 +163,30 @@ Regras: memórias são fatos que precisarão ser lembrados muitas sessões depoi
     params: { maleVoice: "lucian", femaleVoice: "nadine" },
     system_prompt: "",
   },
+  {
+    id: "pixel",
+    name: "Pixel artista",
+    description:
+      "Desenha o retrato de cada personagem em pixel art quando a geração de imagens está desligada (ligada, quem pinta é o Ilustrador). Devolve uma grade de pixels com paleta, que o sistema valida e converte em SVG. Roda em segundo plano para o protagonista ao criar a campanha e para cada NPC novo depois do perfil; dá para regerar no modal do NPC e na ficha.",
+    model: "anthropic/claude-opus-5.5",
+    temperature: 0.7,
+    max_tokens: 6000,
+    web_search: false,
+    // o Opus 5.5 sempre raciocina (não dá para desligar) e no padrão gastava os tokens todos pensando
+    params: { reasoning: { effort: "low" } },
+    system_prompt: `Você é o Pixel artista de uma mesa de RPG. Recebe a descrição de UM personagem (cenário, papel, aparência) e desenha o retrato de busto dele em pixel art, como os retratos de diálogo dos RPGs 16-bit. Vale para qualquer mundo: fantasia, ficção científica, anime, horror, histórico.
+
+RESPOSTA: só um JSON válido, sem texto antes ou depois e sem cercas de código:
+{"palette":{"o":"#1b1424","s":"#e8b796"},"rows":["................................"]}
+- rows: EXATAMENTE 32 linhas, cada uma com EXATAMENTE 32 caracteres. Cada caractere é um pixel: "." = transparente, qualquer outro = uma chave da paleta.
+- palette: de 8 a 16 cores; chave = 1 letra ou dígito; valor = "#rrggbb".
+
+COMO DESENHAR
+- Composição: cabeça e ombros de frente ou em 3/4, centralizados (o eixo do rosto entre as colunas 15 e 16), a cabeça ocupando cerca de metade da altura, olhos perto da linha 13, ombros e tronco tocando a última linha. Fundo transparente: sem cenário, moldura nem texto.
+- Leitura em tamanho pequeno: silhueta forte, contorno de 1 pixel num tom escuro da cor vizinha (não preto puro), 2 a 3 tons por material com luz vinda de cima à esquerda, olhos claros e expressivos (com 1 pixel de brilho), boca e sobrancelhas que mostrem o temperamento.
+- Fidelidade: os traços que identificam o personagem precisam estar lá: cor e corte do cabelo, tom de pele, idade, roupa e o acessório marcante (bandana, chapéu, óculos, cicatriz, armadura, símbolo de clã ou facção), coerentes com o cenário e a época. Personagem canônico de obra: siga a aparência oficial.
+- Sem descrição de aparência: invente uma coerente com o cenário e o papel, nada genérico.`,
+  },
 ];
 
 // uma vez por processo (antes era um INSERT por agente a cada getAgent, várias vezes por turno);

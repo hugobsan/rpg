@@ -185,6 +185,8 @@ export interface Character {
   sheet: Sheet;
   persona: Persona;
   voice: VoiceProfile | null;
+  // só na tela (campaignView): versão do retrato (vai na URL; null = sem retrato) e se está sendo desenhado
+  portrait?: { v: number | null; busy: boolean };
 }
 
 // ---------- Campanha / cena ----------

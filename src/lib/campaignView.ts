@@ -49,6 +49,18 @@ export async function campaignView(id: string): Promise<CampaignView> {
     listInbox(id),
     listJobs(id),
   ]);
+  // retratos: só a versão (a imagem vai por URL) e se há tarefa desenhando; vão no próprio personagem
+  const portraits = new Map(
+    (await q<{ character_id: string; version: number }>(
+      `SELECT p.character_id, p.version FROM portraits p JOIN characters c ON c.id = p.character_id WHERE c.campaign_id = $1`,
+      [id]
+    )).map((p) => [p.character_id, p.version])
+  );
+  for (const c of characters)
+    c.portrait = {
+      v: portraits.get(c.id) ?? null,
+      busy: jobs.some((j) => j.kind === "portrait" && j.target === c.id && j.status === "running"),
+    };
   return {
     campaign,
     scene,

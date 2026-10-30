@@ -37,6 +37,8 @@ export interface ChatOptions {
   tools?: ToolDef[];
   webSearch?: boolean;
   modalities?: string[];
+  // raciocínio do modelo (parâmetro unificado do OpenRouter), ex.: { effort: "low" }
+  reasoning?: Record<string, unknown>;
   // streaming: recebe cada pedaço do texto enquanto a resposta é gerada (o resultado final vem igual)
   onDelta?: (text: string) => void;
   // metadados para o log
@@ -112,6 +114,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   };
   if (opts.tools?.length) body.tools = opts.tools;
   if (opts.modalities) body.modalities = opts.modalities;
+  if (opts.reasoning) body.reasoning = opts.reasoning;
   if (opts.onDelta) {
     body.stream = true;
     body.stream_options = { include_usage: true }; // usage (tokens e custo) chega no último pedaço

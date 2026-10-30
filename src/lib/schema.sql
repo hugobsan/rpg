@@ -213,3 +213,13 @@ CREATE TABLE IF NOT EXISTS library (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS library_name_idx ON library (campaign_id, kind, lower(name));
+
+-- retrato do personagem (lib/portrait.ts): SVG do Pixel artista ou imagem do Ilustrador. Fora de characters,
+-- que é lido em todo turno; a tela monta a URL com a versão (cache longo)
+CREATE TABLE IF NOT EXISTS portraits (
+  character_id UUID PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+  mime TEXT NOT NULL,   -- image/svg+xml | image/png...
+  data BYTEA NOT NULL,
+  version INT NOT NULL DEFAULT 1,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
