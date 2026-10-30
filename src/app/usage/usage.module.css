@@ -1,0 +1,61 @@
+/* Custos e uso: painel com número de destaque, quebras e histórico. Só tokens do DESIGN.md
+   (as cores das séries são dado: paleta categórica validada, em UsageClient.tsx). */
+
+.lede { margin: calc(var(--s-3) * -1) 0 var(--s-5); }
+
+/* filtros: uma faixa acima de tudo */
+.filters { display: flex; flex-direction: column; gap: var(--s-3); margin-bottom: var(--s-5); padding: var(--s-4) var(--s-5); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chips .label { font-size: 12.5px; color: var(--text-dim); margin-right: var(--s-1); }
+.fields { display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: flex-end; }
+.fields :global(.field) { margin: 0; flex: 1 1 150px; }
+.date {
+  width: 100%; background: var(--bg-sunken); color: var(--text); color-scheme: dark;
+  border: 1px solid var(--border); border-radius: var(--r-md); padding: 8px 12px; font: 400 14px/1.45 var(--font-body);
+}
+.date:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+.only { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); padding-bottom: 10px; cursor: pointer; }
+
+.board { transition: opacity var(--dur) var(--ease-out); }
+.stale { opacity: 0.5; }
+
+/* número de destaque + indicadores */
+.kpis { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(0, 1fr)); gap: var(--s-3); margin-bottom: var(--s-4); }
+@media (max-width: 960px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hero { grid-column: 1 / -1; } }
+.tile { padding: var(--s-4); display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tileLabel { font-size: 12.5px; color: var(--text-dim); }
+.tileValue { font: 600 22px/1.15 var(--font-body); color: var(--text); overflow-wrap: anywhere; }
+.tileSub { font-size: 12px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.hero .tileValue { font-size: 48px; letter-spacing: -0.02em; line-height: 1.05; }
+.errOn { color: var(--danger); }
+
+/* barra segmentada fina: o custo dividido por agente */
+.share { display: flex; gap: 2px; height: 8px; margin-top: var(--s-3); border-radius: var(--r-pill); overflow: hidden; }
+.share > span { min-width: 2px; }
+.shareLegend { display: flex; flex-wrap: wrap; gap: 2px var(--s-3); margin-top: var(--s-2); font-size: 12px; color: var(--text-dim); }
+
+.facts { margin: 0 0 var(--s-5); font-size: 13px; color: var(--text-dim); }
+.facts b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.panel { margin-bottom: var(--s-4); }
+.panelHead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-bottom: var(--s-3); }
+.panelHead h2 { margin: 0; flex: 1; font-size: calc(19px * var(--display-scale)); }
+
+.scroll { overflow-x: auto; max-width: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 6px; font-size: 12.5px; color: var(--text-dim); }
+.tooltip {
+  position: absolute; top: 0; pointer-events: none; z-index: 5; transform: translateX(-50%);
+  background: var(--bg-raise); border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: 8px 10px;
+  font-size: 12.5px; min-width: 160px; box-shadow: var(--shadow-2);
+}
+.tableToggle { margin-top: var(--s-2); }
+.tableToggle summary { cursor: pointer; font-size: 13px; color: var(--text-dim); }
+
+.row { cursor: pointer; }
+.row[aria-expanded="true"] { background: var(--accent-soft); }
+.detail td { background: color-mix(in srgb, var(--bg-sunken) 60%, transparent); }
+.detail b { display: block; margin: var(--s-2) 0 4px; font-size: 12px; color: var(--text-dim); }
+.pager { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); margin-top: var(--s-3); }
+.sortBtn { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-transform: inherit; letter-spacing: inherit; white-space: nowrap; }
+.sortOn { color: var(--text); }
+.empty { padding: var(--s-6) 0; text-align: center; color: var(--text-dim); }
