@@ -217,7 +217,7 @@ export default function NewCampaign() {
             {" "}· passe o mouse num atributo para ver para que ele serve
           </div>
           <div className="attr-grid">
-            {ruleset.attributes.map((a) => {
+            {ruleset.attributes.map((a, i) => {
               const cur = attrs[a.key] ?? a.default;
               // na criação, não desce abaixo da base nem gasta além dos pontos livres
               const max = Math.min(a.max, cur + Math.max(pointsLeft, 0));
@@ -227,8 +227,10 @@ export default function NewCampaign() {
                 `Base ${a.default} · máximo ${a.max}`,
               ].filter(Boolean).join("\n\n");
               return (
-              <div key={a.key} className="attr-cell" title={tip} style={{ cursor: "help" }}>
+              <div key={a.key} className="attr-cell has-tip">
                 <div className="k">{a.label}</div>
+                {/* colunas da direita abrem o balão para a esquerda, para não sair da tela */}
+                <div className={`attr-tip${i % 4 >= 2 ? " right" : ""}`}>{tip}</div>
                 <input
                   type="number"
                   min={a.default}
