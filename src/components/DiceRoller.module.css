@@ -1,0 +1,51 @@
+/* Moldura da caixa de dados 3D. Só tokens do DESIGN.md. */
+.modal { max-width: 760px; }
+.head { display: flex; align-items: center; gap: var(--s-3); padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.head svg { color: var(--accent); flex-shrink: 0; }
+.title { flex: 1; min-width: 0; }
+.title h3 { margin: 0; font-size: calc(18px * var(--display-scale)); overflow-wrap: anywhere; }
+.title div { font-size: 12px; color: var(--text-dim); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.dc {
+  flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 58px; padding: 4px 10px;
+  border: 1px solid var(--accent-line); border-radius: var(--r-md); background: var(--accent-soft);
+}
+.dc span { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
+.dc b { font: var(--display-weight) calc(22px * var(--display-scale)) / 1 var(--font-display); font-variant-numeric: lining-nums tabular-nums; color: var(--accent); }
+.adjust { padding: 6px 18px; font-size: 12px; color: var(--text-dim); border-bottom: 1px solid var(--border); background: var(--bg-sunken); font-variant-numeric: tabular-nums; }
+.adjust b { color: var(--text); font-weight: 600; }
+
+.box { position: relative; height: min(58vh, 440px); background: var(--bg-sunken); overflow: hidden; }
+.hint { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; pointer-events: none; color: var(--text-dim); font-size: 13px; display: flex; justify-content: center; }
+
+/* veredito por cima da caixa: número grande, palavra no tom do resultado */
+.result {
+  position: absolute; inset: auto 0 0 0; padding: 48px 18px 18px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  text-align: center; pointer-events: none; color: var(--tone, var(--accent));
+  background: linear-gradient(transparent, color-mix(in srgb, var(--bg-sunken) 88%, transparent) 45%);
+  animation: fade var(--dur-slow) var(--ease-out);
+}
+.ok { --tone: var(--ok); }
+.fail { --tone: var(--danger); }
+.total {
+  font: var(--display-weight) calc(56px * var(--display-scale)) / 1 var(--font-display); font-variant-numeric: lining-nums tabular-nums;
+  color: var(--text); text-shadow: 0 0 28px color-mix(in srgb, var(--tone, var(--accent)) 55%, transparent);
+  animation: slam 520ms var(--ease-spring) backwards;
+}
+.verdict {
+  font: var(--display-weight) calc(20px * var(--display-scale)) / 1.2 var(--font-display); letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--tone, var(--accent)); text-shadow: 0 0 18px color-mix(in srgb, var(--tone, var(--accent)) 50%, transparent);
+  animation: rise var(--dur-enter) var(--ease-out) 160ms backwards;
+}
+.crit {
+  margin-top: 4px; padding: 2px 10px; border-radius: var(--r-pill); border: 1px solid currentColor;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  animation: pop var(--dur-slow) var(--ease-spring) 300ms backwards;
+}
+.math { margin-top: 6px; font-size: 12.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; animation: fade var(--dur-slow) var(--ease-out) 260ms backwards; }
+@keyframes slam { from { opacity: 0; transform: scale(1.6); } to { opacity: 1; transform: none; } }
+/* borda da moldura acende no tom do resultado */
+.modal.ok, .modal.fail { border-color: color-mix(in srgb, var(--tone) 60%, var(--border-strong)); box-shadow: var(--hl), var(--shadow-3), 0 0 40px -12px var(--tone); transition: border-color var(--dur-slow) var(--ease-out), box-shadow var(--dur-slow) var(--ease-out); }
+
+.foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--s-2); padding: 12px 18px; border-top: 1px solid var(--border); }
+.foot .note { flex: 1; font-size: 12px; color: var(--text-faint); }

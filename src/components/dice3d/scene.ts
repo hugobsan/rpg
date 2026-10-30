@@ -151,22 +151,23 @@ function dieGeo(shape: Shape): DieGeo {
 
 // ---------- texturas (dado escuro, número dourado) ----------
 
-const DIE_COLOR = "#211c16";
-const INK = "#e0b45e";
+/** Cores da caixa e dos dados; o DiceRoller passa as do tema (CSS resolvido para rgb). */
+export interface DiceLook { die: string; ink: string; trim: string; floor: string; wall: string }
+const LOOK: DiceLook = { die: "#211c16", ink: "#e0b45e", trim: "#d4a24e", floor: "#15151d", wall: "#2a2433" };
 const FONT: Record<Shape, number> = { 4: 0.24, 6: 0.46, 8: 0.34, 10: 0.3, 12: 0.34, 20: 0.28 };
 const matCache = new Map<string, THREE.MeshStandardMaterial>();
 
-function faceMaterial(shape: Shape, texts: string[]): THREE.MeshStandardMaterial {
-  const key = `${shape}:${texts.join("|")}`;
+function faceMaterial(shape: Shape, texts: string[], look: DiceLook): THREE.MeshStandardMaterial {
+  const key = `${shape}:${texts.join("|")}:${look.die}:${look.ink}`;
   const hit = matCache.get(key);
   if (hit) return hit;
   const W = 256;
   const cv = document.createElement("canvas");
   cv.width = cv.height = W;
   const g = cv.getContext("2d")!;
-  g.fillStyle = DIE_COLOR;
+  g.fillStyle = look.die;
   g.fillRect(0, 0, W, W);
-  g.fillStyle = INK;
+  g.fillStyle = look.ink;
   g.textAlign = "center";
   g.textBaseline = "middle";
   const fs = FONT[shape] * W;
@@ -195,9 +196,9 @@ function faceMaterial(shape: Shape, texts: string[]): THREE.MeshStandardMaterial
   return m;
 }
 
-const materialsFor = (spec: DieSpec, labels: string[]) => {
+const materialsFor = (spec: DieSpec, labels: string[], look: DiceLook) => {
   const { faces } = dieGeo(spec.shape);
-  return faces.map((f, fi) => faceMaterial(spec.shape, spec.shape === 4 ? f.map((vi) => labels[vi]) : [labels[fi]]));
+  return faces.map((f, fi) => faceMaterial(spec.shape, spec.shape === 4 ? f.map((vi) => labels[vi]) : [labels[fi]], look));
 };
 
 // ---------- física ----------
@@ -270,7 +271,9 @@ export function createDiceScene(
   host: HTMLElement,
   specs: DieSpec[],
   cb: { onThrow: () => void; onSettled: () => void },
+  colors?: Partial<DiceLook>,
 ) {
+  const look = { ...LOOK, ...colors };
   const w = host.clientWidth, h = host.clientHeight;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -296,21 +299,21 @@ export function createDiceScene(
   sc.left = sc.bottom = -Math.max(half.x, half.z) - 2;
   sc.right = sc.top = Math.max(half.x, half.z) + 2;
   scene.add(sun);
-  const rim = new THREE.PointLight(0xd4a24e, 30, 30);
+  const rim = new THREE.PointLight(look.trim, 30, 30);
   rim.position.set(half.x, 5, -half.z);
   scene.add(rim);
 
   // mesa (feltro escuro) e borda dourada marcando as paredes
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(half.x * 2, half.z * 2),
-    new THREE.MeshStandardMaterial({ color: 0x15151d, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: look.floor, roughness: 0.95 }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
   // paredes da caixa (madeira escura com friso dourado no topo)
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x2a2433, roughness: 0.7 });
-  const trimMat = new THREE.LineBasicMaterial({ color: 0xd4a24e, transparent: true, opacity: 0.6 });
+  const wallMat = new THREE.MeshStandardMaterial({ color: look.wall, roughness: 0.7 });
+  const trimMat = new THREE.LineBasicMaterial({ color: look.trim, transparent: true, opacity: 0.6 });
   const T = 0.35, H = 1.8;
   for (const [x, z, sx, sz] of [
     [-half.x - T / 2, 0, T, half.z * 2 + T * 2], [half.x + T / 2, 0, T, half.z * 2 + T * 2],
@@ -324,10 +327,10 @@ export function createDiceScene(
     scene.add(wall);
   }
 
-  const edgeMat = new THREE.LineBasicMaterial({ color: 0xd4a24e, transparent: true, opacity: 0.35 });
+  const edgeMat = new THREE.LineBasicMaterial({ color: look.trim, transparent: true, opacity: 0.35 });
   const meshes = specs.map((s) => {
     const g = dieGeo(s.shape);
-    const m = new THREE.Mesh(g.geometry, materialsFor(s, s.labels));
+    const m = new THREE.Mesh(g.geometry, materialsFor(s, s.labels, look));
     m.castShadow = true;
     m.add(new THREE.LineSegments(g.edges, edgeMat));
     m.quaternion.random();
@@ -382,7 +385,7 @@ export function createDiceScene(
       const at = labels.indexOf(s.value);
       if (at >= 0) [labels[top], labels[at]] = [labels[at], labels[top]];
       else labels[top] = s.value;
-      meshes[i].material = materialsFor(s, labels);
+      meshes[i].material = materialsFor(s, labels, look);
     });
     frames = sim.frames;
     state = "playing";
