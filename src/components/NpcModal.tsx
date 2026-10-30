@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Campaign, Character, VoiceFx, VoiceProfile } from "@/lib/types";
 import { FX_DEFAULT, fxOf, playVoice, stopVoice } from "@/lib/voiceFx";
-import { SheetView } from "./GameClient";
+import SheetView from "./SheetView";
 import AbilitiesView from "./AbilitiesView";
 
 interface ChatMsg {
