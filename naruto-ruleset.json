@@ -1,5 +1,6 @@
 {
   "name": "Mundo Shinobi (Naruto)",
+  "theme": "shinobi",
   "description": "RPG ambientado no universo de Naruto, seguindo o cânone da obra de Masashi Kishimoto. Vilas ocultas, missões ranqueadas, jutsus, chakra e política shinobi.",
   "canonBased": true,
   "loreNotes": "O mundo segue o cânone de Naruto (e Naruto Shippuden). Respeite a linha do tempo da obra: Exame Chunin, missão ao País das Ondas, invasão de Konoha, a saída de Sasuke, o timeskip, a Akatsuki, a Quarta Guerra Ninja. Personagens canônicos devem agir e ter força coerentes com o ponto atual da linha do tempo — Kakashi não usa Kamui antes de despertá-lo, Naruto não domina o Modo Sábio antes do arco de Pain. Jutsus exigem chakra e, em geral, selos de mão. Elementos: Katon (fogo), Suiton (água), Doton (terra), Fūton (vento), Raiton (raio), além de kekkei genkai (Sharingan, Byakugan, Mokuton...). Missões são ranqueadas D, C, B, A, S. Hierarquia: Estudante da Academia → Genin → Chunin → Jounin Especial → Jounin → Kage. O jogador é um personagem original inserido no mundo: ele pode cruzar com eventos canônicos, mas suas ações não reescrevem o cânone sem muito esforço narrativo.",

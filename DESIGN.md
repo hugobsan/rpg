@@ -124,12 +124,23 @@ Drawer (base para a lateral do jogo no celular):
 
 Skeleton (CSS; o componente só embrulha): `<span class="skeleton title"></span>`, `.skeleton.text`, `.skeleton.block`, `.skeleton.circle` + `style={{ width, height }}`.
 
-## Primitivas em `src/components/ui/` (etapa 2)
+## Primitivas (`src/components/ui/`)
 
-- `<Skeleton w h lines circle className />`: shimmer no formato do conteúdo, `aria-hidden`. Envolva a área em `aria-busy="true"`.
-- `<Loader size label />`: selo/runa SVG animado no acento do tema, `role="status"` com texto para leitor de tela. Use em espera longa (turno do Mestre, geração de imagem); em botão, `size={16}`.
-- `toast(texto, { kind, title, duration })` + `<Toaster/>` (já montado no layout). `kind`: `info` · `sucesso` · `dano` · `cura` · `xp` · `alerta`. Empilha, some sozinho, `aria-live`. Para eventos passageiros (dano, XP, item salvo); erro que pede ação fica inline.
-- Nav: `.topnav` com link ativo por `aria-current="page"`.
+```tsx
+import Skeleton from "@/components/ui/Skeleton";
+import Loader from "@/components/ui/Loader";
+import { toast } from "@/components/ui/Toast";
+```
+
+- **Skeleton** (server-safe): `<Skeleton w="60%" h={14} />` bloco, `<Skeleton lines={3} />` parágrafo (última linha mais curta), `<Skeleton circle w={32} h={32} />`, aceita `className="title|block"`. Shimmer no formato do conteúdo, `aria-hidden`. Envolva a área em `aria-busy="true"`. Ex.: lista de NPCs carregando = 3 × `<Skeleton h={52} className="block" />`.
+- **Loader** (server-safe): `<Loader label="O Mestre está narrando" showLabel />` (padrão 40 px) ou `<Loader size={16} />` dentro de botão. Selo no acento do tema com o glifo do tema no centro; `role="status"`, o `label` vai para leitor de tela mesmo sem `showLabel`. Use em espera longa sem formato conhecido (turno do Mestre, imagem sendo pintada); quando o formato é conhecido, prefira Skeleton.
+- **toast** (cliente; `<Toaster/>` já está no layout e herda o tema do jogo):
+  `toast(texto, { kind?, title?, duration?, action? })` → id; `dismissToast(id)`.
+  `kind`: `info` (padrão) · `sucesso` · `dano` · `cura` · `xp` · `alerta`. Duração 4,5 s (8 s para `alerta` ou com `action`); pausa com o mouse em cima; no máximo 4 na tela.
+  `action: { label, onClick }` vira um `.btn small` no aviso e fecha ao clicar: `toast("Kakashi quer falar com você", { title: "Mensagem", action: { label: "Abrir", onClick: () => openNpc(id) } })`.
+  Para eventos passageiros (dano, cura, XP, NPC saiu da cena, mensagem privada chegou); erro que pede ação do jogador fica inline.
+- **Nav** (`ui/Nav.tsx`, montada no layout): link ativo por `aria-current="page"`; abaixo de 520 px só a marca fica, sem o nome.
+- **Tema**: `import { campaignTheme, THEMES, type ThemeKey } from "@/lib/theme"`. `THEMES` = `{ key, label, description }[]` para um seletor; a escolha do jogador vai em `campaign.state.theme`. Checagem: `npx tsx scripts/theme-check.ts`.
 
 ## Proibido
 

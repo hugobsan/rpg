@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Chakra_Petch, Cinzel, Cormorant_Garamond, Geist, IM_Fell_English, Literata, Michroma, Shippori_Mincho_B1 } from "next/font/google";
+import Nav from "@/components/ui/Nav";
+import { Toaster } from "@/components/ui/Toast";
 import "./globals.css";
 
 // fontes self-hosted no build; cada uma vira uma variável CSS (--ff-*) usada pelos temas em globals.css.
@@ -24,14 +25,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR" className={fontVars}>
       <body>
-        <nav className="topnav">
-          <Link href="/" className="brand">⚔ Chronicle</Link>
-          <Link href="/" className="nav">Campanhas</Link>
-          <Link href="/agents" className="nav">Agentes</Link>
-          <Link href="/usage" className="nav">Custos e uso</Link>
-          <Link href="/settings" className="nav">Configurações</Link>
-        </nav>
+        <Nav />
         {children}
+        <Toaster />
       </body>
     </html>
   );
