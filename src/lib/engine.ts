@@ -5,6 +5,7 @@ import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummar
 import { addMemory, MemoryHit, recentMemories, searchMemories } from "./retrieval";
 import { decideElapsed, decideTurn, scoreImportance } from "./decisions";
 import { formatClock, getClock, period } from "./clock";
+import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { takeSnapshot } from "./turnSnapshot";
 import { executeGmTool, GM_TOOLS, saveClock, ToolContext } from "./tools";
 import {
@@ -133,6 +134,7 @@ async function buildGmSystem(
         ? `Hora na história: ${formatClock(clock.minutes)} (${period(clock.minutes)})`
         : "Hora na história: AINDA NÃO DEFINIDA. Chame set_time neste turno com uma hora coerente com a história até aqui."
     }\n${MODE_HINTS[scene.mode] || ""}${scene.summary ? `\nResumo do que já aconteceu nesta cena (compactado): ${scene.summary}` : ""}`,
+    objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null),
     player
       ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset)}`
       : "",
@@ -400,8 +402,9 @@ async function fallbackClock(
     campaignId
   );
   if (!delta) return;
-  await saveClock(campaignId, clock.minutes + delta);
   emit({ type: "time", minutes: clock.minutes + delta });
+  // prazo vencido aqui (depois da narração) aparece como PERDIDO no contexto do próximo turno
+  await saveClock(campaignId, clock.minutes + delta, emit);
 }
 
 function toolSummary(name: string, args: Record<string, unknown>): string {

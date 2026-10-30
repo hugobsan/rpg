@@ -6,6 +6,7 @@ import { listBooks, readPages } from "./books";
 import { Ability, Campaign, Character, Scene, Sheet, TurnEvent } from "./types";
 import { abilityPromptLine, blankSheet, currentMilestone, nextMilestone } from "./ruleset";
 import { clockParts, formatClock, formatDuration, getClock, period, toMinutes } from "./clock";
+import { expireObjectives, formatRemaining, getObjectives, Objective, OBJECTIVE_KIND_LABEL, ObjectiveKind } from "./objectives";
 
 const MILESTONE_SCHEMA = {
   type: "array",
@@ -331,6 +332,52 @@ export const GM_TOOLS: ToolDef[] = [
   {
     type: "function",
     function: {
+      name: "add_objective",
+      description:
+        "Registra uma missão, um evento marcado ou outro compromisso da história, com prazo opcional em tempo do jogo. Prazo absoluto (day + hour/minute; sem day, a próxima vez que der essa hora) ou relativo (inMinutes/inHours/inDays a partir de agora). Quando o relógio passa do prazo, o sistema marca como perdido.",
+      parameters: S(
+        {
+          title: { type: "string", description: "nome curto (ex: 'Escoltar o Tazuna', 'Exame Chūnin')" },
+          kind: { type: "string", enum: ["missao", "evento", "outro"] },
+          description: { type: "string", description: "o que precisa ser feito ou o que vai acontecer, e onde" },
+          reward: { type: "string", description: "recompensa ou o que está em jogo (opcional)" },
+          day: { type: "number", description: "prazo absoluto: dia da campanha" },
+          hour: { type: "number", description: "prazo absoluto: hora 0-23 (com day e sem hour: fim do dia)" },
+          minute: { type: "number", description: "prazo absoluto: minuto 0-59" },
+          inMinutes: { type: "number", description: "prazo relativo: minutos a partir de agora" },
+          inHours: { type: "number", description: "prazo relativo: horas a partir de agora" },
+          inDays: { type: "number", description: "prazo relativo: dias a partir de agora" },
+        },
+        ["title", "kind", "description"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_objective",
+      description:
+        "Atualiza uma missão/evento registrado: concluir quando cumprido, cancelar quando deixou de valer na história, ou mudar o prazo (mesmos campos de add_objective; noDeadline=true tira o prazo). Um objetivo perdido não volta.",
+      parameters: S(
+        {
+          objective: { type: "string", description: "id (ex: o2) ou título" },
+          status: { type: "string", enum: ["concluido", "cancelado"] },
+          description: { type: "string", description: "nova descrição (opcional)" },
+          day: { type: "number" },
+          hour: { type: "number" },
+          minute: { type: "number" },
+          inMinutes: { type: "number" },
+          inHours: { type: "number" },
+          inDays: { type: "number" },
+          noDeadline: { type: "boolean" },
+        },
+        ["objective"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "get_character",
       description: "Lê a ficha completa e persona de um personagem (player ou NPC, ativo ou não).",
       parameters: S({ name: { type: "string" } }, ["name"]),
@@ -411,13 +458,62 @@ async function getChar(campaignId: string, name: string): Promise<Character> {
   return rows[0];
 }
 
-/** Grava o relógio sem tocar no resto de campaigns.state. */
-export async function saveClock(campaignId: string, minutes: number): Promise<void> {
-  await q(`UPDATE campaigns SET state = state || jsonb_build_object('clock', jsonb_build_object('minutes', $1::int)) WHERE id = $2`, [
-    minutes,
+/**
+ * Ponto único de gravação do relógio (advance_time, set_time, train e o fallback do Jev).
+ * Também marca como perdido o objetivo aberto cujo prazo passou. Devolve o aviso para
+ * acrescentar ao resultado da ferramenta ("" se nada venceu).
+ */
+export async function saveClock(campaignId: string, minutes: number, emit?: (e: TurnEvent) => void): Promise<string> {
+  const [row] = await q<{ state: Record<string, unknown> }>(
+    `UPDATE campaigns SET state = state || jsonb_build_object('clock', jsonb_build_object('minutes', $1::int)) WHERE id = $2 RETURNING state`,
+    [minutes, campaignId]
+  );
+  const { list, lost } = expireObjectives(getObjectives(row?.state), minutes);
+  if (!lost.length) return "";
+  await saveObjectives(campaignId, list);
+  for (const o of lost) emit?.({ type: "tool", name: "objective", summary: `⌛ Prazo perdido: ${o.title}` });
+  emit?.({ type: "state" });
+  return ` ⌛ PRAZO PERDIDO: ${lost
+    .map((o) => `"${o.title}" (vencia ${formatClock(o.deadlineMinutes!)})`)
+    .join("; ")}. Narre a consequência na história; a perda não se desfaz.`;
+}
+
+async function loadObjectives(campaignId: string): Promise<Objective[]> {
+  const [row] = await q<{ state: Record<string, unknown> }>(`SELECT state FROM campaigns WHERE id = $1`, [campaignId]);
+  return getObjectives(row?.state);
+}
+
+/** Grava só state.objectives, sem tocar no resto de campaigns.state. */
+async function saveObjectives(campaignId: string, list: Objective[]): Promise<void> {
+  await q(`UPDATE campaigns SET state = state || jsonb_build_object('objectives', $1::jsonb) WHERE id = $2`, [
+    JSON.stringify(list),
     campaignId,
   ]);
 }
+
+/** Prazo dos args de add/update_objective: undefined = sem prazo; string = erro para o Mestre. */
+function parseDeadline(args: Record<string, unknown>, now: number | undefined): number | undefined | string {
+  const rel = ["inMinutes", "inHours", "inDays"].some((k) => args[k] !== undefined);
+  if (!rel && args.day === undefined && args.hour === undefined) return undefined;
+  if (now === undefined)
+    return "O relógio ainda não foi definido: chame set_time antes de registrar um prazo (ou registre sem prazo).";
+  let at: number;
+  if (rel) {
+    at = now + Math.round(Number(args.inMinutes ?? 0) + Number(args.inHours ?? 0) * 60 + Number(args.inDays ?? 0) * 1440);
+  } else {
+    // só day = até o fim daquele dia; sem day = a próxima vez que der essa hora
+    const hour = args.hour !== undefined ? Math.round(Number(args.hour)) : 23;
+    const minute = args.hour !== undefined ? Math.round(Number(args.minute ?? 0)) : 59;
+    if (!(hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59)) return "hour 0-23 e minute 0-59.";
+    at = toMinutes(args.day !== undefined ? Math.round(Number(args.day)) : clockParts(now).day, hour, minute);
+    if (args.day === undefined && at <= now) at += 1440;
+  }
+  if (!Number.isFinite(at) || at <= now) return `O prazo precisa ser depois de agora (${formatClock(now)}).`;
+  return at;
+}
+
+const deadlineText = (at: number | undefined, now: number | undefined) =>
+  at === undefined ? "sem prazo" : `prazo ${formatClock(at)}${now !== undefined ? `, ${formatRemaining(at - now)}` : ""}`;
 
 async function saveSheet(id: string, sheet: Sheet): Promise<void> {
   await q(`UPDATE characters SET sheet = $1, updated_at = now() WHERE id = $2`, [
@@ -732,12 +828,66 @@ export async function executeGmTool(
         // sem day explícito o tempo não volta: hora que já passou hoje = amanhã
         if (args.day === undefined && before !== undefined && minutes < before) minutes += 1440;
       }
-      await saveClock(cid, minutes);
       ctx.campaign.state = { ...ctx.campaign.state, clock: { minutes } };
       ctx.emit({ type: "time", minutes });
       const delta = before === undefined ? "" : ` (${minutes >= before ? "+" : "-"}${formatDuration(Math.abs(minutes - before))})`;
       ctx.emit({ type: "tool", name, summary: `🕐 ${formatClock(minutes)}${delta}${args.reason ? ` — ${args.reason}` : ""}` });
-      return `Relógio: ${formatClock(minutes)} (${period(minutes)})${delta}.`;
+      const lost = await saveClock(cid, minutes, ctx.emit); // depois do chip do relógio: "⌛ Prazo perdido" vem em seguida
+      return `Relógio: ${formatClock(minutes)} (${period(minutes)})${delta}.${lost}`;
+    }
+    case "add_objective":
+    case "update_objective": {
+      const now = getClock(ctx.campaign.state)?.minutes;
+      const list = await loadObjectives(cid);
+      const deadline = parseDeadline(args, now);
+      if (typeof deadline === "string") return deadline;
+      let o: Objective;
+      let chip: string;
+      if (name === "add_objective") {
+        const title = String(args.title || "").trim();
+        if (!title) return "Informe o title.";
+        if (list.some((x) => x.status === "aberto" && x.title.toLowerCase() === title.toLowerCase()))
+          return `Já existe "${title}" em aberto: use update_objective.`;
+        const kind = (["missao", "evento", "outro"].includes(String(args.kind)) ? args.kind : "outro") as ObjectiveKind;
+        o = {
+          id: `o${list.reduce((m, x) => Math.max(m, Number(x.id.slice(1)) || 0), 0) + 1}`,
+          title,
+          kind,
+          description: String(args.description || ""),
+          deadlineMinutes: deadline,
+          status: "aberto",
+          reward: args.reward ? String(args.reward) : undefined,
+          createdAt: now ?? 0,
+        };
+        list.push(o);
+        chip = `📜 ${OBJECTIVE_KIND_LABEL[kind]}: ${title} (${deadlineText(deadline, now)})`;
+      } else {
+        const key = String(args.objective || "").trim().toLowerCase();
+        const found =
+          list.find((x) => x.id.toLowerCase() === key) ||
+          list.find((x) => x.status === "aberto" && x.title.toLowerCase() === key) ||
+          list.find((x) => x.title.toLowerCase() === key);
+        if (!found) return `Objetivo "${args.objective}" não existe. Abertos: ${list.filter((x) => x.status === "aberto").map((x) => `${x.id} ${x.title}`).join(", ") || "nenhum"}.`;
+        if (found.status !== "aberto") return `"${found.title}" já está ${found.status}; não volta a ficar aberto.`;
+        o = found;
+        const changes: string[] = [];
+        if (args.description) o.description = String(args.description);
+        if (args.noDeadline === true) (o.deadlineMinutes = undefined), changes.push("sem prazo");
+        else if (deadline !== undefined) (o.deadlineMinutes = deadline), changes.push(deadlineText(deadline, now));
+        if (args.status === "concluido" || args.status === "cancelado") {
+          o.status = args.status;
+          o.closedAt = now ?? 0;
+        }
+        chip =
+          o.status === "concluido" ? `✅ Concluído: ${o.title}` :
+          o.status === "cancelado" ? `✖ Cancelado: ${o.title}` :
+          `📜 ${o.title}: ${changes.join(", ") || "atualizado"}`;
+      }
+      await saveObjectives(cid, list);
+      ctx.campaign.state = { ...ctx.campaign.state, objectives: list };
+      ctx.emit({ type: "tool", name, summary: chip });
+      ctx.emit({ type: "state" });
+      return `${o.id} "${o.title}": ${o.status}, ${deadlineText(o.deadlineMinutes, now)}.`;
     }
     case "get_character": {
       const c = await getChar(cid, String(args.name));

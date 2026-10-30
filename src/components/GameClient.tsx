@@ -13,6 +13,7 @@ import ImageViewer from "./ImageViewer";
 import Gallery from "./Gallery";
 import InventoryView from "./InventoryView";
 import AbilitiesView from "./AbilitiesView";
+import ObjectivesView from "./ObjectivesView";
 import DiceRoller, { diceText } from "./DiceRoller";
 import { formatClock, getClock, period, PERIOD_ICON } from "@/lib/clock";
 
@@ -77,7 +78,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   const [busy, setBusy] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<"sheet" | "abilities" | "inventory" | "npcs" | "memories" | "books" | "script" | "gallery">("sheet");
+  const [tab, setTab] = useState<"sheet" | "abilities" | "inventory" | "objectives" | "npcs" | "memories" | "books" | "script" | "gallery">("sheet");
   const [imageFull, setImageFull] = useState(false);
   // largura da barra lateral, ajustável pela alça entre ela e o chat (lembrada neste navegador)
   const [sideW, setSideW] = useState(SIDE_DEFAULT);
@@ -448,6 +449,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
               ["sheet", "Ficha"],
               ["abilities", campaign.ruleset.abilitiesLabel || "Habilidades"],
               ["inventory", "Inventário"],
+              ["objectives", "Missões"],
               ["npcs", `NPCs (${npcs.filter((n) => n.active).length})`],
               ["memories", "Marcos"],
               ["books", "Livros"],
@@ -482,6 +484,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
           {tab === "inventory" && player && (
             <InventoryView char={player} campaignId={campaignId} disabled={busy} onChange={reloadState} />
           )}
+          {tab === "objectives" && <ObjectivesView state={campaign.state} />}
           {tab === "npcs" && (
             <NpcList npcs={npcs} onOpen={setOpenNpc} />
           )}
