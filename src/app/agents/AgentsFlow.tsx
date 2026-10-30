@@ -26,6 +26,12 @@ const COLOR = {
   jev: "#60a5fa",
   db: "#4de08a",
   infra: "#9a95a8",
+  char: "#fb7185",
+  abil: "#ec5a55",
+  items: "#f59e6b",
+  pixel: "#a3e635",
+  carto: "#38bdf8",
+  adv: "#e879f9",
 } as const;
 type Who = keyof typeof COLOR;
 
@@ -40,6 +46,12 @@ const KIND_LABEL: Record<Who, string> = {
   jev: "Jev",
   db: "Banco de dados",
   infra: "Infraestrutura",
+  char: "Criador de personagens",
+  abil: "Criador de habilidades",
+  items: "Criador de itens",
+  pixel: "Pixel artista",
+  carto: "Cartógrafo",
+  adv: "Criador de aventuras",
 };
 
 interface Tip {
@@ -67,7 +79,7 @@ const TIP_LABELS: [keyof Tip, string][] = [
 ];
 
 // ---------- nós ----------
-// Colunas: passo de 215px. Lanes: 3 (sob demanda, turno, NPC), de cima para baixo.
+// Colunas: passo de 270px. Lanes: sob demanda, turno, NPC e criação em segundo plano, de cima para baixo.
 const X = [20, 290, 560, 830, 1100, 1370];
 
 const n = (id: string, x: number, y: number, who: Who, title: string, sub: string, tip: Tip): FlowNode => ({
@@ -93,9 +105,10 @@ const lane = (id: string, y: number, h: number, w: number, label: string): LaneN
 });
 
 const NODES: (FlowNode | LaneNode)[] = [
-  lane("L3", -310, 270, 760, "3. Sob demanda: Roteirista e Ilustrador"),
+  lane("L3", -310, 270, 1300, "3. Sob demanda: Roteirista, Ilustrador e Criador de aventuras"),
   lane("L1", 0, 335, 1570, "1. Turno do jogador"),
   lane("L2", 370, 290, 1570, "2. Conversa particular com um NPC"),
+  lane("L4", 700, 440, 1570, "4. Criação em segundo plano: personagens, retratos, biblioteca e mapas"),
 
   // --- sob demanda ---
   n("s_btn1", X[0], -250, "player", "Criar ou replanejar campanha", "gera o roteiro", {
@@ -125,6 +138,20 @@ const NODES: (FlowNode | LaneNode)[] = [
     oque: "A imagem fica guardada no Postgres, ligada à cena, e a última aparece na ficha da tela da campanha.",
   }),
 
+  n("a_btn", X[3], -250, "player", "Criar com IA", "nova campanha, passo Mundo", {
+    oque: "No assistente de campanha nova, o jogador escolhe criar a aventura (a mecânica do RPG) conversando, em vez de usar um preset ou importar um JSON.",
+  }),
+  n("a_adv", X[4], -250, "adv", "Criador de aventuras", "entrevista em linguagem natural", {
+    oque: "Faz 1 ou 2 perguntas por vez sobre o universo, o tom e como o poder funciona, deduz pela obra o óbvio e vai preenchendo o JSON da mecânica (atributos, barras, tipos e níveis de habilidade, cargos, progressão, tema visual) com o Naruto como exemplo. O jogador nunca vê o JSON.",
+    quando: "A cada resposta do jogador na entrevista.",
+    freq: "De 3 a 10 chamadas por aventura.",
+    custo: "Grátis com o modelo padrão (o mesmo do Mestre), mas lento: 1 a 2 min por resposta.",
+    fallback: "O rascunho fica salvo e pode ser retomado. Se o modelo diz que acabou com pendências, ou o JSON vem ilegível, o servidor pede um conserto uma vez sem envolver o jogador.",
+  }),
+  n("a_out", X[3], -130, "code", "Mecânica validada", "baixar JSON ou iniciar", {
+    oque: "O rascunho passa pela validação (keys, faixas, custos, kit, tema) e pela normalização da mecânica. O jogador baixa o JSON ou inicia a campanha com ele, como no Importar mecânica.",
+  }),
+
   // --- turno ---
   n("t_player", X[0], 60, "player", "Ação do jogador", "texto ou opção clicada", {
     oque: "O jogador digita uma ação ou clica numa opção. A mensagem é salva no histórico da cena antes de qualquer IA rodar.",
@@ -152,8 +179,8 @@ const NODES: (FlowNode | LaneNode)[] = [
     freq: "1 a 9 chamadas por turno (normalmente 2 a 4). Termina quando responde só com texto.",
     custo: "O mais caro: cada rodada reenvia prompt, ficha, memórias, histórico (até ≈9 mil tokens) e as definições das ferramentas. A busca web (:online) vale só na 1ª rodada e é cobrada por busca.",
   }),
-  n("t_tools", X[5], 60, "code", "Ferramentas", "dados, ficha, cena, memórias", {
-    oque: "Executadas pelo código a pedido do Mestre: rolar dados, mudar recursos, atributos, habilidades, itens e XP, criar NPC, trocar a cena, gravar e buscar memórias, consultar livros e roteiro. As escritas vão direto ao Postgres.",
+  n("t_tools", X[5], 60, "code", "Ferramentas", "dados, ficha, cena, delegações", {
+    oque: "Executadas pelo código a pedido do Mestre: rolar dados, mudar recursos, atributos, habilidades, itens e XP, criar NPC, trocar a cena, gravar e buscar memórias, consultar livros, roteiro e biblioteca, pedir mapas 3D. As escritas vão direto ao Postgres; criar NPC, técnica nova e mapa são delegados aos criadores (lane 4).",
     quando: "Sempre que o Mestre pedir, em qualquer rodada.",
     custo: "Sem IA: só SQL (e embeddings ao gravar ou buscar memórias).",
   }),
@@ -179,7 +206,7 @@ const NODES: (FlowNode | LaneNode)[] = [
     custo: "Local (Docker). Nenhuma chamada paga; só os embeddings das memórias passam pelo OpenRouter.",
   }),
   n("or", X[5], -250, "infra", "OpenRouter", "toda IA passa por aqui", {
-    oque: "Todas as chamadas de IA (Jev, Mestre, NPC, Cronista, Roteirista e Ilustrador) saem por este gateway e viram uma linha no histórico do agente: tokens, duração, custo, request e resposta. O Jev usa a Decisions API (probabilidades); os demais, chat completions.",
+    oque: "Todas as chamadas de IA (Jev, Mestre, NPC, Cronista, Roteirista, Ilustrador e os criadores) saem por este gateway e viram uma linha no histórico do agente: tokens, duração, custo, request e resposta. O Jev usa a Decisions API (probabilidades); os demais, chat completions.",
     custo: "Você paga o preço do modelo escolhido em cada agente, direto ao OpenRouter.",
   }),
 
@@ -221,6 +248,84 @@ const NODES: (FlowNode | LaneNode)[] = [
     freq: "1 request por conversa.",
     custo: "Mínimo: cerca de US$ 0,00005 e ≈0,4 s por chamada; saída só em probabilidades.",
     fallback: "Se falhar, vale a nota que o Cronista escreveu.",
+  }),
+
+  // --- criação em segundo plano ---
+  n("c_gm", X[0], 760, "gm", "Mestre: create_npc", "nome, sexo, canon e brief", {
+    oque: "O Mestre só registra quem entrou na história: nome, sexo, se é do cânone e um brief (quem é, papel, o que já foi narrado). Não escreve a ficha.",
+    quando: "Antes de narrar, quando um personagem com nome aparece pela primeira vez.",
+  }),
+  n("c_reg", X[1], 760, "code", "NPC registrado na hora", "ativo na cena, o turno segue", {
+    oque: "Sem IA: grava o NPC ativo na cena (o brief vira o passado provisório) e responde ao Mestre na hora, para a checagem de quem fala passar. Abre uma tarefa em segundo plano, que aparece no cabeçalho do jogo e avisa quando termina.",
+    custo: "Só SQL (≈5 ms).",
+  }),
+  n("c_char", X[2], 760, "char", "Criador de personagens", "perfil rico e ficha", {
+    oque: "Lê a mecânica, o mundo (premissa, arco, cena, NPCs) e os nomes da biblioteca e devolve aparência, idade, papel, personalidade, jeito de falar, passado, objetivos, segredos, relações e manias, mais atributos, recursos, cargo, técnicas e itens coerentes com o poder. Personagem do cânone: fiel à obra no ponto da história.",
+    quando: "Em segundo plano, depois de cada create_npc de NPC novo e no botão Refazer perfil do modal do NPC.",
+    freq: "1 chamada por NPC novo.",
+    custo: "Grátis com o modelo padrão (o mesmo do Mestre); leva de 1,5 a 4 min.",
+    fallback: "O NPC fica com o brief do Mestre e a tela avisa; o botão Refazer perfil tenta de novo.",
+  }),
+  n("c_merge", X[3], 760, "code", "Ficha gravada com merge", "preserva o que o Mestre mudou", {
+    oque: "Sem IA: grava o perfil e a ficha com a linha travada. O que o Mestre mudou nesse meio tempo (dano, gasto, cargo, sexo) fica como ele deixou; técnicas e itens se somam por nome.",
+  }),
+  n("c_pix", X[4], 760, "pixel", "Pixel artista", "retrato em pixel art", {
+    oque: "Desenha o retrato de busto como uma grade de pixels com paleta (não SVG livre); o código valida e converte em SVG nítido. Com a geração de imagens ligada nas Configurações, quem pinta o retrato é o Ilustrador, em estilo pixel art.",
+    quando: "Depois do perfil de cada NPC novo, ao criar a campanha (protagonista) e nos botões Gerar e Regerar retrato.",
+    freq: "1 chamada por personagem (regerar faz outra).",
+    custo: "Opus 5.5 com raciocínio baixo: ≈700 tokens de saída, ≈10 s, cerca de US$ 0,02 por retrato. Pelo Ilustrador, cerca de US$ 0,03.",
+    fallback: "A tarefa vira erro com aviso; o personagem mostra as iniciais e o botão Regerar.",
+  }),
+  n("c_out", X[5], 760, "code", "Retrato salvo", "NPCs, modal, ficha e falas", {
+    oque: "O retrato fica no Postgres com versão (cache longo no navegador) e aparece nos cartões de NPC, no modal, na ficha do jogador e ao lado das falas no chat.",
+  }),
+
+  n("b_gm", X[0], 880, "gm", "Mestre: add_ability", "nome e brief da técnica", {
+    oque: "Quando o personagem aprende ou usa uma técnica que ainda não está na ficha, o Mestre só diz o nome e um brief. Antes de inventar, pode consultar a biblioteca (search_library). add_item completa a descrição pela biblioteca.",
+  }),
+  n("b_lib", X[1], 880, "db", "Biblioteca", "técnicas e itens do mundo", {
+    oque: "Técnicas (com tipo, rank, custo, efeito, dano, requisitos, marcos e quem usa) e itens da campanha, do cânone ou criados no jogo. Fonte do add_ability, do add_item e do Criador de personagens, para ninguém adivinhar na hora o que existe. Aba Biblioteca na tela de jogo.",
+    custo: "Local (Postgres).",
+  }),
+  n("b_abil", X[2], 880, "abil", "Criador de habilidades", "técnica nova, validada", {
+    oque: "Cria a técnica seguindo a mecânica da campanha (tipos, ranks, recursos, custos por rank, faixas de domínio) e o cânone; o código valida tipo, rank, custo, dano e marcos e guarda na biblioteca.",
+    quando: "Na hora, quando o add_ability ou o Criador de personagens pede uma técnica que não existe; em lotes, quando o jogador pede.",
+    freq: "1 chamada por técnica nova; lotes de 6 até chegar ao total pedido.",
+    custo: "Grátis com o modelo padrão; 70 a 120 s por chamada.",
+    fallback: "Prazo de 90 s no turno: estourou, a técnica entra com o que o Mestre deu e o Criador termina em segundo plano para a próxima vez.",
+  }),
+  n("b_player", X[3], 880, "player", "Gerar biblioteca", "aba Biblioteca ou Fora do jogo", {
+    oque: "O jogador pede N técnicas ou itens com um foco (ex.: jutsus canônicos de Konoha até o Exame Chūnin), pela aba Biblioteca ou pedindo ao Mestre fora do jogo.",
+  }),
+  n("b_items", X[4], 880, "items", "Criador de itens", "ferramentas, armas, consumíveis", {
+    oque: "Cria itens e equipamentos do mundo em lotes, recebendo os nomes que já existem para não repetir. O código valida e descarta repetidos.",
+    quando: "Em lotes, quando o jogador pede.",
+    freq: "Lotes de 6 até o total; para depois de 2 lotes sem nada novo.",
+    custo: "Grátis com o modelo padrão.",
+  }),
+  n("b_jobs", X[5], 880, "code", "Tarefas em segundo plano", "indicador no cabeçalho", {
+    oque: "Perfis, retratos, lotes da biblioteca e mapas rodam fora do turno. O cabeçalho do jogo mostra o que está rodando (com progresso) e, quando termina, a tela recarrega e avisa. Duas tarefas iguais não rodam juntas.",
+    fallback: "Se o servidor reinicia no meio, a tarefa vira erro depois de 15 min sem sinal.",
+  }),
+
+  n("m_gm", X[0], 1000, "gm", "Mestre: mapas", "gerar, editar, remover", {
+    oque: "O Mestre pede o mapa quando o jogador chega a um lugar relevante sem mapa ou a cena pede, e edita quando a história muda o lugar (ex.: a ponte foi destruída). Pode ser desligado nas Configurações; os botões continuam.",
+  }),
+  n("m_btn", X[1], 1000, "player", "Botões da aba Mapa", "gerar, regerar, editar, remover", {
+    oque: "O jogador pode pedir o mapa de qualquer lugar por onde passou, regerar, editar com uma instrução ou remover.",
+  }),
+  n("m_carto", X[2], 1000, "carto", "Cartógrafo", "mapa 3D de um lugar", {
+    oque: "Compõe a maquete 3D de um lugar a partir da obra, da narração e da cena: relevo, contornos extrudados, caminhos e rios, espalhamento de árvores e casas, materiais, luz do horário e pontos de interesse. Devolve uma descrição declarativa, nunca código.",
+    quando: "Quando o Mestre ou o jogador pede gerar ou editar o mapa de um lugar.",
+    freq: "1 chamada por geração ou edição.",
+    custo: "Opus 5.5: o mais caro dos criadores, cerca de US$ 0,10 a 0,20 por mapa.",
+    fallback: "A tarefa vira erro com aviso; o mapa anterior (se houver) continua.",
+  }),
+  n("m_spec", X[3], 1000, "code", "Mapa validado", "limites, cores, contagens", {
+    oque: "Sem IA: o código valida e limita o que o Cartógrafo devolveu (quantidades, faixas, cores) e guarda o mapa ligado ao lugar do mapa do mundo.",
+  }),
+  n("m_view", X[4], 1000, "code", "Aba Mapa", "o da cena em destaque", {
+    oque: "Mostra em destaque o mapa 3D do lugar da cena atual (girar, zoom, pontos clicáveis) e a galeria dos mapas dos outros lugares por onde o jogador passou. O diorama do mundo continua na visão Mundo.",
   }),
 ];
 
@@ -282,9 +387,29 @@ const EDGES: Edge[] = [
   // sob demanda
   e("s_btn1", "sr", "s_writer", "tl"),
   e("s_writer", "sr", "s_script", "tl", "JSON"),
-  e("s_script", "sr", "t_ctx", "tt", "arco ativo em todo turno"),
+  e("s_script", "sr", "t_ctx", "tl", "arco ativo"),
   e("s_btn2", "sr", "s_img", "tl"),
   e("s_img", "sr", "s_out", "tl", "imagem"),
+  // aventura
+  e("a_btn", "sr", "a_adv", "tl", "conversa ⇄", { both: true }),
+  e("a_adv", "sb", "a_out", "tr", "JSON"),
+  // criação em segundo plano
+  e("c_gm", "sr", "c_reg", "tl"),
+  e("c_reg", "sr", "c_char", "tl", "tarefa"),
+  e("c_char", "sr", "c_merge", "tl", "JSON"),
+  e("c_merge", "sr", "c_pix", "tl", "retrato"),
+  e("c_pix", "sr", "c_out", "tl", "SVG"),
+  e("c_char", "sb", "b_lib", "tt", "técnicas e itens"),
+  e("b_gm", "sr", "b_lib", "tl", "consulta"),
+  e("b_lib", "sr", "b_abil", "tl", "não existe"),
+  e("b_abil", "sb", "b_lib", "tb", "guarda"),
+  e("b_player", "sl", "b_abil", "tr", "N com foco"),
+  e("b_player", "sr", "b_items", "tl", "N com foco"),
+  e("b_items", "sb", "b_lib", "tb"),
+  e("m_gm", "sb", "m_carto", "tb", "tools"),
+  e("m_btn", "sr", "m_carto", "tl", "botões"),
+  e("m_carto", "sr", "m_spec", "tl", "JSON"),
+  e("m_spec", "sr", "m_view", "tl"),
 ];
 
 // ---------- componentes dos nós ----------

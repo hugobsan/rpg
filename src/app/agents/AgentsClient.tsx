@@ -17,10 +17,14 @@ interface Model {
 }
 
 // ordem do fluxo (a mesma de Custos e uso) e cor de cada agente, só por tokens do tema
-const ORDER = ["gm", "npc", "chronicler", "scriptwriter", "decider", "image", "voice"];
+const ORDER = ["gm", "npc", "chronicler", "scriptwriter", "decider", "characters", "abilities", "items", "pixel", "image", "cartographer", "voice", "adventure"];
 const TONE: Record<string, string> = {
   gm: "var(--accent)", npc: "var(--mode-dialogue)", chronicler: "var(--warn)", scriptwriter: "var(--mode-exploration)",
   decider: "var(--info)", image: "var(--ok)", voice: "var(--mode-training)",
+  // criadores em segundo plano: tons derivados dos do jogo
+  characters: "color-mix(in srgb, var(--mode-dialogue) 55%, var(--accent))", abilities: "var(--mode-battle)",
+  items: "color-mix(in srgb, var(--mode-battle) 50%, var(--warn))", pixel: "color-mix(in srgb, var(--ok) 50%, var(--mode-dialogue))",
+  cartographer: "var(--mode-downtime)", adventure: "color-mix(in srgb, var(--mode-exploration) 50%, var(--info))",
 };
 const rank = (id: string) => (ORDER.includes(id) ? ORDER.indexOf(id) : 99);
 const usd = (n: number | null | undefined) =>
