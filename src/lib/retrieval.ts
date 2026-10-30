@@ -1,3 +1,4 @@
+import { ADVANCED_DEFAULTS, getAdvanced } from "./advanced";
 import { hasVector, q } from "./db";
 import { embed, toVectorLiteral } from "./embeddings";
 import { formatClock } from "./clock";
@@ -45,12 +46,13 @@ export async function addMemory(
 
 /**
  * Busca memórias: vetorial (pgvector, cosseno) quando há embeddings;
- * fallback para full-text search + ILIKE do Postgres.
+ * fallback para full-text search + ILIKE do Postgres. maxDistance = corte de distância de cosseno (2 = sem corte).
+ * Só compara vetores da dimensão da consulta: trocar modelo/dimensões sem reprocessar não quebra a busca.
  */
 export async function searchMemories(
   campaignId: string,
   query: string,
-  opts: { kind?: string; subject?: string; limit?: number } = {}
+  opts: { kind?: string; subject?: string; limit?: number; maxDistance?: number } = {}
 ): Promise<MemoryHit[]> {
   const limit = opts.limit ?? 6;
   // diretrizes do jogador entram sempre por activeDirectives, não pela busca
@@ -69,15 +71,18 @@ export async function searchMemories(
   if (await hasVector()) {
     const vecs = await embed([query]);
     if (vecs?.[0]) {
-      params.push(toVectorLiteral(vecs[0]), limit);
+      const n = params.length;
+      params.push(toVectorLiteral(vecs[0]), vecs[0].length, opts.maxDistance ?? 2, limit);
+      // CASE: o <=> só roda com a dimensão igual (a ordem do AND no WHERE não é garantida)
       const rows = await q<MemoryHit>(
         `SELECT id, kind, subject, content, importance, created_at::text
-         FROM memories WHERE ${where} AND embedding IS NOT NULL
-         ORDER BY embedding <=> $${params.length - 1} LIMIT $${params.length}`,
+         FROM memories WHERE ${where}
+           AND CASE WHEN vector_dims(embedding) = $${n + 2} THEN embedding <=> $${n + 1} <= $${n + 3} END
+         ORDER BY embedding <=> $${n + 1} LIMIT $${n + 4}`,
         params
       );
       if (rows.length) return rows;
-      params.splice(-2); // sem embeddings gravados ainda: cai para FTS
+      params.splice(n); // sem embeddings gravados ainda (ou de outra dimensão): cai para FTS
     }
   }
   params.push(query, limit);
@@ -133,9 +138,9 @@ export async function searchBookChunks(
       const rows = await q<ChunkHit>(
         `SELECT c.book_id, b.title, c.page, c.content
          FROM book_chunks c JOIN books b ON b.id = c.book_id
-         WHERE b.campaign_id = $1 AND c.embedding IS NOT NULL
+         WHERE b.campaign_id = $1 AND vector_dims(c.embedding) = $4
          ORDER BY c.embedding <=> $2 LIMIT $3`,
-        [campaignId, toVectorLiteral(vecs[0]), limit]
+        [campaignId, toVectorLiteral(vecs[0]), limit, vecs[0].length]
       );
       if (rows.length) return rows;
     }
@@ -161,11 +166,6 @@ export interface HistoryHit {
   location: string | null;
   content: string;
 }
-
-// Recuperação automática: só trechos até esta distância de cosseno da ação. Depende do modelo de embeddings; probe de
-// 2026-10-30 no nvidia/nemotron-3.5-embed-1b (RPG Hugo): ação que retoma o turno ou a conversa 0.29-0.40, mesmo
-// assunto 0.49-0.57, sem relação 0.62+. Depois o Jev ainda filtra (HISTORY_MIN em decisions.ts).
-export const HISTORY_AUTO_MAX_DISTANCE = 0.45;
 
 type ChatRow = { id: number; role: string; content: string };
 export interface HistoryChunk {
@@ -240,9 +240,10 @@ export async function indexHistory(campaignId: string, now = true): Promise<numb
     );
     if (row) added.push(row);
   }
+  const size = (await getAdvanced()).history.batch;
   if (added.length && (await hasVector()))
-    for (let i = 0; i < added.length; i += 16) {
-      const batch = added.slice(i, i + 16);
+    for (let i = 0; i < added.length; i += size) {
+      const batch = added.slice(i, i + size);
       const vecs = await embed(batch.map((r) => r.content));
       if (!vecs) break;
       for (const [j, r] of batch.entries())
@@ -277,16 +278,19 @@ export async function searchHistory(
   if (await hasVector()) {
     const vecs = await embed([query]);
     if (vecs?.[0]) {
-      params.push(toVectorLiteral(vecs[0]));
-      const v = `$${params.length}`;
+      // recuperação automática: só até a distância de cosseno das Configurações avançadas; depois o Jev filtra
+      const max = opts.auto ? (await getAdvanced()).history.autoMaxDistance : 2;
+      const n = params.length;
+      params.push(toVectorLiteral(vecs[0]), vecs[0].length, max);
+      // CASE: o <=> só roda com a dimensão igual (a ordem do AND no WHERE não é garantida)
       const rows = await q<HistoryHit>(
-        `SELECT ${cols} FROM history_chunks h WHERE ${where} AND h.embedding IS NOT NULL
-         ${opts.auto ? `AND h.embedding <=> ${v} <= ${HISTORY_AUTO_MAX_DISTANCE}` : ""}
-         ORDER BY h.embedding <=> ${v} LIMIT $2`,
+        `SELECT ${cols} FROM history_chunks h WHERE ${where}
+           AND CASE WHEN vector_dims(h.embedding) = $${n + 2} THEN h.embedding <=> $${n + 1} <= $${n + 3} END
+         ORDER BY h.embedding <=> $${n + 1} LIMIT $2`,
         params
       );
       if (rows.length || opts.auto) return rows;
-      params.pop(); // sem embeddings gravados ainda: cai para FTS
+      params.splice(n); // sem embeddings gravados ainda (ou de outra dimensão): cai para FTS
     }
   }
   if (opts.auto) return []; // sem vetor não dá para medir "muito parecido"
@@ -305,7 +309,7 @@ export async function searchHistory(
  * Corte curto, até ~max caracteres: a janela de frases que cobre mais termos distintos da busca (empate: mais
  * acertos). A linha do jogador (a ação, até 200) e quem responde ("Mestre:", "Nome do NPC:") ficam sempre.
  */
-export function excerpt(text: string, query: string, max = 700): string {
+export function excerpt(text: string, query: string, max = ADVANCED_DEFAULTS.history.excerptChars): string {
   if (text.length <= max) return text;
   const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n).trimEnd()}…` : s);
   const nl = text.indexOf("\n");
@@ -329,15 +333,15 @@ export function excerpt(text: string, query: string, max = 700): string {
 }
 
 /** "[Dia 2 · 14:00, Konoha, conversa particular com Iruka]" + o corte. */
-export function historyLine(h: HistoryHit, query: string): string {
+export function historyLine(h: HistoryHit, query: string, max?: number): string {
   const when = [h.clock == null ? "hora não registrada" : formatClock(h.clock), h.location, h.npc && `conversa particular com ${h.npc}`];
-  return `[${when.filter(Boolean).join(", ")}]\n${excerpt(h.content, query)}`;
+  return `[${when.filter(Boolean).join(", ")}]\n${excerpt(h.content, query, max)}`;
 }
 
 /** O que vai ao Mestre (search_history e trechos lembrados no turno). */
-export function formatHistory(hits: HistoryHit[], query: string): string {
+export function formatHistory(hits: HistoryHit[], query: string, max?: number): string {
   return [
     "Trechos do chat: é o que aconteceu naquele momento; se discordarem da ficha ou das memórias atuais, valem a ficha e as memórias.",
-    ...hits.map((h) => historyLine(h, query)),
+    ...hits.map((h) => historyLine(h, query, max)),
   ].join("\n---\n");
 }

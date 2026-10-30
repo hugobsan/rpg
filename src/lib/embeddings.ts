@@ -1,3 +1,4 @@
+import { getAdvanced } from "./advanced";
 import { getSetting } from "./db";
 import { authHeader, getSource } from "./openrouter";
 
@@ -25,14 +26,15 @@ export async function getEmbeddingConfig(): Promise<EmbeddingConfig> {
  * configurado ou em erro (sem chave, fonte removida...) — o retrieval cai para full-text search do Postgres.
  */
 export async function embed(texts: string[]): Promise<number[][] | null> {
-  const cfg = await getEmbeddingConfig();
+  const [cfg, adv] = await Promise.all([getEmbeddingConfig(), getAdvanced()]);
   if (!cfg.enabled || texts.length === 0) return null;
+  const dims = adv.embeddings.dimensions; // 0 = nativa do modelo; quem não tem MRL ignora (o reprocessamento avisa)
   try {
     const src = await getSource(cfg.source);
     const res = await fetch(`${src.url}/embeddings`, {
       method: "POST",
       headers: { ...authHeader(src), "Content-Type": "application/json" },
-      body: JSON.stringify({ model: cfg.model, input: texts }),
+      body: JSON.stringify({ model: cfg.model, input: texts, ...(dims > 0 ? { dimensions: dims } : {}) }),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as {

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { q } from "./db";
+import { getAdvanced } from "./advanced";
 import { getAgent } from "./agents";
 import { chat, ChatMessage } from "./openrouter";
 import { addMemory, indexHistory, searchMemories } from "./retrieval";
@@ -61,7 +62,7 @@ export async function npcTalk(
   const [relationMemories, playerRows] = await Promise.all([
     searchMemories(campaignId, `${npc.name} ${playerText}`, {
       subject: npc.name,
-      limit: 8,
+      limit: (await getAdvanced()).memory.npcTopK,
     }),
     q<Character>(
       `SELECT * FROM characters WHERE campaign_id = $1 AND kind = 'player' LIMIT 1`,

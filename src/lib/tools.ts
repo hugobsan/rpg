@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { q } from "./db";
+import { getAdvanced } from "./advanced";
 import { ToolDef } from "./openrouter";
 import { rollDice } from "./dice";
 import { addMemory, formatHistory, searchHistory, searchMemories, searchBookChunks } from "./retrieval";
@@ -506,7 +507,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "read_pages",
       description:
-        "Lê páginas inteiras de um livro indexado (até 8 por chamada). Use após search_book para contexto completo, página seguinte/anterior ou um intervalo específico.",
+        "Lê páginas inteiras de um livro indexado (poucas por chamada: a resposta avisa onde parou). Use após search_book para contexto completo, página seguinte/anterior ou um intervalo específico.",
       parameters: S(
         {
           bookId: { type: "string" },
@@ -940,7 +941,7 @@ export async function executeGmTool(
       const hits = await searchMemories(cid, String(args.query), {
         kind: args.kind ? String(args.kind) : undefined,
         subject: args.subject ? String(args.subject) : undefined,
-        limit: 8,
+        limit: (await getAdvanced()).memory.toolTopK,
       });
       if (!hits.length) return "Nenhuma memória encontrada.";
       return hits
@@ -948,8 +949,9 @@ export async function executeGmTool(
         .join("\n");
     }
     case "search_history": {
-      const hits = await searchHistory(cid, String(args.query), { npc: args.npc ? String(args.npc) : undefined, limit: 4 });
-      return hits.length ? formatHistory(hits, String(args.query)) : "Nada encontrado no histórico.";
+      const { history } = await getAdvanced();
+      const hits = await searchHistory(cid, String(args.query), { npc: args.npc ? String(args.npc) : undefined, limit: history.toolTopK });
+      return hits.length ? formatHistory(hits, String(args.query), history.excerptChars) : "Nada encontrado no histórico.";
     }
     case "create_npc": {
       // registro na hora (o portão de NPC exige antes da narração); perfil e ficha vêm do Criador em segundo plano
@@ -1188,7 +1190,7 @@ export async function executeGmTool(
       return "Roteiro atualizado.";
     }
     case "search_book": {
-      const hits = await searchBookChunks(cid, String(args.query), 5);
+      const hits = await searchBookChunks(cid, String(args.query), (await getAdvanced()).books.topK);
       if (!hits.length) return "Nada encontrado nos livros indexados.";
       return hits
         .map((h) => `[${h.title} | bookId=${h.book_id} | pág. ${h.page}]\n${h.content}`)
@@ -1199,7 +1201,10 @@ export async function executeGmTool(
       const to = Number(args.to ?? from);
       const pages = await readPages(String(args.bookId), from, to);
       if (!pages.length) return "Páginas não encontradas (verifique bookId e intervalo).";
-      return pages.map((p) => `=== Página ${p.page} ===\n${p.content}`).join("\n\n");
+      const max = (await getAdvanced()).books.maxPages; // o corte do intervalo (readPages)
+      const cut = to >= from + max && pages[pages.length - 1].page === from + max - 1;
+      const rest = cut ? `\n\n(limite de ${max} páginas por chamada: continue com read_pages from=${from + max})` : "";
+      return pages.map((p) => `=== Página ${p.page} ===\n${p.content}`).join("\n\n") + rest;
     }
     case "list_books": {
       const books = await listBooks(cid);

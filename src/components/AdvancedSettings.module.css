@@ -1,0 +1,56 @@
+/* Configurações avançadas: <details> recolhido, aviso de perigo e grupos de campos numéricos. Só tokens do DESIGN.md. */
+
+.wrap > summary {
+  display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; list-style: none; cursor: pointer;
+  min-height: 40px; padding: var(--s-2) var(--s-4); border-radius: var(--r-md);
+  background: var(--panel-grad); border: 1px solid var(--border); box-shadow: var(--hl);
+  font-size: 14px; font-weight: 500; color: var(--text);
+  transition: border-color var(--dur) var(--ease-out);
+}
+.wrap > summary::-webkit-details-marker { display: none; }
+.wrap > summary:hover { border-color: var(--border-strong); }
+.wrap > summary svg { flex-shrink: 0; color: var(--text-dim); transition: transform var(--dur) var(--ease-out); }
+.wrap[open] > summary svg { transform: rotate(90deg); }
+.count { font-size: 12.5px; font-weight: 400; color: var(--accent); }
+
+.danger {
+  display: flex; gap: var(--s-3); align-items: flex-start; margin: var(--s-4) 0;
+  padding: var(--s-3) var(--s-4); border-radius: var(--r-md); font-size: 13px; line-height: 1.55;
+  background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-left: 3px solid var(--danger); color: color-mix(in srgb, var(--danger) 45%, var(--text));
+  animation: rise var(--dur-slow) var(--ease-out);
+}
+.danger svg { flex-shrink: 0; margin-top: 2px; color: var(--danger); }
+.danger p { margin: 0; }
+.danger p + p { margin-top: var(--s-2); }
+.danger b { color: var(--danger); }
+
+.group {
+  margin-top: var(--s-4); padding: var(--s-4); border-radius: var(--r-lg);
+  background: var(--panel-grad); border: 1px solid var(--border); box-shadow: var(--hl), var(--shadow-1);
+}
+.groupHead { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2) var(--s-3); flex-wrap: wrap; }
+.groupHead h3 { margin: 0; font: 600 15px/1.4 var(--font-body); }
+.note { margin: var(--s-2) 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text-dim); }
+
+/* campo: nome técnico e explicação à esquerda, número à direita (empilha no celular) */
+.field {
+  display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: var(--s-1) var(--s-3); align-items: start;
+  margin-top: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--border);
+}
+.label { font: 500 12.5px/1.45 var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
+.field input { grid-column: 2; grid-row: 1 / span 2; font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.field input:invalid { border-color: var(--danger); }
+.changed input { border-color: var(--accent-line); }
+.changed .label::after { content: " · fora do padrão"; font-family: var(--font-body); font-weight: 400; color: var(--accent); }
+.help { grid-column: 1; margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-dim); }
+.meta { white-space: nowrap; }
+.help .re {
+  margin: 0 0 0 6px; color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft);
+}
+
+@media (max-width: 520px) {
+  .field { grid-template-columns: minmax(0, 1fr); }
+  .field input { grid-column: 1; grid-row: auto; max-width: 180px; }
+}

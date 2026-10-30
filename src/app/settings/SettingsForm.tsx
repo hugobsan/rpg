@@ -2,9 +2,11 @@
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import AdvancedSettings, { reprocessPending } from "@/components/AdvancedSettings";
 import Loader from "@/components/ui/Loader";
 import { toast } from "@/components/ui/Toast";
 import type { ChatgptStatus, DiceResult, SourceView } from "@/lib/types";
+import type { Advanced, AdvancedSpec } from "@/lib/advanced";
 import SourcesPanel from "./SourcesPanel";
 import s from "./settings.module.css";
 
@@ -34,8 +36,9 @@ function ResultText({ r }: { r: Result }) {
 }
 
 /** Formulário com os dados já vindos do servidor (sem tela de carregando). */
-export default function SettingsForm({ initial, usedBy, notice }: {
+export default function SettingsForm({ initial, advanced, usedBy, notice }: {
   initial: SettingsShape;
+  advanced: { spec: AdvancedSpec; values: Advanced }; // Configurações avançadas (rota própria)
   usedBy: Record<string, string[]>; // agentes por fonte
   notice: { ok: boolean; text: string } | null; // retorno do Login com ChatGPT
 }) {
@@ -46,19 +49,32 @@ export default function SettingsForm({ initial, usedBy, notice }: {
   const [diceForce, setDiceForce] = useState(initial.ui.diceForce);
   const [imageGeneration, setImageGeneration] = useState(initial.ui.imageGeneration);
   const [autoMaps, setAutoMaps] = useState(initial.ui.autoMaps);
+  const [advSaved, setAdvSaved] = useState(advanced.values);
+  const [adv, setAdv] = useState(advanced.values);
   const [saving, setSaving] = useState(false);
   const [reRunning, setReRunning] = useState(false);
   const [re, setRe] = useState<Result>(null);
 
   const embDirty = emb.enabled !== data.embeddings.enabled || emb.model !== data.embeddings.model || emb.source !== data.embeddings.source;
-  const dirty = embDirty || diceAnimation !== data.ui.diceAnimation || diceForce !== data.ui.diceForce || imageGeneration !== data.ui.imageGeneration || autoMaps !== data.ui.autoMaps;
+  const advDirty = JSON.stringify(adv) !== JSON.stringify(advSaved);
+  const dirty = embDirty || advDirty || diceAnimation !== data.ui.diceAnimation || diceForce !== data.ui.diceForce || imageGeneration !== data.ui.imageGeneration || autoMaps !== data.ui.autoMaps;
 
   const save = async () => {
     setSaving(true);
     const body = { embeddings: emb, ui: { diceAnimation, diceForce, imageGeneration, autoMaps } };
-    const res = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
-    if (res?.ok) {
-      toast("Configurações salvas.", { kind: "sucesso" });
+    const put = (url: string, b: unknown) =>
+      fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).catch(() => null);
+    // as avançadas vão na rota própria, só quando mudaram; ela devolve o normalizado (faixas presas)
+    const [res, advRes] = await Promise.all([put("/api/settings", body), advDirty ? put("/api/settings/advanced", adv) : null]);
+    if (advRes?.ok) {
+      const fresh = (await advRes.json()) as Advanced;
+      setAdv(fresh);
+      setAdvSaved(fresh);
+    }
+    if (res?.ok && (!advDirty || advRes?.ok)) {
+      toast(advDirty && reprocessPending(advanced.spec, adv, advSaved)
+        ? "Configurações salvas. Reprocesse os embeddings para os novos parâmetros valerem no que já está indexado."
+        : "Configurações salvas.", { kind: "sucesso" });
       const fresh = await fetch("/api/settings").then((r) => r.json() as Promise<SettingsShape>).catch(() => null);
       if (fresh) {
         setData(fresh);
@@ -94,15 +110,15 @@ export default function SettingsForm({ initial, usedBy, notice }: {
 
   const reprocess = async () => {
     // reprocessa com o modelo salvo no banco, não com o que está na tela
-    if (embDirty) return setRe({ ok: false, text: "Salve as configurações antes de reprocessar" });
+    if (embDirty || advDirty) return setRe({ ok: false, text: "Salve as configurações antes de reprocessar" });
     setReRunning(true);
     setRe(null);
     try {
       const res = await fetch("/api/embeddings/reprocess", { method: "POST" });
       const d = await res.json();
-      const n = `${d.memories ?? 0} memórias e ${d.book_chunks ?? 0} trechos`;
+      const n = `${d.memories ?? 0} memórias, ${d.book_chunks ?? 0} trechos de livros e ${d.history_chunks ?? 0} do histórico`;
       setRe(res.ok
-        ? { ok: true, text: `${n} reprocessados` }
+        ? { ok: !d.warning, text: `${n} reprocessados${d.dims ? `, vetores de ${d.dims} dimensões` : ""}${d.warning ? `. ${d.warning}` : ""}` }
         : { ok: false, text: `${d.error || res.status}${d.memories !== undefined ? ` (${n} reprocessados; o restante ficou sem embedding)` : ""}` });
     } catch {
       setRe({ ok: false, text: "Falha na requisição" });
@@ -155,7 +171,7 @@ export default function SettingsForm({ initial, usedBy, notice }: {
           </label>
           <div className={s.warn}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M8 1.8 14.6 13.5H1.4L8 1.8Z" strokeLinejoin="round" /><path d="M8 6.2v3.4M8 11.6v.1" strokeLinecap="round" /></svg>
-            <span>Trocar o modelo ou a fonte exige reprocessar os embeddings já gerados (memórias e livros): vetores de modelos diferentes não se comparam. Salve antes de reprocessar.</span>
+            <span>Trocar o modelo ou a fonte exige reprocessar os embeddings já gerados (memórias, livros e histórico): vetores de modelos diferentes não se comparam. Salve antes de reprocessar.</span>
           </div>
           <div className={s.row}>
             <button className="btn small" onClick={reprocess} disabled={reRunning}>
@@ -199,6 +215,17 @@ export default function SettingsForm({ initial, usedBy, notice }: {
             <input type="checkbox" role="switch" checked={autoMaps} onChange={(e) => setAutoMaps(e.target.checked)} />
           </label>
         </div>
+      </section>
+
+      <section className={s.section} aria-labelledby="sec-adv">
+        <div className={s.aside}>
+          <h2 id="sec-adv">Configurações avançadas</h2>
+          <p>
+            Top-k, limiares de distância de cosseno, chunking, dimensões dos embeddings e limiares do Jev, por cenário. A janela
+            do histórico e as rodadas de ferramentas do Mestre e a compactação do Cronista ficam em <Link href="/agents">Agentes</Link>.
+          </p>
+        </div>
+        <AdvancedSettings spec={advanced.spec} value={adv} onChange={setAdv} />
       </section>
 
       <div className={`${s.saveBar} ${dirty ? s.dirty : ""}`}>

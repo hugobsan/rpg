@@ -1,4 +1,5 @@
 import { q } from "./db";
+import { type Advanced, getAdvanced } from "./advanced";
 import { getAgent } from "./agents";
 import { chat, ChatMessage, estimateTokens } from "./openrouter";
 import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
@@ -198,11 +199,11 @@ async function buildGmSystem(
   return parts.filter(Boolean).join("\n");
 }
 
-/** Candidatas a memória do turno: top-k por similaridade + as mais importantes/recentes. */
-async function candidateMemories(campaignId: string, playerInput: string): Promise<MemoryHit[]> {
+/** Candidatas a memória do turno: top-k por similaridade + as mais importantes/recentes (Configurações avançadas). */
+async function candidateMemories(campaignId: string, playerInput: string, adv: Advanced): Promise<MemoryHit[]> {
   const [relevant, recent] = await Promise.all([
-    playerInput ? searchMemories(campaignId, playerInput, { limit: 6 }) : Promise.resolve([]),
-    recentMemories(campaignId, 8),
+    playerInput ? searchMemories(campaignId, playerInput, { limit: adv.memory.topK, maxDistance: adv.memory.maxDistance }) : Promise.resolve([]),
+    recentMemories(campaignId, adv.memory.recentK),
   ]);
   const seen = new Set<number>();
   return [...relevant, ...recent].filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
@@ -304,11 +305,12 @@ export async function runTurn(
   // status por fase: a tela acende "consultando", "dados" e "escrevendo" por estas palavras
   emit({ type: "status", text: "Lendo a cena..." });
   // a busca de memórias (embedding da ação, ida à rede) corre junto da foto e das leituras do banco
-  const candidatesP = candidateMemories(campaignId, playerInput);
+  const adv = await getAdvanced(); // cache no processo
+  const candidatesP = candidateMemories(campaignId, playerInput, adv);
   candidatesP.catch(() => {}); // o erro sobe no await abaixo, sem virar rejeição solta antes dele
-  // até 2 trechos antigos do chat muito parecidos com a ação: só entram se o Jev aprovar com folga
-  const pastP = playerInput
-    ? searchHistory(campaignId, playerInput, { limit: 2, auto: true }).catch((): HistoryHit[] => [])
+  // até autoTopK (2) trechos antigos do chat muito parecidos com a ação: só entram se o Jev aprovar com folga
+  const pastP = playerInput && adv.history.autoTopK
+    ? searchHistory(campaignId, playerInput, { limit: adv.history.autoTopK, auto: true }).catch((): HistoryHit[] => [])
     : Promise.resolve([]);
   // foto do estado antes do turno, para poder gerar a resposta de novo depois
   await takeSnapshot(campaignId, playerInput);
@@ -348,7 +350,7 @@ export async function runTurn(
       lastGmNarration: typeof lastGm?.content === "string" ? lastGm.content : "",
       playerAction: playerInput,
       memories: candidates,
-      history: pastHits.map((h) => ({ id: h.id, text: historyLine(h, playerInput) })),
+      history: pastHits.map((h) => ({ id: h.id, text: historyLine(h, playerInput, adv.history.excerptChars) })),
       askComplexity: !!complexModel,
       askWeb: gm.web_search,
     },
@@ -366,7 +368,7 @@ export async function runTurn(
     scene,
     chars,
     memories,
-    past.length ? formatHistory(past, playerInput) : "",
+    past.length ? formatHistory(past, playerInput, adv.history.excerptChars) : "",
     gm.system_prompt
   );
   // a última mensagem do histórico já é o input do jogador recém-salvo? Não: janela foi lida após salvar.

@@ -1,8 +1,6 @@
+import { getAdvanced } from "./advanced";
 import { hasVector, q } from "./db";
 import { embed, toVectorLiteral } from "./embeddings";
-
-const CHUNK_CHARS = 2400; // ~700 tokens por chunk
-const EMBED_BATCH = 32;
 
 /** Extrai texto paginado de PDF/TXT/MD. */
 export async function extractPages(
@@ -31,18 +29,20 @@ export async function extractPages(
   return pages;
 }
 
-function chunkPage(text: string): string[] {
-  if (text.length <= CHUNK_CHARS) return text ? [text] : [];
+/** Chunks de uma página: até size chars, cortando no último ". " depois da metade; o seguinte repete os últimos overlap chars. */
+export function chunkPage(text: string, size: number, overlap: number): string[] {
+  if (text.length <= size) return text ? [text] : [];
   const chunks: string[] = [];
   let start = 0;
   while (start < text.length) {
-    let end = Math.min(start + CHUNK_CHARS, text.length);
+    let end = Math.min(start + size, text.length);
     if (end < text.length) {
       const cut = text.lastIndexOf(". ", end);
-      if (cut > start + CHUNK_CHARS / 2) end = cut + 1;
+      if (cut > start + size / 2) end = cut + 1;
     }
     chunks.push(text.slice(start, end).trim());
-    start = end;
+    // end > start + size/2 e overlap <= size/2 (normalizeAdvanced): sempre anda
+    start = end < text.length ? end - overlap : end;
   }
   return chunks.filter(Boolean);
 }
@@ -54,7 +54,7 @@ export async function ingestBook(
   filename: string,
   buf: Buffer
 ): Promise<{ bookId: string; pages: number; chunks: number }> {
-  const pages = await extractPages(filename, buf);
+  const [pages, adv] = await Promise.all([extractPages(filename, buf), getAdvanced()]);
   if (!pages.length) throw new Error("Nenhum texto extraído do arquivo.");
   const rows = await q<{ id: string }>(
     `INSERT INTO books (campaign_id, title, pages) VALUES ($1,$2,$3) RETURNING id`,
@@ -69,14 +69,14 @@ export async function ingestBook(
       i + 1,
       pages[i],
     ]);
-    chunkPage(pages[i]).forEach((c, idx) =>
+    chunkPage(pages[i], adv.books.chunkChars, adv.books.overlapChars).forEach((c, idx) =>
       allChunks.push({ page: i + 1, index: idx, content: c })
     );
   }
 
   const vectorOk = await hasVector();
-  for (let i = 0; i < allChunks.length; i += EMBED_BATCH) {
-    const batch = allChunks.slice(i, i + EMBED_BATCH);
+  for (let i = 0; i < allChunks.length; i += adv.embeddings.batch) {
+    const batch = allChunks.slice(i, i + adv.embeddings.batch);
     const vecs = vectorOk ? await embed(batch.map((c) => c.content)) : null;
     for (let j = 0; j < batch.length; j++) {
       const c = batch[j];
@@ -103,7 +103,7 @@ export async function readPages(
   from: number,
   to: number
 ): Promise<{ page: number; content: string }[]> {
-  const capped = Math.min(to, from + 7); // máx 8 páginas por chamada
+  const capped = Math.min(to, from + (await getAdvanced()).books.maxPages - 1);
   return q<{ page: number; content: string }>(
     `SELECT page, content FROM book_pages
      WHERE book_id = $1 AND page BETWEEN $2 AND $3 ORDER BY page`,

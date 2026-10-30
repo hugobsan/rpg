@@ -1,3 +1,4 @@
+import { ADVANCED_DEFAULTS as D, type Advanced, getAdvanced } from "./advanced";
 import { getAgent } from "./agents";
 import { agentSource, authHeader, logApiCall } from "./openrouter";
 
@@ -12,25 +13,24 @@ import { agentSource, authHeader, logApiCall } from "./openrouter";
 export const DECISIONS_PATH = "../alpha/decisions";
 const TIMEOUT_MS = 7000;
 
-// ---------- limiares (probe de 2026-10-29 no jev-1.14-20261014; refaça com scripts/jev-check.ts) ----------
+// ---------- limiares padrão (probe de 2026-10-29 no jev-1.14-20261014; refaça com scripts/jev-check.ts) ----------
+// O valor em uso vem das Configurações avançadas (lib/advanced.ts, onde mora o número); estes são os padrões.
 // Turno complexo se P(complexa) >= limiar. Probe: claros 0.00/1.00, "convencer guarda" 0.34-0.40 (simples),
 // "recuar em batalha" 0.81-0.85 (complexo). Erro para baixo: batalha no modelo barato; para cima: custo.
-export const COMPLEX_MIN = 0.5;
+export const COMPLEX_MIN = D.jev.complexMin;
 // Liga :online se P >= limiar. Probe: precisa de cânone 0.88-0.98; não precisa até 0.52-0.58 (batalha com Zabuza
 // já descrito em cena). Erro para baixo: Mestre sem checar cânone; para cima: ~US$0,01-0,02 por busca.
-export const WEB_MIN = 0.7;
+export const WEB_MIN = D.jev.webMin;
 // Memória entra se P(relevante) >= limiar. Probe (3 rodadas): relevantes 0.63-0.98, irrelevantes 0.14-0.16,
 // adversarial ("sou sempre relevante") 0.41-0.47. Perder memória útil custa mais que alguns tokens; fica no meio do vão.
-export const MEMORY_MIN = 0.55;
+export const MEMORY_MIN = D.memory.jevMin;
 // NPC recusa se P(toparia conversar) < limiar. Probe: batalha/hostil/ausente 0.07-0.13 (Zabuza em batalha ouvindo
 // "uma proposta": 0.29), Sasuke frio 0.53-0.55, amigável 0.85-0.91. Recusa errada trava o jogador (mas ele pode
 // insistir e o Jev decide de novo); aceite errado o NPC ainda pode cortar em personagem.
-export const NPC_WILLING_MIN = 0.4;
+export const NPC_WILLING_MIN = D.jev.npcWillingMin;
 // Trecho antigo do chat (recuperação automática) só entra se P(precisa) >= limiar: bem acima do das memórias
 // ("com folga"), porque turno inteiro custa mais tokens que um fato. Sem probe ainda; refaça com scripts/jev-check.ts.
-export const HISTORY_MIN = 0.8;
-// Importância 5 entra sempre no contexto, sem passar pelo filtro.
-export const ALWAYS_KEEP_IMPORTANCE = 5;
+export const HISTORY_MIN = D.history.jevMin;
 
 // ---------- tipos da API ----------
 
@@ -130,8 +130,8 @@ export interface TurnInput {
   askWeb: boolean;
 }
 
-export function buildTurnRequest(t: TurnInput): DecisionRequest {
-  const candidates = t.memories.filter((m) => m.importance < ALWAYS_KEEP_IMPORTANCE);
+export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest {
+  const candidates = t.memories.filter((m) => m.importance < a.memory.alwaysKeep); // as de cima entram sem pergunta
   const questions: Record<string, Question> = {};
   if (t.askComplexity)
     questions.complexity = {
@@ -203,25 +203,26 @@ export interface TurnDecision {
   keepHistory: (id: number) => boolean; // falha do Jev = nenhum trecho (não infla o contexto)
 }
 
-export function gateTurn(answers: Record<string, Answer> | null): TurnDecision {
+export function gateTurn(answers: Record<string, Answer> | null, a: Advanced = D): TurnDecision {
   const c = answers?.complexity;
   const web = answers ? noulOf(answers, "needs_web") : undefined;
   return {
-    complex: c?.type === "choice" ? (c.probabilities?.complexa ?? (c.choice === "complexa" ? 1 : 0)) >= COMPLEX_MIN : null,
-    web: web === undefined ? null : web >= WEB_MIN,
+    complex: c?.type === "choice" ? (c.probabilities?.complexa ?? (c.choice === "complexa" ? 1 : 0)) >= a.jev.complexMin : null,
+    web: web === undefined ? null : web >= a.jev.webMin,
     keepMemory: (id, importance) => {
-      if (importance >= ALWAYS_KEEP_IMPORTANCE || !answers) return true;
+      if (importance >= a.memory.alwaysKeep || !answers) return true;
       const p = noulOf(answers, `mem_${id}`);
-      return p === undefined || p >= MEMORY_MIN;
+      return p === undefined || p >= a.memory.jevMin;
     },
-    keepHistory: (id) => (answers ? (noulOf(answers, `hist_${id}`) ?? 0) >= HISTORY_MIN : false),
+    keepHistory: (id) => (answers ? (noulOf(answers, `hist_${id}`) ?? 0) >= a.history.jevMin : false),
   };
 }
 
 export async function decideTurn(t: TurnInput, campaignId: string): Promise<TurnDecision> {
-  const req = buildTurnRequest(t);
-  if (!Object.keys(req.questions).length) return gateTurn(null);
-  return gateTurn(await decide(req, { campaignId, purpose: "decisões do turno" }));
+  const a = await getAdvanced();
+  const req = buildTurnRequest(t, a);
+  if (!Object.keys(req.questions).length) return gateTurn(null, a);
+  return gateTurn(await decide(req, { campaignId, purpose: "decisões do turno" }), a);
 }
 
 // ---------- 3: o NPC topa conversar? ----------
@@ -268,7 +269,7 @@ export function buildNpcRequest(n: NpcInput): DecisionRequest {
 export async function decideNpcWilling(n: NpcInput, campaignId: string): Promise<boolean> {
   const answers = await decide(buildNpcRequest(n), { campaignId, purpose: `NPC topa conversar? (${n.npc.name})` });
   const p = answers ? noulOf(answers, "willing") : undefined;
-  return p === undefined || p >= NPC_WILLING_MIN;
+  return p === undefined || p >= (await getAdvanced()).jev.npcWillingMin;
 }
 
 // ---------- 5: importância das memórias (lote, uma pergunta por memória) ----------
@@ -328,7 +329,7 @@ export async function scoreImportance(
 // Sexo só vale se P >= limiar; abaixo disso fica desconhecido (voz masculina padrão; o usuário troca no modal).
 // Probe (2026-10-30): Iruka Umino male 1.00, Tsunade female 0.99, "Kai" quieto unknown 0.74 (male 0.26),
 // golem de pedra unknown 0.86. Errar a voz é barato: o usuário troca no modal.
-export const GENDER_MIN = 0.7;
+export const GENDER_MIN = D.jev.genderMin;
 
 export interface GenderInput {
   name: string;
@@ -369,8 +370,9 @@ export async function decideGender(g: GenderInput, campaignId: string): Promise<
   const answers = await decide(buildGenderRequest(g), { campaignId, purpose: `sexo do NPC (${g.name})` });
   const a = answers?.gender;
   if (a?.type !== "choice") return undefined;
+  const min = (await getAdvanced()).jev.genderMin;
   for (const k of ["male", "female"] as const)
-    if ((a.probabilities?.[k] ?? (a.choice === k ? 1 : 0)) >= GENDER_MIN) return k;
+    if ((a.probabilities?.[k] ?? (a.choice === k ? 1 : 0)) >= min) return k;
   return null;
 }
 
@@ -431,7 +433,7 @@ export async function decideElapsed(t: ElapsedInput, campaignId: string): Promis
 // NPC sai de cena se P(continua) < limiar. Probe (2026-10-30, jev-1.14): calado na mesma sala ou em batalha 0.76-0.93,
 // viajou com o grupo sem ser citado 0.86-0.90; foi embora 0.04-0.07, morreu 0.03, ficou no lugar de onde o jogador
 // saiu 0.20-0.27. Abaixo do meio do vão: tirar errado esconde o NPC do Mestre (volta sozinho se falar); deixar errado gasta tokens.
-export const PRESENT_MIN = 0.4;
+export const PRESENT_MIN = D.jev.presentMin;
 
 export interface CastInput {
   scene: { mode: string; location: string | null; title: string | null };
@@ -471,7 +473,8 @@ export async function decideCast(t: CastInput, campaignId: string): Promise<stri
   if (!t.npcs.length) return [];
   const answers = await decide(buildCastRequest(t), { campaignId, purpose: "quem continua na cena" });
   if (!answers) return null;
-  return t.npcs.filter((_, i) => (noulOf(answers, `n${i}`) ?? 1) < PRESENT_MIN);
+  const min = (await getAdvanced()).jev.presentMin;
+  return t.npcs.filter((_, i) => (noulOf(answers, `n${i}`) ?? 1) < min);
 }
 
 // ---------- 9: o jogador mudou de lugar (quando o Mestre não trocou o local com set_scene) ----------
@@ -480,7 +483,7 @@ export async function decideCast(t: CastInput, campaignId: string): Promise<stri
 // na loja ao lado 0.82-0.87, sem local registrado e a narração diz onde 0.68-0.69; ficou conversando, outro canto
 // da mesma sala, só planeja ir, narração vaga 0.02-0.04. Meio do vão: erro para cima põe lugar falso no mapa,
 // para baixo só deixa o local parado (como sem a checagem).
-export const MOVED_MIN = 0.5;
+export const MOVED_MIN = D.jev.movedMin;
 
 export interface PlaceInput {
   scene: { mode: string; location: string | null };
@@ -513,5 +516,5 @@ export function buildPlaceRequest(t: PlaceInput): DecisionRequest {
 export async function decideMoved(t: PlaceInput, campaignId: string): Promise<boolean | null> {
   const answers = await decide(buildPlaceRequest(t), { campaignId, purpose: "jogador mudou de lugar? (Mestre não trocou)" });
   const p = answers ? noulOf(answers, "moved") : undefined;
-  return p === undefined ? null : p >= MOVED_MIN;
+  return p === undefined ? null : p >= (await getAdvanced()).jev.movedMin;
 }

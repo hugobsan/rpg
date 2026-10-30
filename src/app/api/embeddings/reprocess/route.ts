@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getAdvanced } from "@/lib/advanced";
+import { chunkPage } from "@/lib/books";
 import { db, hasVector } from "@/lib/db";
 import { embed, getEmbeddingConfig, toVectorLiteral } from "@/lib/embeddings";
 import { getSource } from "@/lib/openrouter";
@@ -6,10 +8,10 @@ import { getSource } from "@/lib/openrouter";
 export const dynamic = "force-dynamic";
 
 const TABLES = ["memories", "book_chunks", "history_chunks"] as const;
-const BATCH = { memories: 64, book_chunks: 64, history_chunks: 16 }; // trecho do chat é um turno inteiro
 
 /**
- * Regera os embeddings de memories, book_chunks e history_chunks com o modelo salvo.
+ * Regera os embeddings de memories, book_chunks e history_chunks com o modelo salvo, e antes refaz o chunking dos
+ * livros a partir de book_pages com o chunk size/overlap das Configurações avançadas (mesmos valores = mesmos chunks).
  * Tudo numa transação: a busca só vê vetores antigos ou novos, nunca misturados.
  */
 export async function POST() {
@@ -21,6 +23,9 @@ export async function POST() {
     return fail("Embeddings desabilitados: habilite e salve as configurações antes.");
   const srcError = await getSource(cfg.source).then(() => "", (e: Error) => e.message);
   if (srcError) return fail(srcError);
+  const adv = await getAdvanced();
+  const BATCH = { memories: adv.embeddings.batch, book_chunks: adv.embeddings.batch, history_chunks: adv.history.batch }; // trecho do chat é um turno inteiro
+  let dims = 0; // dimensão dos vetores que o modelo devolveu
 
   const client = await (await db()).connect();
   const n = { memories: 0, book_chunks: 0, history_chunks: 0 }; // reprocessados
@@ -28,6 +33,16 @@ export async function POST() {
   try {
     await client.query("BEGIN");
     try {
+      const { rows: pages } = await client.query(`SELECT book_id, page, content FROM book_pages ORDER BY book_id, page`);
+      const chunks = pages.flatMap((p) =>
+        chunkPage(p.content, adv.books.chunkChars, adv.books.overlapChars).map((content, i) => [p.book_id, p.page, i, content])
+      );
+      await client.query(`DELETE FROM book_chunks`);
+      await client.query(
+        `INSERT INTO book_chunks (book_id, page, chunk_index, content)
+         SELECT * FROM unnest($1::uuid[], $2::int[], $3::int[], $4::text[])`,
+        [0, 1, 2, 3].map((k) => chunks.map((c) => c[k]))
+      );
       for (const t of TABLES) {
         for (;;) {
           const { rows } = await client.query(
@@ -38,6 +53,7 @@ export async function POST() {
           const vecs = await embed(rows.map((r) => r.content));
           if (!vecs || Array.from(vecs).some((v) => !v))
             throw new Error("falha ao gerar embeddings na fonte configurada");
+          dims ||= vecs[0].length;
           await client.query(
             `UPDATE ${t} SET embedding = v.e::vector
              FROM unnest($1::bigint[], $2::text[]) AS v(id, e) WHERE ${t}.id = v.id`,
@@ -63,7 +79,9 @@ export async function POST() {
       }
       return NextResponse.json({ error, ...n }, { status: 502 });
     }
-    return NextResponse.json(n);
+    const want = adv.embeddings.dimensions;
+    const warning = want && dims && dims !== want ? `O modelo ignorou dimensions=${want} e devolveu ${dims} dimensões.` : undefined;
+    return NextResponse.json({ ...n, dims, warning });
   } finally {
     client.release();
   }
