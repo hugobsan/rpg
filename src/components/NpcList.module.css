@@ -1,0 +1,73 @@
+/* Aba NPCs: em cena × fora de cena, mensagens particulares e ação rápida. Só tokens do DESIGN.md. */
+.wrap { display: flex; flex-direction: column; gap: var(--s-2); }
+.head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); margin-top: var(--s-3); min-height: 30px; }
+.head:first-child { margin-top: 0; }
+.head h4 { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--text-dim); display: inline-flex; align-items: center; gap: 6px; }
+.head h4 :global(.num) { color: var(--text-faint); font-weight: 500; }
+.live { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.confirm {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; font-size: 12.5px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--bg-sunken);
+  animation: pop var(--dur) var(--ease-out);
+}
+.confirm span { flex: 1 1 100%; color: var(--text-dim); }
+.none { margin: 0; font-size: 12.5px; color: var(--text-faint); padding: 4px 0; }
+
+/* monograma: iniciais na forma do tema (o raio muda por tema) */
+.avatar {
+  position: relative; flex-shrink: 0; width: 38px; height: 38px; display: grid; place-items: center;
+  border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--bg-sunken);
+  font: var(--display-weight) calc(14px * var(--display-scale)) / 1 var(--font-display); letter-spacing: var(--display-tracking);
+  color: var(--text-dim);
+}
+.avatar.on { border-color: var(--accent-line); color: var(--accent); background: radial-gradient(circle at 50% 25%, var(--accent-soft), transparent 70%), var(--bg-sunken); }
+.badge {
+  position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; display: grid; place-items: center;
+  border-radius: var(--r-pill); background: var(--accent-fill); color: var(--accent-ink); border: 2px solid var(--bg-raise);
+  font: 700 10.5px/1 var(--font-body); font-variant-numeric: tabular-nums; animation: pop var(--dur-slow) var(--ease-spring);
+}
+
+.row {
+  display: flex; align-items: center; gap: var(--s-3); padding: 8px 8px 8px 10px; position: relative;
+  background: var(--panel-grad); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--hl);
+  transition: border-color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
+  animation: rise var(--dur-slow) var(--ease-out) backwards;
+}
+.row:hover { border-color: var(--accent-line); background: var(--bg-hover); }
+.row.off { background: transparent; box-shadow: none; }
+.row.off:hover { background: var(--bg-hover); }
+.row.unread { border-color: var(--accent-line); }
+.open { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-3); padding: 0; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+/* o botão inteiro cobre a linha; a ação rápida fica por cima */
+.open::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.open:focus-visible { outline: none; }
+.open:focus-visible::after { outline: 2px solid var(--accent); outline-offset: 2px; }
+.info { flex: 1; min-width: 0; display: block; }
+.nm { font-size: 13.5px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
+.off .nm { color: var(--text-dim); }
+.canon { font-size: 10px; font-weight: 500; color: var(--text-faint); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 0 5px; line-height: 16px; }
+.sub { display: block; font-size: 11.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preview { display: block; font: italic 12px/1.4 var(--font-narr); color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.quick {
+  position: relative; z-index: 1; flex-shrink: 0; width: 32px; height: 32px; display: grid; place-items: center; padding: 0;
+  border-radius: var(--r-sm); border: 1px solid transparent; background: none; color: var(--text-faint); cursor: pointer;
+  transition: color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
+}
+.quick:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); background: var(--bg-raise); }
+.quick:disabled { opacity: 0.4; cursor: progress; }
+@media (pointer: coarse) { .quick { width: 38px; height: 38px; } }
+
+/* caixa de entrada: mensagens particulares não lidas */
+.inbox { display: flex; flex-direction: column; gap: 6px; }
+.msg {
+  display: flex; gap: var(--s-3); align-items: flex-start; width: 100%; padding: 10px 12px; cursor: pointer; text-align: left; color: inherit; font: inherit;
+  border: 1px solid var(--accent-line); border-radius: var(--r-md); background: linear-gradient(135deg, var(--accent-soft), transparent 70%), var(--bg-panel);
+  box-shadow: var(--hl), var(--shadow-1); transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
+  animation: pop var(--dur-slow) var(--ease-out) backwards;
+}
+.msg:hover { transform: translateY(-1px); box-shadow: var(--hl), var(--shadow-2), var(--glow); }
+.msgBody { flex: 1; min-width: 0; }
+.msgTop { display: flex; justify-content: space-between; gap: var(--s-2); font-size: 12px; color: var(--text-dim); }
+.msgTop b { color: var(--text); font-size: 13px; }
+.msgText { margin: 3px 0 0; font: italic 13px/1.45 var(--font-narr); color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.reply { display: block; margin-top: 6px; font-size: 11.5px; font-weight: 600; color: var(--accent); }
