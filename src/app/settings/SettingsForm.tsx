@@ -54,7 +54,7 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
   const testOpenRouter = async () => {
     setTesting(true);
     setTest(null);
-    const res = await fetch("/api/models").catch(() => null);
+    const res = await fetch("/api/models?fresh=1").catch(() => null);
     const d = res && (await res.json().catch(() => ({})));
     setTest(res?.ok ? { ok: true, text: `Conexão OK, ${d.length} modelos disponíveis` } : { ok: false, text: `Falhou: ${d?.error || res?.status || "sem resposta"}` });
     setTesting(false);
