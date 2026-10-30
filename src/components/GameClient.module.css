@@ -1,0 +1,66 @@
+/* casca da tela de jogo: coluna do jogo (container "main") + lateral (painel + trilho) */
+.layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  height: calc(100dvh - var(--nav-h)); overflow: hidden;
+}
+.main {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  container: main / inline-size;
+}
+@media (max-width: 899px) {
+  .layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+}
+
+.feedWrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.feed {
+  flex: 1; min-height: 0; overflow-y: auto; scroll-behavior: smooth;
+  display: flex; flex-direction: column;
+  padding: var(--s-6) 22px var(--s-6);
+}
+/* até hidratar: a coluna invertida abre no fim do feed (o HTML já vem com a conversa) */
+.fromEnd { flex-direction: column-reverse; }
+.inner { width: 100%; max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+@container main (max-width: 600px) {
+  .feed { padding: var(--s-5) 16px var(--s-5); }
+  .inner { gap: 14px; }
+}
+
+.center { align-self: center; }
+.older { width: 100%; }
+
+/* campanha nova */
+.start {
+  display: grid; justify-items: center; gap: var(--s-2); text-align: center;
+  margin: 8vh auto 0; max-width: 440px; padding: var(--s-6) var(--s-5);
+  background: var(--panel-grad); border: 1px solid var(--border); border-radius: var(--r-lg);
+  box-shadow: var(--hl), var(--shadow-2);
+  animation: rise var(--dur-enter) var(--ease-out);
+}
+.start h2 { margin: var(--s-2) 0 0; }
+.start p { margin: 0 0 var(--s-4); }
+.startGlyph::before { content: var(--glyph); font-size: 28px; color: var(--accent); text-shadow: 0 0 18px var(--accent); }
+
+/* rolagem retida: o jogador rola */
+.roll { align-self: center; min-height: 48px; padding: 0 22px; font-size: 15px; gap: 10px; animation: pop var(--dur-slow) var(--ease-out); }
+.rollWhat { font-weight: 500; opacity: 0.75; font-size: 13px; }
+
+/* gerar novamente: discreto, logo depois da última resposta */
+.regen {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin: -8px 0 -4px;
+  padding: 4px 8px; border: 1px solid transparent; border-radius: var(--r-sm); background: none;
+  color: var(--text-faint); font: 500 12px/1.2 var(--font-body); cursor: pointer;
+  transition: color var(--dur) var(--ease-out), background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+}
+.regen:hover { color: var(--text); background: var(--bg-hover); border-color: var(--border); }
+
+/* imagem do ambiente no topo da ficha */
+.sceneImage { position: relative; margin-bottom: var(--s-3); }
+.sceneImageOpen {
+  display: block; width: 100%; padding: 0; border: 1px solid var(--border); border-radius: var(--r-md);
+  overflow: hidden; background: var(--bg-sunken); cursor: zoom-in; box-shadow: var(--shadow-1);
+}
+.sceneImageOpen img { display: block; width: 100%; height: auto; }
+.sceneImage :global(.scene-image-close) { display: grid; place-items: center; }
+
+/* carregando a campanha no cliente (raro: o estado costuma vir no HTML) */
+.loadingHead { display: grid; gap: 8px; padding: 14px 20px; min-height: 64px; border-bottom: 1px solid var(--border); background: var(--bg-raise); }
