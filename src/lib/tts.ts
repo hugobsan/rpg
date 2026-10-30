@@ -2,16 +2,14 @@ import { createHash } from "node:crypto";
 import { Mp3Encoder } from "@breezystack/lamejs";
 import { q } from "./db";
 import { getAgent } from "./agents";
-import { getOpenRouterKey, listModels, logApiCall } from "./openrouter";
+import { agentSource, authHeader, listModels, logApiCall, OPENROUTER } from "./openrouter";
 import { decideGender } from "./decisions";
 import type { Campaign, Character } from "./types";
 
 /**
- * Voz dos NPCs via TTS do OpenRouter (/audio/speech, compatível com a OpenAI).
+ * Voz dos NPCs via TTS ({url da fonte do agente Voz}/audio/speech, compatível com a OpenAI; padrão OpenRouter).
  * O áudio gerado fica em tts_cache (chave = modelo + voz + texto): repetir a fala não cobra de novo.
  */
-
-const SPEECH_URL = "https://openrouter.ai/api/v1/audio/speech";
 
 /** Só a fala: os trechos entre aspas, se houver; senão o texto sem as ações *entre asteriscos*. Sem markdown. */
 export function speechText(raw: string): string {
@@ -25,11 +23,12 @@ export function speechText(raw: string): string {
 export async function voiceSettings() {
   const agent = await getAgent("voice");
   const p = agent.params as { maleVoice?: string; femaleVoice?: string };
-  return { model: agent.model, male: p.maleVoice || "", female: p.femaleVoice || "" };
+  return { model: agent.model, source: agent.source, male: p.maleVoice || "", female: p.femaleVoice || "" };
 }
 
-/** Vozes que o modelo aceita, pelo catálogo (null = o catálogo não lista; aí a voz é texto livre). */
-export async function modelVoices(model: string): Promise<string[] | null> {
+/** Vozes que o modelo aceita, pelo catálogo do OpenRouter (null = não lista, ou outra fonte; aí a voz é texto livre). */
+export async function modelVoices(model: string, source: string): Promise<string[] | null> {
+  if (source !== OPENROUTER) return null;
   return (await listModels()).find((m) => m.id === model || m.slug === model)?.voices ?? null;
 }
 
@@ -102,13 +101,12 @@ async function synthesizeOnce(
 ): Promise<string> {
   if ((await q(`SELECT 1 FROM tts_cache WHERE key = $1`, [key])).length) return key;
 
-  const apiKey = await getOpenRouterKey();
-  if (!apiKey) throw new Error("Chave do OpenRouter não configurada. Vá em Configurações e informe sua API key.");
+  const src = await agentSource("voice");
   const request = { model, voice: voice || undefined, input: text };
   const call = (response_format: string) =>
-    fetch(SPEECH_URL, {
+    fetch(`${src.url}/audio/speech`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "X-Title": "Chronicle RPG" },
+      headers: { ...authHeader(src), "Content-Type": "application/json", "X-Title": "Chronicle RPG" },
       body: JSON.stringify({ ...request, response_format }),
     });
   const started = Date.now();
@@ -120,7 +118,7 @@ async function synthesizeOnce(
     let res = await call("mp3");
     if (res.status === 400) res = await call("pcm");
     genId = res.headers.get("x-generation-id");
-    if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 500)}`);
+    if (!res.ok) throw new Error(`${src.name} ${res.status}: ${(await res.text()).slice(0, 500)}`);
     const type = res.headers.get("content-type") || "audio/mpeg";
     const raw = Buffer.from(await res.arrayBuffer());
     const [mime, data] = type.startsWith("audio/pcm") ? ["audio/mpeg", pcmToMp3(raw, type)] : [type.split(";")[0], raw];
@@ -138,9 +136,7 @@ async function synthesizeOnce(
       // a geração demora alguns segundos para aparecer (404 até lá)
       for (const wait of genId ? [2000, 4000, 8000] : []) {
         await new Promise((r) => setTimeout(r, wait));
-        gen = await fetch(`https://openrouter.ai/api/v1/generation?id=${genId}`, {
-          headers: { Authorization: `Bearer ${apiKey}` },
-        })
+        gen = await fetch(`${src.url}/generation?id=${genId}`, { headers: authHeader(src) })
           .then((r) => (r.ok ? r.json() : null))
           .then((j) => j?.data ?? null)
           .catch(() => null);
@@ -148,6 +144,7 @@ async function synthesizeOnce(
       }
       await logApiCall({
         agentId: "voice",
+        provider: src.id,
         campaignId: meta.campaignId,
         model,
         purpose: meta.purpose,

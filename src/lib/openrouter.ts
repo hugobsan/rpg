@@ -1,4 +1,5 @@
 import { getSetting, q } from "./db";
+import type { SourceView } from "./types";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -59,8 +60,79 @@ export async function getOpenRouterKey(): Promise<string> {
   return fromSettings.apiKey || process.env.OPENROUTER_API_KEY || "";
 }
 
+// ---------- Fontes de modelos ----------
+
+/**
+ * Fonte OpenAI-compatível: cada chamada monta em {url} o mesmo caminho que usa no OpenRouter
+ * (/chat/completions, /models, /embeddings, /audio/speech, ../alpha/decisions). "openrouter" é a embutida.
+ */
+export interface Source { id: string; name: string; url: string; apiKey: string }
+export const OPENROUTER = "openrouter";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1";
+
+/** Fontes cadastradas em /agents (a chave fica só no banco, em settings.sources). */
+export async function getSources(): Promise<Source[]> {
+  return getSetting<Source[]>("sources", []);
+}
+
+export function pickSource(id: string, sources: Source[], openrouterKey: string): Source {
+  if (id === OPENROUTER) return { id, name: "OpenRouter", url: OPENROUTER_URL, apiKey: openrouterKey };
+  const s = sources.find((x) => x.id === id);
+  if (!s) throw new Error(`A fonte de modelos "${id}" não existe mais. Escolha outra fonte no agente, em Agentes.`);
+  return s;
+}
+
+/** A fonte pelo id; a embutida usa a chave do OpenRouter das Configurações (obrigatória). */
+export async function getSource(id: string): Promise<Source> {
+  if (id !== OPENROUTER) return pickSource(id, await getSources(), "");
+  const key = await getOpenRouterKey();
+  if (!key) throw new Error("Chave do OpenRouter não configurada. Vá em Configurações e informe sua API key.");
+  return pickSource(id, [], key);
+}
+
+/** A fonte escolhida no agente (agente desconhecido: OpenRouter). */
+export async function agentSource(agentId: string): Promise<Source> {
+  const [row] = await q<{ source: string }>(`SELECT source FROM agents WHERE id = $1`, [agentId]);
+  return getSource(row?.source ?? OPENROUTER);
+}
+
+/** Cabeçalho de autenticação da fonte (sem chave, nenhum: Ollama local, por exemplo). */
+export const authHeader = (src: Source): Record<string, string> =>
+  src.apiKey ? { Authorization: `Bearer ${src.apiKey}` } : {};
+
+/** Chave para mostrar na tela: começo e fim, nunca inteira. */
+export function maskKey(key: string): string {
+  if (!key) return "";
+  return key.length > 8 ? `${key.slice(0, 6)}...${key.slice(-4)}` : "***";
+}
+
+export const sourceView = ({ id, name, url, apiKey }: Source): SourceView => ({ id, name, url, apiKeyMasked: maskKey(apiKey) });
+
+/** URL, cabeçalhos e corpo da chamada. Fora do OpenRouter vai só o formato OpenAI: sem :online, reasoning e cabeçalhos de app. */
+export function chatRequest(opts: ChatOptions, src: Source) {
+  const or = src.id === OPENROUTER;
+  const body: Record<string, unknown> = {
+    model: or && opts.webSearch ? `${opts.model}:online` : opts.model,
+    messages: opts.messages,
+    temperature: opts.temperature ?? 0.8,
+    max_tokens: opts.max_tokens ?? 2048,
+  };
+  if (opts.tools?.length) body.tools = opts.tools;
+  if (opts.modalities) body.modalities = opts.modalities;
+  // ponytail: reasoning é o parâmetro unificado do OpenRouter; nas outras fontes fica de fora (mapear para reasoning_effort se fizer falta)
+  if (or && opts.reasoning) body.reasoning = opts.reasoning;
+  if (opts.onDelta) {
+    body.stream = true;
+    body.stream_options = { include_usage: true }; // usage (tokens e, no OpenRouter, custo) chega no último pedaço
+  }
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...authHeader(src) };
+  if (or) Object.assign(headers, { "HTTP-Referer": "https://github.com/hugobsan/rpg", "X-Title": "Chronicle RPG" });
+  return { url: `${src.url}/chat/completions`, headers, body };
+}
+
 export interface ApiLog {
   agentId: string;
+  provider?: string; // fonte que atendeu (padrão openrouter)
   campaignId?: string | null;
   model: string;
   purpose: string;
@@ -76,8 +148,8 @@ export interface ApiLog {
 /** Grava uma chamada de IA em api_logs (nunca lança). */
 export async function logApiCall(l: ApiLog): Promise<void> {
   await q(
-    `INSERT INTO api_logs (agent_id, campaign_id, model, purpose, request, response, prompt_tokens, completion_tokens, duration_ms, error, cost)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    `INSERT INTO api_logs (agent_id, campaign_id, model, purpose, request, response, prompt_tokens, completion_tokens, duration_ms, error, cost, provider)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
     [
       l.agentId,
       l.campaignId || null,
@@ -90,50 +162,24 @@ export async function logApiCall(l: ApiLog): Promise<void> {
       l.durationMs ?? null,
       l.error ?? null,
       l.cost ?? null,
+      l.provider || OPENROUTER,
     ]
   ).catch(() => {});
 }
 
 /**
- * Chamada única ao OpenRouter (chat completions). Toda chamada é registrada
- * em api_logs com tokens, duração e erro — visível na tela de Agentes.
+ * Chamada única de chat completions na fonte do agente (OpenRouter ou outra OpenAI-compatível).
+ * Toda chamada é registrada em api_logs com fonte, tokens, duração e erro — visível em Custos e uso.
  */
 export async function chat(opts: ChatOptions): Promise<ChatResult> {
-  const apiKey = await getOpenRouterKey();
-  if (!apiKey)
-    throw new Error(
-      "Chave do OpenRouter não configurada. Vá em Configurações e informe sua API key."
-    );
-
-  const model = opts.webSearch ? `${opts.model}:online` : opts.model;
-  const body: Record<string, unknown> = {
-    model,
-    messages: opts.messages,
-    temperature: opts.temperature ?? 0.8,
-    max_tokens: opts.max_tokens ?? 2048,
-  };
-  if (opts.tools?.length) body.tools = opts.tools;
-  if (opts.modalities) body.modalities = opts.modalities;
-  if (opts.reasoning) body.reasoning = opts.reasoning;
-  if (opts.onDelta) {
-    body.stream = true;
-    body.stream_options = { include_usage: true }; // usage (tokens e custo) chega no último pedaço
-  }
-
+  const src = await agentSource(opts.agentId);
+  const { url, headers, body } = chatRequest(opts, src);
+  const model = body.model as string;
   const started = Date.now();
   let responseJson: Record<string, unknown> | null = null;
   let error: string | null = null;
   try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/hugobsan/rpg",
-        "X-Title": "Chronicle RPG",
-      },
-      body: JSON.stringify(body),
-    });
+    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
     if (opts.onDelta && res.ok && res.body) responseJson = await readStream(res.body, opts.onDelta);
     else {
       const text = await res.text();
@@ -144,11 +190,11 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       }
       if (!res.ok)
         throw new Error(
-          `OpenRouter ${res.status}: ${text.slice(0, 500)}`
+          `${src.name} ${res.status}: ${text.slice(0, 500)}`
         );
     }
     const errObj = (responseJson as { error?: { message?: string } }).error;
-    if (errObj) throw new Error(`OpenRouter: ${errObj.message || "erro"}`);
+    if (errObj) throw new Error(`${src.name}: ${errObj.message || "erro"}`);
 
     const choice = (responseJson as {
       choices?: {
@@ -209,6 +255,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       : null;
     await logApiCall({
       agentId: opts.agentId,
+      provider: src.id,
       campaignId: opts.campaignId,
       model,
       purpose: opts.purpose,
@@ -218,7 +265,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       completionTokens: usage?.completion_tokens,
       durationMs: Date.now() - started,
       error,
-      cost: usage?.cost, // USD real, já com cache/busca/raciocínio
+      cost: src.id === OPENROUTER ? usage?.cost : null, // USD real do OpenRouter (já com cache/busca/raciocínio); as outras fontes não informam
     });
   }
 }
@@ -338,6 +385,19 @@ export async function listModels(): Promise<
       voices: m.supported_voices?.length ? m.supported_voices : null,
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** Modelos de uma fonte (GET {url}/models, formato OpenAI). */
+export async function listSourceModels(id: string): Promise<{ id: string; name: string }[]> {
+  const src = await getSource(id);
+  const res = await fetch(`${src.url}/models`, {
+    headers: authHeader(src),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`${src.name} GET /models: ${res.status}`);
+  const data = (await res.json()) as { data?: { id: string; name?: string }[] };
+  if (!Array.isArray(data.data)) throw new Error(`${src.name} GET /models: resposta fora do formato OpenAI`);
+  return data.data.map((m) => ({ id: m.id, name: m.name || m.id })).sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /** Preço salvo no agente: USD por milhão de tokens + contexto. null se o modelo não existe no catálogo. */

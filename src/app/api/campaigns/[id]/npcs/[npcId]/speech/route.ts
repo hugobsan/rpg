@@ -10,7 +10,7 @@ export const maxDuration = 60;
 /** GET → modelo de fala atual, vozes padrão e vozes aceitas (para o modal do NPC). */
 export async function GET() {
   const s = await voiceSettings();
-  const voices = await modelVoices(s.model).catch(() => null);
+  const voices = await modelVoices(s.model, s.source).catch(() => null);
   return NextResponse.json({ ...s, voices });
 }
 

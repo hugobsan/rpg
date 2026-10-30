@@ -387,7 +387,9 @@ export interface AgentConfig {
   web_search: boolean;
   system_prompt: string;
   params: Record<string, unknown>;
-  // preço do modelo (USD/M tokens) salvo no último Salvar
+  // fonte de modelos: "openrouter" ou o id de uma fonte OpenAI-compatível cadastrada em /agents
+  source: string;
+  // preço do modelo (USD/M tokens) salvo no último Salvar (só no OpenRouter, que tem catálogo com preço)
   pricing?: {
     input: number | null;
     output: number | null;
@@ -395,6 +397,14 @@ export interface AgentConfig {
     context: number;
     fetched_at: string;
   } | null;
+}
+
+/** Fonte de modelos como sai da API: a chave só mascarada. */
+export interface SourceView {
+  id: string;
+  name: string;
+  url: string;
+  apiKeyMasked: string;
 }
 
 // ---------- Eventos SSE do turno ----------

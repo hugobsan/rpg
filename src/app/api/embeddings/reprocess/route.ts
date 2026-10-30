@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, hasVector } from "@/lib/db";
 import { embed, getEmbeddingConfig, toVectorLiteral } from "@/lib/embeddings";
-import { getOpenRouterKey } from "@/lib/openrouter";
+import { getSource } from "@/lib/openrouter";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +16,11 @@ export async function POST() {
   const fail = (error: string, status = 400) =>
     NextResponse.json({ error }, { status });
   if (!(await hasVector())) return fail("pgvector indisponível neste banco.");
-  if (!(await getEmbeddingConfig()).enabled)
+  const cfg = await getEmbeddingConfig();
+  if (!cfg.enabled)
     return fail("Embeddings desabilitados: habilite e salve as configurações antes.");
-  if (!(await getOpenRouterKey()))
-    return fail("Nenhuma chave do OpenRouter configurada.");
+  const srcError = await getSource(cfg.source).then(() => "", (e: Error) => e.message);
+  if (srcError) return fail(srcError);
 
   const client = await (await db()).connect();
   const n = { memories: 0, book_chunks: 0 }; // reprocessados
@@ -36,7 +37,7 @@ export async function POST() {
           if (!rows.length) break;
           const vecs = await embed(rows.map((r) => r.content));
           if (!vecs || Array.from(vecs).some((v) => !v))
-            throw new Error("falha ao gerar embeddings no OpenRouter");
+            throw new Error("falha ao gerar embeddings na fonte configurada");
           await client.query(
             `UPDATE ${t} SET embedding = v.e::vector
              FROM unnest($1::bigint[], $2::text[]) AS v(id, e) WHERE ${t}.id = v.id`,

@@ -1,14 +1,15 @@
 import { getAgent } from "./agents";
-import { getOpenRouterKey, logApiCall } from "./openrouter";
+import { agentSource, authHeader, logApiCall } from "./openrouter";
 
 /**
- * Jev: modelo de decisão via OpenRouter Decisions API. Não gera texto, devolve
- * probabilidades. O modelo julga, o código decide (limiares abaixo). Qualquer
+ * Jev: modelo de decisão via Decisions API (a do OpenRouter, ou o mesmo endpoint na fonte escolhida no agente).
+ * Não gera texto, devolve probabilidades. O modelo julga, o código decide (limiares abaixo). Qualquer
  * falha (sem chave, erro, timeout, resposta torta) devolve null e o chamador
  * segue o comportamento padrão. Adaptado da skill openrouter-decisions (lib.ts).
  */
 
-const DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
+// relativo à URL da fonte: no OpenRouter (https://openrouter.ai/api/v1) vira https://openrouter.ai/api/alpha/decisions
+export const DECISIONS_PATH = "../alpha/decisions";
 const TIMEOUT_MS = 7000;
 
 // ---------- limiares (probe de 2026-10-29 no jev-1.14-20261014; refaça com scripts/jev-check.ts) ----------
@@ -56,13 +57,14 @@ export async function decide(
   const started = Date.now();
   let response: Record<string, unknown> | null = null;
   let error: string | null = null;
+  let provider: string | undefined;
   try {
     model ||= (await getAgent("decider")).model;
-    const apiKey = await getOpenRouterKey();
-    if (!apiKey) throw new Error("sem chave do OpenRouter");
-    const res = await fetch(DECISIONS_URL, {
+    const src = await agentSource("decider");
+    provider = src.id;
+    const res = await fetch(new URL(DECISIONS_PATH, `${src.url}/`), {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: { ...authHeader(src), "Content-Type": "application/json" },
       body: JSON.stringify({ model, ...req }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -90,6 +92,7 @@ export async function decide(
     const usage = (response as { usage?: { input_tokens?: number; output_tokens?: number; cost?: number } } | null)?.usage;
     await logApiCall({
       agentId: "decider",
+      provider,
       campaignId: meta.campaignId,
       model: (response as { model?: string } | null)?.model || model || "?",
       purpose: meta.purpose,

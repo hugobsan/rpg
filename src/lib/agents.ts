@@ -10,7 +10,8 @@ import { AgentConfig } from "./types";
  *  - Imagem: modelo de geração de imagem unificada do OpenRouter
  *  - Voz: modelo de fala (TTS) grátis do OpenRouter
  */
-export const DEFAULT_AGENTS: AgentConfig[] = [
+// sem source: o banco põe "openrouter" (padrão da coluna)
+export const DEFAULT_AGENTS: Omit<AgentConfig, "source">[] = [
   {
     id: "gm",
     name: "Mestre",

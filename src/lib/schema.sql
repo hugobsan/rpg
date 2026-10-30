@@ -37,6 +37,10 @@ CREATE INDEX IF NOT EXISTS api_logs_agent_idx ON api_logs (agent_id, created_at 
 ALTER TABLE api_logs ADD COLUMN IF NOT EXISTS cost NUMERIC;
 -- preço do modelo (USD por milhão de tokens) buscado no catálogo ao salvar o agente
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS pricing JSONB;
+-- fonte de modelos do agente: 'openrouter' (embutida) ou o id de uma fonte OpenAI-compatível (settings.sources)
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'openrouter';
+-- fonte que atendeu a chamada (as antigas foram todas no OpenRouter)
+ALTER TABLE api_logs ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'openrouter';
 
 CREATE TABLE IF NOT EXISTS campaigns (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

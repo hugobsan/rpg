@@ -1,22 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listModels } from "@/lib/openrouter";
+import { listModels, listSourceModels, OPENROUTER } from "@/lib/openrouter";
 
 export const dynamic = "force-dynamic";
 
-// o catálogo do OpenRouter muda pouco: 10 min em memória, só com os campos que as telas usam
+// os catálogos mudam pouco: 10 min em memória por fonte, só com os campos que as telas usam
 const TTL = 10 * 60_000;
-let cache: { at: number; data: unknown[] } | null = null;
+const cache = new Map<string, { at: number; data: unknown[] }>();
 
-/** GET /api/models (?fresh=1 ignora o cache, para testar a conexão de verdade). */
+/** GET /api/models?source=id (padrão openrouter; ?fresh=1 ignora o cache, para testar a conexão de verdade). */
 export async function GET(req: NextRequest) {
+  const source = req.nextUrl.searchParams.get("source") || OPENROUTER;
   try {
-    if (!cache || Date.now() - cache.at > TTL || req.nextUrl.searchParams.has("fresh")) {
-      const data = (await listModels()).map(({ id, name, context, pricing, speech, voices }) => ({
-        id, name, context, pricing: { prompt: pricing.prompt, completion: pricing.completion }, speech, voices,
-      }));
-      cache = { at: Date.now(), data };
+    const hit = cache.get(source);
+    if (!hit || Date.now() - hit.at > TTL || req.nextUrl.searchParams.has("fresh")) {
+      const data = source === OPENROUTER
+        ? (await listModels()).map(({ id, name, context, pricing, speech, voices }) => ({
+            id, name, context, pricing: { prompt: pricing.prompt, completion: pricing.completion }, speech, voices,
+          }))
+        : await listSourceModels(source);
+      cache.set(source, { at: Date.now(), data });
     }
-    return NextResponse.json(cache.data);
+    return NextResponse.json(cache.get(source)!.data);
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "erro" },
