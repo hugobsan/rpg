@@ -97,7 +97,7 @@ export default function NpcList({
             {m ? (
               <span className={s.preview}>&ldquo;{m.preview}&rdquo;</span>
             ) : (
-              <span className={s.sub}>{n.persona.personality || n.persona.appearance || "sem descrição ainda"}</span>
+              <span className={s.sub}>{n.persona.role || n.persona.personality || n.persona.appearance || n.persona.backstory || "sem descrição ainda"}</span>
             )}
           </span>
         </button>

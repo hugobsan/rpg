@@ -59,6 +59,7 @@ export function normalizeDraft(raw: unknown, r: Ruleset): Draft {
   const s = obj(obj(raw).sheet);
   const persona: Partial<Persona> = {};
   for (const k of PROFILE_FIELDS) persona[k] = str(p[k]);
+  for (const k of ["role", "age"] as const) persona[k] = persona[k]?.replace(/\.$/, "").slice(0, 160); // vão numa linha só
   if (p.gender === "male" || p.gender === "female") persona.gender = p.gender;
 
   const levels = powerLevels(r);
@@ -72,13 +73,14 @@ export function normalizeDraft(raw: unknown, r: Ruleset): Draft {
   }
   const resources: Sheet["resources"] = {};
   for (const x of r.resources) {
-    const v = num(obj(s.resources)[x.key]);
+    const raw = obj(s.resources)[x.key];
+    const v = num(raw) ?? num(obj(raw).max); // no Refazer o modelo às vezes copia o formato da ficha ({ max, current })
     if (v !== undefined && v >= 1) resources[x.key] = { current: Math.round(v), max: Math.round(v) };
   }
   const extra: Record<string, string> = {};
   for (const f of r.extraFields) {
     const v = str(obj(s.extra)[f.key], 300);
-    if (v) extra[f.key] = v;
+    if (v && !/^(vazio|nenhum|nenhuma|n\/?a|none|-+|—)\.?$/i.test(v)) extra[f.key] = v; // "Vazio" = não se aplica
   }
 
   const types = new Set(r.abilityTypes.map((t) => t.key));
@@ -136,8 +138,9 @@ function byName<T extends { name: string }>(cur: T[] = [], add: T[] = []): T[] {
 
 /**
  * Junta o rascunho do Criador à ficha atual. Campo que mudou desde o registro (base) foi o Mestre ou o
- * jogador mexendo no meio tempo (dano, set_rank, voz...): fica como está. Sexo e voz nunca vêm do Criador
- * (só preenche o sexo se ainda não foi decidido). Habilidades e itens: soma, sem tirar nada.
+ * jogador mexendo no meio tempo (set_rank, voz...): fica como está. Recurso: o máximo vem do Criador e o
+ * que faltava (dano, gasto) continua faltando; se o Mestre mudou o máximo, fica o dele. Sexo e voz nunca
+ * vêm do Criador (só preenche o sexo se ainda não foi decidido). Habilidades e itens: soma, sem tirar nada.
  */
 export function mergeProfile(base: Snapshot, cur: Snapshot, d: Draft): Snapshot {
   const b = JSON.parse(JSON.stringify(base)) as Snapshot; // como o JSONB guarda (sem chaves undefined)
@@ -153,7 +156,13 @@ export function mergeProfile(base: Snapshot, cur: Snapshot, d: Draft): Snapshot 
     return out;
   };
   sheet.attributes = perKey(d.sheet.attributes, b.sheet.attributes, cur.sheet.attributes);
-  sheet.resources = perKey(d.sheet.resources, b.sheet.resources, cur.sheet.resources);
+  sheet.resources = { ...cur.sheet.resources };
+  for (const [k, { max }] of Object.entries(d.sheet.resources ?? {})) {
+    const was = b.sheet.resources?.[k];
+    const now = cur.sheet.resources?.[k];
+    if (now && was?.max !== now.max) continue;
+    sheet.resources[k] = { max, current: Math.max(0, Math.min(max, max - (now ? now.max - now.current : 0))) };
+  }
   sheet.extra = perKey(d.sheet.extra, b.sheet.extra, cur.sheet.extra);
   if (d.sheet.rank && untouched(b.sheet.rank, cur.sheet.rank)) sheet.rank = d.sheet.rank;
   if (d.sheet.xp !== undefined && untouched(b.sheet.xp, cur.sheet.xp)) sheet.xp = d.sheet.xp;
@@ -252,7 +261,7 @@ async function createProfile(
     brief && `Pedido do Mestre: ${brief}`,
     redo
       ? `PERFIL E FICHA ATUAIS (o personagem já está na história: mantenha cargo, habilidades, itens e fatos; corrija só o que contradiz a obra; enriqueça o que estiver vazio ou raso)\n${JSON.stringify({ persona: known, sheet: sheetNow })}`
-      : `Já definido pelo Mestre (expanda sem contradizer): ${JSON.stringify(known)}${fixedRank ? ` | cargo FIXO: ${base.sheet.rank}` : ""}`,
+      : `Já definido pelo Mestre (expanda sem contradizer): ${JSON.stringify({ ...known, backstory: undefined })}${fixedRank ? ` | cargo FIXO: ${base.sheet.rank}` : ""}`, // backstory = o brief
     memories.length && `MEMÓRIAS DA CAMPANHA SOBRE ${npc.name}\n${memories.map((m) => `- ${m.content}`).join("\n")}`,
   ]
     .filter(Boolean)

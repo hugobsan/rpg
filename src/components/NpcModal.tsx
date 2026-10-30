@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { Campaign, Character, VoiceFx, VoiceProfile } from "@/lib/types";
+import type { Campaign, Character, Persona, VoiceFx, VoiceProfile } from "@/lib/types";
 import { FX_DEFAULT, fxOf, playVoice, stopVoice } from "@/lib/voiceFx";
 import SheetView from "./SheetView";
 import AbilitiesView from "./AbilitiesView";
@@ -62,22 +62,35 @@ const Svg = ({ d, size = 18 }: { d: string; size?: number }) => (
   </svg>
 );
 const SPEAKER = "M4 9h4l5-4v14l-5-4H4zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12";
-const TABS = [["chat", "Conversa"], ["sheet", "Ficha"], ["voice", "Voz"]] as const;
+const TABS = [["chat", "Conversa"], ["profile", "Perfil"], ["sheet", "Ficha"], ["voice", "Voz"]] as const;
+// segredos ficam de fora: só o Mestre vê
+const PROFILE: [keyof Persona, string][] = [
+  ["appearance", "Aparência"],
+  ["personality", "Personalidade"],
+  ["speech", "Jeito de falar"],
+  ["quirks", "Manias"],
+  ["backstory", "Passado"],
+  ["goals", "Objetivos"],
+  ["relationships", "Relações"],
+];
 
 export default function NpcModal({
   campaignId,
   npc,
   campaign,
+  profiling = false,
   onChanged,
   onClose,
 }: {
   campaignId: string;
   npc: Character;
   campaign: Campaign;
+  profiling?: boolean; // o Criador de personagens está montando o perfil agora
   onChanged?: () => void;
   onClose: () => void;
 }) {
-  const [view, setView] = useState<"chat" | "sheet" | "voice">("chat");
+  const [view, setView] = useState<(typeof TABS)[number][0]>("chat");
+  const [redoing, setRedoing] = useState(false);
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [calledBy, setCalledBy] = useState(false); // a conversa foi aberta pelo NPC (npc_message)
@@ -198,6 +211,17 @@ export default function NpcModal({
   const chosen = tts && voice?.model === tts.model ? voice.voice : "";
   const defaultVoice = tts ? (gender === "female" ? tts.female : tts.male) : "";
 
+  const redoProfile = async () => {
+    setRedoing(true);
+    const res = await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}/profile`, { method: "POST" }).catch(() => null);
+    setRedoing(false);
+    if (!res?.ok) return void toast("Não deu para pedir agora. Tente de novo.", { kind: "alerta" });
+    toast(`O Criador de personagens está refazendo o perfil de ${npc.name}.`);
+    onChanged?.();
+  };
+  const p = npc.persona;
+  const facts = PROFILE.filter(([k]) => p[k]);
+
   const toggleActive = async () => {
     await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}`, {
       method: "PUT",
@@ -271,6 +295,35 @@ export default function NpcModal({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+          {view === "profile" && (
+            <div className={s.profile}>
+              {profiling && (
+                <div className={s.working}>
+                  <Loader size={18} label="Montando o perfil" />
+                  <span>O Criador de personagens está montando o perfil de <b>{npc.name}</b>. A ficha e o retrato chegam sozinhos.</span>
+                </div>
+              )}
+              {(p.role || p.age) && <p className={s.tagline}>{[p.role, p.age].filter(Boolean).join(" · ")}</p>}
+              {facts.length > 0 ? (
+                <dl className={s.facts}>
+                  {facts.map(([k, label]) => (
+                    <div key={k}>
+                      <dt>{label}</dt>
+                      <dd>{String(p[k])}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                !profiling && <p className={s.intro}><b>Sem perfil ainda</b>Peça ao Criador de personagens para montar um a partir do que já aconteceu na história.</p>
+              )}
+              <div className={s.redo}>
+                <button className="btn small" onClick={redoProfile} disabled={profiling || redoing}>
+                  {redoing ? <Loader size={16} label="Pedindo" /> : <Svg d="M20 11a8 8 0 0 0-14.3-4.9M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9M20 20v-4h-4" size={15} />} Refazer perfil
+                </button>
+                <span>Reescreve o perfil e completa a ficha, mantendo nome, sexo e o que já aconteceu na história.</span>
+              </div>
             </div>
           )}
           {view === "sheet" && (

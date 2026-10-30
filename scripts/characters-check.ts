@@ -20,13 +20,13 @@ async function main() {
 
   const d = normalizeDraft(
     {
-      profile: { appearance: "  Alto, cabelo prateado.  ", role: "Jounin de Konoha", speech: "", gender: "female", bogus: "x" },
+      profile: { appearance: "  Alto, cabelo prateado.  ", role: "Jounin de Konoha.", speech: "", gender: "female", bogus: "x" },
       sheet: {
         rank: "jounin",
         powerLevel: "jounin",
         attributes: { taijutsu: 12, ninjutsu: "8", genjutsu: 0, inexistente: 5 },
-        resources: { hp: 120, chakra: "200", mana: 50, stamina: 0 },
-        extra: { vila: "Konoha", cla: "", nada: "x" },
+        resources: { hp: 120, chakra: "200", mana: 50, stamina: { max: 0 } },
+        extra: { vila: "Konoha", cla: "", kekkei_genkai: "Vazio", elemento: "nenhum.", nada: "x" },
         abilities: [
           { name: "Chidori", progress: 140 },
           { name: "chidori", progress: 10 },
@@ -75,7 +75,7 @@ async function main() {
         rank: "jounin",
         powerLevel: "jounin",
         attributes: { taijutsu: 8, ninjutsu: 9 },
-        resources: { hp: 120, chakra: 200 },
+        resources: { hp: 120, chakra: 200, stamina: 90 },
         extra: { vila: "Konoha", cla: "Hatake" },
         abilities: [{ name: "Chidori", type: "ninjutsu", rank: "A", progress: 80, effect: "estocada de raio" }, { name: "Kawarimi", type: "ninjutsu", progress: 100 }],
         inventory: [{ name: "Kunai", qty: 5 }],
@@ -91,9 +91,16 @@ async function main() {
   cur.sheet.inventory.push({ name: "Pergaminho", qty: 1 });
   cur.persona.backstory = "O Mestre reescreveu";
   cur.persona.voiceFx = { rate: 1.2, pitch: 0 };
+  cur.sheet.resources.stamina = { current: 10, max: 60 }; // update_resource com setMax
   const m = mergeProfile(base, cur, draft);
-  assert.deepEqual(m.sheet.resources.hp, { current: 30, max: 40 }, "dano do Mestre fica");
+  assert.deepEqual(m.sheet.resources.hp, { current: 110, max: 120 }, "máximo do Criador, o dano do Mestre continua");
   assert.deepEqual(m.sheet.resources.chakra, { current: 200, max: 200 }, "o resto vem do Criador");
+  assert.deepEqual(m.sheet.resources.stamina, { current: 10, max: 60 }, "máximo mudado pelo Mestre fica");
+  // Refazer perfil de quem está ferido: o ferimento continua
+  const hurt: Snapshot = JSON.parse(JSON.stringify(m));
+  hurt.sheet.resources.hp.current = 20;
+  const redo = mergeProfile(hurt, hurt, normalizeDraft({ sheet: { resources: { hp: { max: 150, current: 150 }, stamina: 0 } } }, r));
+  assert.deepEqual(redo.sheet.resources.hp, { current: 50, max: 150 }, "aceita o formato da ficha");
   assert.equal(m.sheet.rank, "chunin", "set_rank do Mestre fica");
   assert.equal(m.sheet.xp, 3000);
   assert.equal(m.sheet.attributes.taijutsu, 8);
@@ -124,7 +131,7 @@ async function main() {
     await q(`UPDATE characters SET sheet = jsonb_set(sheet, '{resources,hp,current}', '25') WHERE id = $1`, [npc.id]);
     assert.equal(await applyProfile(npc.id, base, draft), true);
     const [row] = await q<{ sheet: Sheet; persona: Snapshot["persona"] }>(`SELECT sheet, persona FROM characters WHERE id = $1`, [npc.id]);
-    assert.deepEqual(row.sheet.resources.hp, { current: 25, max: 40 });
+    assert.deepEqual(row.sheet.resources.hp, { current: 105, max: 120 });
     assert.deepEqual(row.sheet.resources.chakra, { current: 200, max: 200 });
     assert.equal(row.sheet.rank, "jounin");
     assert.equal(row.sheet.attributes.ninjutsu, 9);

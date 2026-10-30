@@ -53,6 +53,7 @@ Cada agente é um registro editável (modelo + system prompt + parâmetros) na t
 | **Jev (decisões)** | `typesafe/jev-1.14-20261014` | Decide, sem gerar texto: modelo do turno, busca web, memórias relevantes, recusa de NPC, importância de memórias | Modelo de decisão: ~US$0,00005 e <1 s por chamada |
 | **Ilustrador** | `google/gemini-3.1-flash-image-preview` | Gera a imagem do ambiente atual sob demanda | Nano Banana 2: qualidade alta, custo baixo |
 | **Voz** | `heygen/heygen-voice-1-turbo:free` | Lê as falas dos NPCs (TTS), com voz padrão por sexo | Grátis e fala português; áudio em cache |
+| **Criador de personagens** | `nvidia/nemotron-3.5-super-vl:free` | Monta em segundo plano o perfil rico e a ficha de cada NPC novo (`create_npc`) e do botão Refazer perfil, a partir da biblioteca | Grátis; raciocina antes (~1,5 min por NPC), fora do turno |
 | **Criador de aventuras** | `nvidia/nemotron-3.5-super-vl:free` | Entrevista o jogador e monta o JSON de uma aventura nova (Criar com IA) | Grátis; raciocina antes de responder (rodada de 1 a 2 min) |
 
 O seletor de modelos busca a lista viva de `openrouter.ai/api/v1/models` com preço e contexto — os defaults nunca ficam obrigatórios.
@@ -79,6 +80,8 @@ As decisões 1, 2 e 4 vão numa única chamada antes do turno. Se o Jev falhar (
 6. **NPCs com vida própria**: conversas particulares acontecem com o agente NPC (que pode **recusar** conforme a cena). O NPC guarda a conversa inteira; ao encerrar, o Cronista salva só os pontos importantes como memórias — exatamente o que o Mestre "ficaria sabendo".
 
 **NPC que chama o jogador**: quando o NPC tem algo a contar, um pedido, um aviso ou um segredo, o Mestre usa `npc_message` (mensagem em personagem + motivo oculto). A mensagem chega à caixa de entrada (`inbox` no `GET /api/campaigns/[id]`, evento `npc_message` no turno); ao abrir o NPC, o modal entra nessa conversa e a marca como lida. A conversa não passa pela recusa do Jev, o agente do NPC recebe o motivo no contexto e, ao encerrar, o Cronista salva as memórias como sempre. O "gerar novamente" desfaz a mensagem. Verificação: `npx tsx scripts/npc-message-check.ts`.
+
+**NPC novo (Criador de personagens)**: o `create_npc` do Mestre só registra, na hora, nome, sexo, canon e um brief (quem é, papel, o que já foi narrado), porque o portão de NPC exige o registro antes da narração. Em segundo plano (tarefa `character`, no cabeçalho), o agente **Criador de personagens** monta o perfil rico (aparência, idade, papel, personalidade, jeito de falar, passado, objetivos, segredos, relações, manias) e a ficha coerente com o cargo e o nível de poder, preferindo as habilidades e os itens da biblioteca da campanha (habilidade que falta vai para o Criador de habilidades e fica guardada lá). A gravação trava a linha e faz merge com a foto do registro: o que o Mestre mudou no meio tempo fica (cargo, habilidade nova, máximo de recurso; dano e gasto continuam descontados do máximo novo) e o sexo nunca muda. No fim, pede o retrato. No modal do NPC, a aba **Perfil** mostra tudo menos os segredos, e **Refazer perfil** roda o Criador de novo mantendo o que já é fato (bom para NPCs antigos). O Mestre vê o perfil enxuto na ficha da cena (completo no `get_character`); o agente do NPC recebe tudo. Verificação sem IA: `npx tsx scripts/characters-check.ts`.
 
 **Conversa fora do jogo**: o botão "💬 Falar com o Mestre (fora do jogo)" abre uma conversa sua, como jogador, com o Mestre (`gm_notes`, fora da história, do histórico do turno e do "gerar novamente"); ele responde sem spoilers e sem mexer no jogo, e orientações viram diretrizes (memória `directive`, permanentes ou só nesta cena e na próxima) que entram em todo turno em "DIRETRIZES DO JOGADOR" até você desativá-las no ✕.
 
@@ -185,6 +188,7 @@ src/lib/
   decisions.ts             # Jev (Decisions API): perguntas, limiares e fallbacks
   tts.ts                   # voz dos NPCs (TTS do OpenRouter) + cache de áudio
   npc.ts                   # conversas particulares com NPCs
+  characters.ts            # Criador de personagens: perfil e ficha do NPC em segundo plano, merge sem atropelar o Mestre
   retrieval.ts             # busca vetorial com fallback FTS
   books.ts                 # ingestão/paginação/chunking de livros
   ruleset.ts               # mecânica agnóstica + normalização
