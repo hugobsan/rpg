@@ -40,7 +40,9 @@ export async function GET(
       books,
       messages: (messages as { id: number }[]).reverse(),
       memories: milestones,
-      lastImage: images[0] || null,
+      // a ficha mostra a última imagem, a menos que o jogador a tenha tirado de lá (✕); ela segue na galeria
+      lastImage:
+        images[0] && Number(images[0].id) !== Number(campaign.state?.hiddenSheetImageId) ? images[0] : null,
     });
   } catch {
     return NextResponse.json({ error: "Campanha não encontrada" }, { status: 404 });
@@ -53,5 +55,19 @@ export async function DELETE(
 ) {
   const { id } = await params;
   await q(`DELETE FROM campaigns WHERE id = $1`, [id]);
+  return NextResponse.json({ ok: true });
+}
+
+/** PATCH { hideSheetImageId } → tira essa imagem da ficha (continua na galeria). */
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const body = (await req.json().catch(() => ({}))) as { hideSheetImageId?: number };
+  const imageId = Number(body.hideSheetImageId);
+  if (!Number.isInteger(imageId) || imageId < 1)
+    return NextResponse.json({ error: "Imagem inválida" }, { status: 400 });
+  await q(`UPDATE campaigns SET state = state || jsonb_build_object('hiddenSheetImageId', $1::int) WHERE id = $2`, [
+    imageId,
+    id,
+  ]);
   return NextResponse.json({ ok: true });
 }

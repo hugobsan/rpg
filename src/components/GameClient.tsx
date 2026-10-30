@@ -55,7 +55,7 @@ interface StateShape {
   books: { id: string; title: string; pages: number }[];
   messages: { id: number; role: string; content: string; meta: { choices?: string[] } }[];
   memories: { id: number; kind: string; subject: string | null; content: string; importance: number }[];
-  lastImage: { data_url: string } | null;
+  lastImage: { id: number; data_url: string } | null;
 }
 
 const toFeed = (messages: StateShape["messages"]): FeedItem[] =>
@@ -73,6 +73,8 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   const [imageFull, setImageFull] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [sceneImage, setSceneImage] = useState<string | null>(null);
+  const [sceneImageId, setSceneImageId] = useState<number | null>(null);
+  const [imageGen, setImageGen] = useState(false); // só mostra "Ver ambiente" depois de ler a config
   const [regenOpen, setRegenOpen] = useState(false);
   const [regenReason, setRegenReason] = useState("");
   const [openNpc, setOpenNpc] = useState<Character | null>(null);
@@ -92,7 +94,10 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   useEffect(() => {
     fetch("/api/settings")
       .then((r) => r.json())
-      .then((d) => { diceAnim.current = d.ui?.diceAnimation !== false; })
+      .then((d) => {
+        diceAnim.current = d.ui?.diceAnimation !== false;
+        setImageGen(d.ui?.imageGeneration !== false);
+      })
       .catch(() => {});
   }, []);
 
@@ -142,7 +147,8 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
     }
     const data = (await res.json()) as StateShape;
     setState(data);
-    setSceneImage(data.lastImage?.data_url ?? null); // null quando a última imagem foi apagada
+    setSceneImage(data.lastImage?.data_url ?? null); // null quando apagada ou tirada da ficha
+    setSceneImageId(data.lastImage?.id ?? null);
     return data;
   }, [campaignId]);
 
@@ -257,6 +263,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Falha ao gerar imagem");
       setSceneImage(data.dataUrl);
+      setSceneImageId(Number(data.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -282,9 +289,11 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
           <span style={{ fontFamily: "var(--serif)", fontSize: 15 }}>{campaign.name}</span>
           {scene.location && <span className="loc">📍 {scene.location}</span>}
           <span style={{ flex: 1 }} />
-          <button className="btn ghost small" onClick={() => generateImage()} disabled={imageBusy}>
-            {imageBusy ? "pintando..." : "🖼 Ver ambiente"}
-          </button>
+          {imageGen && (
+            <button className="btn ghost small" onClick={() => generateImage()} disabled={imageBusy}>
+              {imageBusy ? "pintando..." : "🖼 Ver ambiente"}
+            </button>
+          )}
         </div>
 
         <div className="feed" ref={feedRef}>
@@ -405,8 +414,19 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
         </div>
         <div className="side-body">
           {sceneImage && tab === "sheet" && (
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 12, position: "relative" }}>
               <img src={sceneImage} alt="Cena atual" className="scene-image" onClick={() => setImageFull(true)} />
+              {sceneImageId && (
+                <button className="scene-image-close" title="Tirar da ficha (continua na Galeria)" aria-label="Tirar imagem da ficha"
+                  onClick={async () => {
+                    setSceneImage(null);
+                    await fetch(`/api/campaigns/${campaignId}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ hideSheetImageId: sceneImageId }),
+                    });
+                  }}>✕</button>
+              )}
             </div>
           )}
           {tab === "sheet" && player && <SheetView char={player} campaign={campaign} />}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { q } from "@/lib/db";
+import { getSetting, q } from "@/lib/db";
 import { getAgent } from "@/lib/agents";
 import { chat } from "@/lib/openrouter";
 import { getCampaign, getCurrentScene } from "@/lib/engine";
@@ -13,6 +13,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  // geração desligada nas Configurações: recusa aqui também, para não gerar custo nem por engano
+  if ((await getSetting<{ imageGeneration?: boolean }>("ui", {})).imageGeneration === false)
+    return NextResponse.json({ error: "A geração de imagens está desligada nas Configurações." }, { status: 403 });
   try {
     const [campaign, scene, agent, lastMsgs] = await Promise.all([
       getCampaign(id),

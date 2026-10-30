@@ -193,6 +193,8 @@ label.field > span { display: block; margin-bottom: 5px; }
 .npc-row .sub { font-size: 11.5px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .scene-image { width: 100%; border-radius: 10px; border: 1px solid var(--border); display: block; cursor: zoom-in; }
+.scene-image-close { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border); background: rgba(13,13,18,0.8); color: var(--text); cursor: pointer; font-size: 12px; line-height: 1; }
+.scene-image-close:hover { border-color: var(--danger); color: var(--danger); }
 
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
 .gallery-item { position: relative; background: var(--bg-raise); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }

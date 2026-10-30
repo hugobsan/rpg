@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 interface SettingsShape {
   openrouter: { configured: boolean; apiKeyMasked: string };
   embeddings: { enabled: boolean; model: string };
-  ui: { diceAnimation: boolean };
+  ui: { diceAnimation: boolean; imageGeneration: boolean };
 }
 
 export default function SettingsPage() {
@@ -12,6 +12,7 @@ export default function SettingsPage() {
   const [orKey, setOrKey] = useState("");
   const [emb, setEmb] = useState({ enabled: false, model: "" });
   const [diceAnimation, setDiceAnimation] = useState(true);
+  const [imageGeneration, setImageGeneration] = useState(true);
   const [msg, setMsg] = useState("");
   const [testMsg, setTestMsg] = useState("");
   const [reMsg, setReMsg] = useState("");
@@ -24,6 +25,7 @@ export default function SettingsPage() {
         setData(d);
         setEmb(d.embeddings);
         setDiceAnimation(d.ui.diceAnimation);
+        setImageGeneration(d.ui.imageGeneration);
       });
   useEffect(() => {
     load();
@@ -31,7 +33,7 @@ export default function SettingsPage() {
 
   const save = async () => {
     setMsg("salvando...");
-    const body: Record<string, unknown> = { embeddings: emb, ui: { diceAnimation } };
+    const body: Record<string, unknown> = { embeddings: emb, ui: { diceAnimation, imageGeneration } };
     if (orKey.trim()) body.openrouterApiKey = orKey.trim();
     const res = await fetch("/api/settings", {
       method: "PUT",
@@ -120,6 +122,15 @@ export default function SettingsPage() {
         <p className="muted" style={{ marginBottom: 0 }}>
           Quando o Mestre rola um dado, o chat mostra o botão &quot;Rolar dados&quot; e você arremessa os dados numa caixa 3D.
           O valor é sorteado no servidor; a animação só o mostra. Desligada, o resultado aparece direto no chat.
+        </p>
+        <label className="field" style={{ display: "flex", gap: 8, alignItems: "center", margin: "14px 0 0" }}>
+          <input type="checkbox" checked={imageGeneration} style={{ width: "auto" }}
+            onChange={(e) => setImageGeneration(e.target.checked)} />
+          <span style={{ margin: 0 }}>Geração de imagens do ambiente</span>
+        </label>
+        <p className="muted" style={{ marginBottom: 0 }}>
+          O botão &quot;Ver ambiente&quot; gera uma imagem da cena com o agente Ilustrador; costuma ser a chamada mais cara
+          do jogo. Desligada, o botão some e nenhuma imagem é gerada. As imagens que já existem continuam na ficha e na Galeria.
         </p>
       </div>
 
