@@ -25,3 +25,15 @@ export async function GET(
     return new NextResponse(e instanceof Error ? e.message : String(e), { status: 500 });
   }
 }
+
+/** DELETE → apaga a imagem da galeria da campanha. */
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string; imageId: string }> }
+) {
+  const { id, imageId } = await params;
+  if (!/^\d+$/.test(imageId)) return NextResponse.json({ error: "Imagem inválida" }, { status: 400 });
+  const rows = await q(`DELETE FROM scene_images WHERE id = $1 AND campaign_id = $2 RETURNING id`, [imageId, id]);
+  if (!rows.length) return NextResponse.json({ error: "Imagem não encontrada" }, { status: 404 });
+  return NextResponse.json({ ok: true });
+}

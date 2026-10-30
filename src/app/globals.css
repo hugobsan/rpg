@@ -193,11 +193,17 @@ label.field > span { display: block; margin-bottom: 5px; }
 .scene-image { width: 100%; border-radius: 10px; border: 1px solid var(--border); display: block; cursor: zoom-in; }
 
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
-.gallery-item { display: flex; flex-direction: column; gap: 2px; padding: 0; background: var(--bg-raise); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; cursor: zoom-in; color: var(--text); text-align: left; font: inherit; }
+.gallery-item { position: relative; background: var(--bg-raise); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.gallery-open { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 0; background: none; border: none; cursor: zoom-in; color: var(--text); text-align: left; font: inherit; }
+.gallery-delete { position: absolute; top: 5px; right: 5px; width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border); background: rgba(13,13,18,0.8); color: var(--text); cursor: pointer; font-size: 13px; opacity: 0; transition: opacity 0.15s; }
+.gallery-item:hover .gallery-delete, .gallery-delete:focus-visible { opacity: 1; }
+.gallery-delete:hover { border-color: var(--danger); }
+@media (hover: none) { .gallery-delete { opacity: 1; } } /* toque: sem hover, deixa visível */
+.gallery-confirm { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px; background: rgba(13,13,18,0.9); font-size: 12.5px; text-align: center; }
 .gallery-item:hover { border-color: var(--accent); }
-.gallery-item img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block; background: var(--bg); }
-.gallery-item .when { font-size: 11px; color: var(--text-dim); padding: 2px 8px 0; }
-.gallery-item .where { font-size: 12px; padding: 0 8px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gallery-open img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block; background: var(--bg); }
+.gallery-open .when { font-size: 11px; color: var(--text-dim); padding: 2px 8px 0; }
+.gallery-open .where { font-size: 12px; padding: 0 8px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .viewer { position: fixed; inset: 0; z-index: 200; background: rgba(5,5,8,0.95); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
 .viewer > img { max-width: 100vw; max-height: 100vh; width: 100%; height: 100%; object-fit: contain; cursor: default; }

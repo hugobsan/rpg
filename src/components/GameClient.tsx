@@ -86,7 +86,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
     }
     const data = (await res.json()) as StateShape;
     setState(data);
-    if (data.lastImage) setSceneImage(data.lastImage.data_url);
+    setSceneImage(data.lastImage?.data_url ?? null); // null quando a última imagem foi apagada
     return data;
   }, [campaignId]);
 
@@ -341,7 +341,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
           {tab === "books" && (
             <BooksView campaignId={campaignId} books={state.books} onChange={reloadState} />
           )}
-          {tab === "gallery" && <Gallery campaignId={campaignId} refreshKey={sceneImage} />}
+          {tab === "gallery" && <Gallery campaignId={campaignId} refreshKey={sceneImage} onDeleted={reloadState} />}
           {tab === "script" && <ScriptView script={campaign.script} campaignId={campaignId} onChange={reloadState} />}
         </div>
       </aside>
