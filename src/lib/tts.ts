@@ -81,6 +81,25 @@ export async function synthesize(
   meta: { campaignId?: string | null; purpose: string }
 ): Promise<string> {
   const key = createHash("sha256").update(`${model}\n${voice}\n${text}`).digest("hex");
+  // a mesma fala pedida de novo enquanto a 1ª ainda gera (duplo clique) espera a 1ª em vez de gerar outra
+  const pending = inflight.get(key);
+  if (pending) return pending;
+  const job = synthesizeOnce(key, text, model, voice, meta).finally(() => inflight.delete(key));
+  inflight.set(key, job);
+  return job;
+}
+
+// ponytail: em memória, vale por processo (um servidor só); com várias instâncias, usar lock no banco
+const g = globalThis as unknown as { __ttsInflight?: Map<string, Promise<string>> };
+const inflight = (g.__ttsInflight ??= new Map());
+
+async function synthesizeOnce(
+  key: string,
+  text: string,
+  model: string,
+  voice: string,
+  meta: { campaignId?: string | null; purpose: string }
+): Promise<string> {
   if ((await q(`SELECT 1 FROM tts_cache WHERE key = $1`, [key])).length) return key;
 
   const apiKey = await getOpenRouterKey();
