@@ -5,6 +5,24 @@ import { formatClock, getClock, period } from "./clock";
 import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { activeDirectives, addMemory } from "./retrieval";
 import { getCampaign, getCharacters, getCurrentScene, sheetSummary } from "./engine";
+import { executeGmTool, GM_TOOLS } from "./tools";
+
+// correção de registro de NPC (jutsus e domínio); a ficha do jogador só muda jogando
+const NPC_FIX_TOOLS = [
+  ...GM_TOOLS.filter((t) => ["add_ability", "update_ability_progress"].includes(t.function.name)),
+  {
+    type: "function" as const,
+    function: {
+      name: "remove_ability",
+      description: "Remove da ficha de um NPC uma habilidade registrada por engano.",
+      parameters: {
+        type: "object",
+        properties: { character: { type: "string" }, name: { type: "string", description: "nome exato da habilidade" } },
+        required: ["character", "name"],
+      },
+    },
+  },
+];
 
 /**
  * Conversa fora do jogo com o Mestre (gm_notes): o jogador fala como ele mesmo, não como o
@@ -18,7 +36,8 @@ const OOC_PROMPT = `Você é o Mestre desta mesa de RPG, conversando FORA DO JOG
 - Sem spoilers: não revele o roteiro, o que vem pela frente, segredos de NPCs nem nada que o personagem não saiba. Se ele perguntar, diga com simpatia que não vai contar e que ele descobre jogando.
 - Daqui você não muda o jogo: ficha, relógio, cena e itens só mudam jogando (pontos livres, na aba Ficha). Dúvidas de regra e do estado do personagem você responde pelo contexto abaixo.
 - Se a fala trouxer uma orientação de como conduzir a mesa daqui para a frente (o que ele quer que aconteça, como o personagem dele deve ser retratado, ritmo, tom, estilo, algo que você deve parar de fazer ou corrigir), chame save_directive uma vez por orientação (uma para o momento atual e outra geral são duas), reescrevendo cada pedido como instrução curta e autossuficiente para você mesmo ler no turno, e confirme na resposta. Pergunta, dúvida, elogio ou comentário não viram diretriz. Não salve de novo o que já está em DIRETRIZES ATIVAS.
-- Se a orientação contrariar a coerência do mundo ou as regras, salve o que der e explique o limite.`;
+- Se a orientação contrariar a coerência do mundo ou as regras, salve o que der e explique o limite.
+- Se o jogador apontar um erro na ficha de um NPC (jutsu que falta, que sobra ou com domínio errado), CORRIJA a ficha com add_ability (acrescenta ou redefine pelo nome), remove_ability ou update_ability_progress. Só diga que mudou algo que você mudou de fato com uma ferramenta. Se a correção contrariar o momento do cânone, avise em uma frase, mas aplique se ele confirmar ou insistir. A ficha do personagem do jogador você não muda daqui.`;
 
 const SAVE_DIRECTIVE: ToolDef = {
   type: "function",
@@ -52,7 +71,7 @@ const SAVE_DIRECTIVE: ToolDef = {
 export function splitPseudoCalls(text: string): { clean: string; pseudo: { content: string; kind?: string; scope?: string }[] } {
   const pseudo: { content: string; kind?: string; scope?: string }[] = [];
   const clean = text
-    .replace(/^.*📌\s*Guardei.*$/gm, "")
+    .replace(/^.*(📌\s*Guardei|✏️\s*Ficha de).*$/gm, "")
     .replace(/\(?\s*save_directive\s*[:(]\s*(.+?)\)?\s*$/gm, (_, arg: string) => {
       const raw = arg.trim().replace(/\)+$/, "");
       try {
@@ -66,6 +85,37 @@ export function splitPseudoCalls(text: string): { clean: string; pseudo: { conte
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return { clean, pseudo };
+}
+
+async function fixNpc(
+  name: string,
+  rawArgs: string,
+  campaign: Awaited<ReturnType<typeof getCampaign>>,
+  scene: Awaited<ReturnType<typeof getCurrentScene>>,
+  chars: Awaited<ReturnType<typeof getCharacters>>
+): Promise<string> {
+  let args: Record<string, unknown> = {};
+  try {
+    args = JSON.parse(rawArgs || "{}");
+  } catch {
+    return "Erro: argumentos inválidos.";
+  }
+  const target = chars.find((c) => c.name.toLowerCase() === String(args.character || "").toLowerCase());
+  if (!target) return `Erro: personagem "${args.character}" não existe.`;
+  if (target.kind !== "npc") return "Erro: daqui só dá para corrigir ficha de NPC; a do jogador muda jogando.";
+  try {
+    if (name === "remove_ability") {
+      const before = target.sheet.abilities.length;
+      target.sheet.abilities = target.sheet.abilities.filter((a) => a.name.toLowerCase() !== String(args.name || "").toLowerCase());
+      if (target.sheet.abilities.length === before) return `Erro: ${target.name} não tem "${args.name}".`;
+      await q(`UPDATE characters SET sheet = $1, updated_at = now() WHERE id = $2`, [JSON.stringify(target.sheet), target.id]);
+      return `✓ Ficha de ${target.name}: removida a habilidade ${args.name}.`;
+    }
+    const out = await executeGmTool(name, args, { campaign, scene, emit: () => {} });
+    return `✓ Ficha de ${target.name} corrigida: ${out}`;
+  } catch (e) {
+    return `Erro: ${e instanceof Error ? e.message : String(e)}`;
+  }
 }
 
 const KIND_LABEL: Record<string, string> = { diretriz: "Diretriz", preferencia: "Preferência", correcao: "Correção" };
@@ -119,6 +169,7 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
 
   let reply = "";
   const saved: string[] = [];
+  const fixes: string[] = []; // correções de ficha de NPC feitas de verdade
   // 2ª rodada só quando o modelo chamou a ferramenta sem escrever a resposta
   for (let round = 0; round < 2; round++) {
     const r = await chat({
@@ -126,7 +177,7 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
       messages,
       temperature: 0.5,
       max_tokens: gm.max_tokens, // modelos com raciocínio gastam tokens antes da resposta curta
-      tools: [SAVE_DIRECTIVE],
+      tools: [SAVE_DIRECTIVE, ...NPC_FIX_TOOLS],
       agentId: "gm",
       campaignId,
       purpose: "conversa fora do jogo",
@@ -140,7 +191,10 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
       : split.pseudo.map((p, i) => ({ id: `pseudo-${i}`, type: "function" as const, function: { name: "save_directive", arguments: JSON.stringify(p) } }));
     for (const call of calls) {
       let out = "Ignorado: limite de 3 diretrizes por fala.";
-      if (call.function.name === "save_directive" && saved.length < 3) {
+      if (call.function.name !== "save_directive") {
+        out = await fixNpc(call.function.name, call.function.arguments, campaign, scene, chars);
+        if (out.startsWith("✓")) fixes.push(out.slice(2));
+      } else if (saved.length < 3) {
         let a: { content?: string; kind?: string; scope?: string } = {};
         try {
           a = JSON.parse(call.function.arguments || "{}");
@@ -163,8 +217,9 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
   }
 
   const content = [
-    reply || (saved.length ? "Anotado." : "(O Mestre não respondeu — tente de novo.)"),
+    reply || (saved.length || fixes.length ? "Anotado." : "(O Mestre não respondeu — tente de novo.)"),
     ...saved.map((d) => `📌 Guardei: ${d}`),
+    ...fixes.map((f) => `✏️ ${f}`),
   ].join("\n\n");
   await q(`INSERT INTO gm_notes (campaign_id, role, content) VALUES ($1, 'gm', $2)`, [campaignId, content]);
   return { reply: content, directives: saved };
