@@ -8,3 +8,4 @@ out/
 pgdata/
 tsconfig.tsbuildinfo
 .playwright-mcp/
+references/.cache/
