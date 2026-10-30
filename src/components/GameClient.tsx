@@ -15,6 +15,7 @@ import ImageViewer from "./ImageViewer";
 import Gallery from "./Gallery";
 import InventoryView from "./InventoryView";
 import AbilitiesView from "./AbilitiesView";
+import LibraryView from "./LibraryView";
 import ObjectivesView from "./ObjectivesView";
 import SheetView from "./SheetView";
 import NpcList from "./NpcList";
@@ -35,7 +36,7 @@ import { groupFeed, phaseOf, type Phase } from "./game/feedModel";
 import { stateToasts } from "./game/stateToasts";
 import s from "./GameClient.module.css";
 
-type Tab = "sheet" | "abilities" | "inventory" | "objectives" | "npcs" | "map" | "memories" | "books" | "script" | "gallery" | "table";
+type Tab = "sheet" | "abilities" | "inventory" | "library" | "objectives" | "npcs" | "map" | "memories" | "books" | "script" | "gallery" | "table";
 
 const MODE_PLACEHOLDER: Record<string, string> = {
   exploration: "O que você faz?",
@@ -230,6 +231,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
     { key: "sheet", label: "Ficha", icon: "sheet", mobile: true },
     { key: "abilities", label: campaign.ruleset.abilitiesLabel || "Habilidades", icon: "spark" },
     { key: "inventory", label: "Inventário", icon: "bag" },
+    { key: "library", label: "Biblioteca", icon: "library" },
     { key: "objectives", label: "Missões", icon: "flag", mobile: true },
     { key: "npcs", label: "NPCs", icon: "people", badge: unread, mobile: true },
     { key: "map", label: "Mapa", icon: "map", mobile: true },
@@ -275,6 +277,8 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
         return player && <AbilitiesView char={player} ruleset={campaign.ruleset} />;
       case "inventory":
         return player && <InventoryView char={player} campaignId={campaignId} disabled={busy} onChange={reloadState} />;
+      case "library":
+        return <LibraryView campaignId={campaignId} ruleset={campaign.ruleset} jobs={jobs} onChange={reloadState} />;
       case "objectives":
         return <ObjectivesView state={campaign.state} />;
       case "npcs":

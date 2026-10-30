@@ -10,6 +10,8 @@ const PATHS = {
   map: <><path d="M3 6.5l6-2.5 6 2.5 6-2.5v13.5l-6 2.5-6-2.5-6 2.5z" /><path d="M9 4v13.5M15 6.5V20" /></>,
   bookmark: <path d="M7 3.5h10v17l-5-4-5 4z" />,
   book: <><path d="M12 6.5c-2-1.5-5-2-8-1.5v13.5c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5z" /><path d="M12 6.5V20" /></>,
+  library: <><path d="M4 4.5h3.5v15H4zM9.5 4.5H13v15H9.5z" /><path d="M14.8 6l3.3-.9 3.4 13.5-3.3.9z" /><path d="M4 8h3.5M9.5 16H13" /></>,
+  search: <><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></>,
   scroll: <><path d="M7 3h7l4 4v14H7z" /><path d="M14 3v4h4" /><path d="M10 12h5M10 16h5" /></>,
   image: <><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="M21 16l-5-5-8 8" /></>,
   landscape: <><path d="M3 19l6-8 4 5 3-3 5 6z" /><circle cx="16.5" cy="7.5" r="2" /></>,
