@@ -3,6 +3,7 @@ import { getCampaign, getCharacters, getCurrentScene } from "./engine";
 import { listBooks } from "./books";
 import { messagePage } from "./messages";
 import { listInbox } from "./npc";
+import { loadMap } from "./map";
 import type { Campaign, Character, InboxItem, Scene } from "./types";
 
 export interface ChatLine {
@@ -29,6 +30,7 @@ export interface CampaignView {
 /** Lança "Campanha não encontrada" se o id não existe. */
 export async function campaignView(id: string): Promise<CampaignView> {
   const campaign = await getCampaign(id);
+  campaign.state.map ??= await loadMap(id, campaign.state); // campanha antiga: mapa montado das cenas, sem gravar
   const [scene, characters, books, page, memories, images, ui, inbox] = await Promise.all([
     getCurrentScene(id),
     getCharacters(id),
