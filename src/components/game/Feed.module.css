@@ -83,7 +83,7 @@ button.whoName:hover { text-decoration: underline; text-underline-offset: 3px; }
 .dice.crit { box-shadow: var(--hl), var(--shadow-1), 0 0 26px -8px var(--tone); }
 .diceIcon { color: var(--tone); }
 .diceMain { flex: 1 1 200px; min-width: 0; display: grid; gap: 2px; }
-.diceReason { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diceReason { font-size: 13px; font-weight: 600; line-height: 1.35; color: var(--text); text-wrap: pretty; }
 .diceMath { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: var(--text-dim); }
 .faint { color: var(--text-faint); }
 .rolls { display: inline-flex; gap: 3px; }

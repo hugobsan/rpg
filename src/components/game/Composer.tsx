@@ -1,9 +1,14 @@
 "use client";
 import { useImperativeHandle, useRef, useState, type Ref } from "react";
-import type { Ability, Item } from "@/lib/types";
 import Icon from "./Icon";
 import Loader from "../ui/Loader";
 import s from "./Composer.module.css";
+
+/** Grupo de ações rápidas (técnicas, itens): clicar preenche a ação com o nome. */
+export interface QuickGroup {
+  label: string;
+  items: { name: string; note?: string; title?: string }[];
+}
 
 export interface ComposerHandle {
   /** Põe o texto no campo (substitui) e foca no fim, para o jogador ajustar antes de enviar. */
@@ -14,14 +19,12 @@ export interface ComposerHandle {
  * Campo da ação: cresce com o texto, Enter envia, Shift+Enter quebra linha, Esc solta o foco
  * (aí as teclas 1 a 9 escolhem uma opção). O texto vive aqui: digitar não re-renderiza a tela.
  */
-export default function Composer({ ref, onSend, busy, placeholder, abilities, items, abilitiesLabel, onOoc }: {
+export default function Composer({ ref, onSend, busy, placeholder, quick, onOoc }: {
   ref?: Ref<ComposerHandle>;
   onSend: (text: string) => boolean;
   busy: boolean;
   placeholder: string;
-  abilities: Ability[];
-  items: Item[];
-  abilitiesLabel: string;
+  quick: QuickGroup[];
   onOoc: () => void;
 }) {
   const [text, setText] = useState("");
@@ -49,37 +52,23 @@ export default function Composer({ ref, onSend, busy, placeholder, abilities, it
     setTray(false);
     focusEnd();
   };
-  const quick = abilities.length + items.length > 0;
 
   return (
     <div className={s.composer}>
       {tray && (
         <div className={s.tray} role="dialog" aria-label="Ações rápidas" onKeyDown={(e) => e.key === "Escape" && setTray(false)}>
-          {abilities.length > 0 && (
-            <div className={s.row}>
-              <span className={s.rowLabel}>{abilitiesLabel}</span>
+          {quick.map((g) => (
+            <div key={g.label} className={s.row}>
+              <span className={s.rowLabel}>{g.label}</span>
               <div className={s.chips}>
-                {abilities.map((a) => (
-                  <button key={a.name} className={s.chip} onClick={() => use(a.name)} title={a.effect || a.description || a.name}>
-                    {a.name}
-                    {a.cost?.amount ? <span className={s.cost}>{a.cost.amount} {a.cost.resource}</span> : null}
+                {g.items.map((i) => (
+                  <button key={i.name} className={s.chip} onClick={() => use(i.name)} title={i.title || i.name}>
+                    {i.name}{i.note && <span className={s.cost}>{i.note}</span>}
                   </button>
                 ))}
               </div>
             </div>
-          )}
-          {items.length > 0 && (
-            <div className={s.row}>
-              <span className={s.rowLabel}>Itens</span>
-              <div className={s.chips}>
-                {items.map((i) => (
-                  <button key={i.name} className={s.chip} onClick={() => use(i.name)} title={i.description || i.name}>
-                    {i.name}{i.qty > 1 && <span className={s.cost}>×{i.qty}</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          ))}
         </div>
       )}
       <div className={s.box}>
@@ -102,9 +91,9 @@ export default function Composer({ ref, onSend, busy, placeholder, abilities, it
           }}
         />
         <div className={s.bar}>
-          {quick && (
+          {quick.length > 0 && (
             <button className={`${s.tool} ${tray ? s.on : ""}`} onClick={() => setTray((v) => !v)} aria-expanded={tray}
-              title={`Usar ${abilitiesLabel.toLowerCase()} ou itens da ficha`}>
+              title={`Usar ${quick.map((g) => g.label.toLowerCase()).join(" ou ")} da ficha`}>
               <Icon name="bolt" size={16} /><span>Ações rápidas</span>
             </button>
           )}

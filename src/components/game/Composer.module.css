@@ -42,6 +42,7 @@
 .hint { margin-left: auto; font-size: 11.5px; color: var(--text-faint); white-space: nowrap; padding-right: 6px; }
 .send { min-width: 40px; min-height: 36px; padding: 0 12px; margin-left: auto; border-radius: var(--r-md); }
 .hint + .send { margin-left: 0; }
+.send :global(.loader) { color: var(--accent-ink); } /* selo visível sobre o botão primário */
 
 /* bandeja de ações rápidas: técnicas e itens da ficha preenchem a ação */
 .tray {

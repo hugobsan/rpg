@@ -5,6 +5,7 @@ import type { Character, TurnEvent } from "@/lib/types";
 import type { CampaignView } from "@/lib/campaignView";
 import { getClock } from "@/lib/clock";
 import { campaignTheme } from "@/lib/theme";
+import { effectiveCost } from "@/lib/progression";
 import { useTurn } from "./game/useTurn";
 import NpcModal from "./NpcModal";
 import OocModal from "./OocModal";
@@ -23,7 +24,7 @@ import MapPanel from "./map/MapPanel";
 import Skeleton from "./ui/Skeleton";
 import { toast } from "./ui/Toast";
 import SceneHeader from "./game/SceneHeader";
-import Composer, { type ComposerHandle } from "./game/Composer";
+import Composer, { type ComposerHandle, type QuickGroup } from "./game/Composer";
 import SidePanel, { type PanelTab } from "./game/SidePanel";
 import Icon from "./game/Icon";
 import { Choices, Draft, FeedLine, Recap, TurnWait, type Cast } from "./game/Feed";
@@ -144,6 +145,22 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
     [npcs, player?.name, campaignId]
   );
   const groups = useMemo(() => groupFeed(feed), [feed]);
+  // ações rápidas do composer: técnicas (com o custo efetivo) e itens da ficha
+  const ruleset = state?.campaign.ruleset;
+  const quick = useMemo<QuickGroup[]>(() => {
+    if (!player || !ruleset) return [];
+    const res = (k: string) => ruleset.resources.find((r) => r.key === k)?.label ?? k;
+    return [
+      {
+        label: ruleset.abilitiesLabel || "Habilidades",
+        items: player.sheet.abilities.map((a) => {
+          const c = effectiveCost(ruleset, a);
+          return { name: a.name, note: c?.amount ? `${c.amount} ${res(c.resource)}` : undefined, title: a.effect || a.description };
+        }),
+      },
+      { label: "Itens", items: player.sheet.inventory.map((i) => ({ name: i.name, note: i.qty > 1 ? `×${i.qty}` : undefined, title: i.description })) },
+    ].filter((g) => g.items.length);
+  }, [player, ruleset]);
   const sceneImage = state?.lastImage ?? null;
 
   const turnStarted = () => {
@@ -327,9 +344,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           onSend={sendTurn}
           busy={busy}
           placeholder={placeholder}
-          abilities={player?.sheet.abilities ?? []}
-          items={player?.sheet.inventory ?? []}
-          abilitiesLabel={campaign.ruleset.abilitiesLabel || "Habilidades"}
+          quick={quick}
           onOoc={() => setOocOpen(true)}
         />
       </main>
