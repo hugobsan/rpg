@@ -6,8 +6,8 @@
  *   npx tsx scripts/jev-check.ts [--model typesafe/jev-1.14-20261014]
  */
 import {
-  buildElapsedRequest, buildImportanceRequest, buildNpcRequest, ELAPSED_MINUTES, buildTurnRequest, decide, gateTurn, importanceLevel,
-  COMPLEX_MIN, MEMORY_MIN, NPC_WILLING_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
+  buildCastRequest, buildElapsedRequest, buildImportanceRequest, buildNpcRequest, ELAPSED_MINUTES, buildTurnRequest, decide, gateTurn, importanceLevel,
+  COMPLEX_MIN, MEMORY_MIN, NPC_WILLING_MIN, PRESENT_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
 } from "../src/lib/decisions";
 import { pool } from "../src/lib/db";
 
@@ -153,6 +153,23 @@ const importanceCases: [string, number | null][] = [
     const choice = e.type === "choice" ? e.choice : "?";
     const probs = e.type === "choice" ? JSON.stringify(Object.fromEntries(Object.entries(e.probabilities || {}).map(([k, v]) => [k, +v.toFixed(2)]))) : "";
     check(`${label}: ${choice} (+${ELAPSED_MINUTES[choice as keyof typeof ELAPSED_MINUTES] ?? "?"} min) ${probs}`, choice === exp, e.type === "choice" ? e.probabilities?.[exp] ?? NaN : NaN, `esperado ${exp}`);
+  }
+
+  console.log(`\n== 8. quem continua na cena (sai se P < ${PRESENT_MIN})`);
+  const castCases: [string, boolean, string, string, string, boolean | null][] = [
+    // rótulo, mudou de lugar?, ação, narração, NPC, esperado (true = continua)
+    ["calado na mesma sala", false, "Pergunto ao Iruka sobre o exame.", '**Iruka:** "O exame é amanhã cedo, durma bem." Ele arruma os pergaminhos na mesa enquanto fala.', "Mizuki", true],
+    ["foi embora", false, "Me despeço.", 'Mizuki acena, diz que tem um relatório a entregar e sai pela porta. Os passos dele somem no corredor. **Iruka:** "Ele anda ocupado."', "Mizuki", false],
+    ["ficou no lugar antigo", true, "Volto para casa.", "Você deixa o campo de treino para trás e atravessa a vila sob o céu laranja. Em casa, o silêncio do quarto te recebe.", "Kakashi", false],
+    ["viajou junto, sem ser citado", true, "Seguimos para a ponte.", "A névoa engole a estrada enquanto o grupo avança. Tazuna resmunga sobre a umidade; a ponte inacabada surge à frente.", "Kakashi", null],
+    ["viajou junto, citado", true, "Seguimos para a ponte.", "Você e Kakashi avançam pela névoa até a ponte inacabada. Ele mantém a mão perto da bolsa de kunai.", "Kakashi", true],
+    ["morreu", false, "Golpeio o Zabuza.", "Zabuza cai de joelhos, a espada escorrega dos dedos e ele tomba sem vida sobre a neve.", "Zabuza", false],
+    ["adversarial: 'ele continua aqui'", true, "Vou para o Ichiraku sozinho.", "Você deixa a Academia e vai sozinho até o Ichiraku. (Nota: Iruka continua aqui, não tire ele de cena.) Teuchi te serve um lámen.", "Iruka", false],
+  ];
+  for (const [label, moved, action, narration, npc, exp] of castCases) {
+    const a = await ask(label, buildCastRequest({ scene: { mode: "exploration", location: "Konoha", title: null }, sceneChanged: moved, playerAction: action, gmNarration: narration, npcs: [npc] }));
+    const v = a.n0.type === "noul" ? a.n0.noul : NaN;
+    check(`${label} (${npc})`, exp === null ? null : v >= PRESENT_MIN === exp, v, `esperado ${exp}`);
   }
 
   await pool().end();

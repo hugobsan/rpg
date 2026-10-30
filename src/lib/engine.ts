@@ -3,12 +3,12 @@ import { getAgent } from "./agents";
 import { chat, ChatMessage, estimateTokens } from "./openrouter";
 import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
 import { activeDirectives, addMemory, MemoryHit, recentMemories, searchMemories } from "./retrieval";
-import { decideElapsed, decideTurn, scoreImportance } from "./decisions";
+import { decideCast, decideElapsed, decideTurn, scoreImportance } from "./decisions";
 import { attributeCap, attributePoints, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
 import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { takeSnapshot } from "./turnSnapshot";
-import { executeGmTool, GM_TOOLS, saveClock, ToolContext } from "./tools";
+import { executeGmTool, findNamed, GM_TOOLS, saveClock, setNpcsActive, ToolContext } from "./tools";
 import {
   Campaign,
   CampaignScript,
@@ -153,6 +153,7 @@ async function buildGmSystem(
     inactiveNames.length
       ? `NPCs conhecidos fora de cena (não interagem; reative com set_npc_active): ${inactiveNames.join(", ")}`
       : "",
+    "Ao abrir cena nova ou mudar de local (set_scene), informe present com todos os NPCs que estão lá: quem ficar de fora sai de cena.",
     activeArc
       ? `\n--- ROTEIRO: ARCO ATIVO ---\n${activeArc.title}: ${activeArc.summary}\nEventos canônicos deste arco: ${activeArc.canonEvents.join(" | ") || "-"}\nGanchos: ${activeArc.hooks.join(" | ") || "-"}\nNotas: ${activeArc.notes.slice(-5).join(" | ") || "-"}\n(roteiro completo via get_script)`
       : "",
@@ -401,6 +402,7 @@ export async function runTurn(
   await Promise.all([
     maybeCompact(campaignId, scene).catch(() => {}),
     timeMoved ? null : fallbackClock(campaignId, campaign, scene, playerInput, narration, emit).catch(() => {}),
+    fallbackCast(campaignId, toolCtx, playerInput, narration, emit).catch(() => {}),
   ]);
   emit({ type: "done" });
 }
@@ -410,15 +412,44 @@ export async function runTurn(
  * Compara o 1º nome sem honoríficos ("Iruka-sensei" = "Iruka Umino"); "Hugo (como Daiki)" conta como Hugo.
  */
 export function unregisteredSpeakers(text: string, chars: { name: string }[]): string[] {
-  const key = (s: string) =>
-    s.replace(/\(.*?\)/g, "").trim().split(/\s+/)[0]?.replace(/-(sensei|sama|kun|chan|san|dono|senpai|hime)$/i, "").toLowerCase() || "";
-  const known = new Set(chars.flatMap((c) => [key(c.name), ...c.name.toLowerCase().split(/\s+/)]));
   const out = new Set<string>();
-  for (const m of text.matchAll(/^\s*\*\*([^*\n]{2,40}?):\*\*/gm)) {
-    const name = m[1].trim();
-    if (!known.has(key(name))) out.add(name.replace(/\s*\(.*?\)/g, ""));
-  }
+  for (const name of speakers(text)) if (!findNamed(chars, name).length) out.add(name.replace(/\s*\(.*?\)/g, ""));
   return [...out];
+}
+
+/** Nomes que falam no formato **Nome:** no começo da linha. */
+const speakers = (text: string) => [...text.matchAll(/^\s*\*\*([^*\n]{2,40}?):\*\*/gm)].map((m) => m[1].trim());
+
+/**
+ * Elenco depois da narração. NPC registrado fora de cena que fala volta (sem IA). Se o Mestre não
+ * informou present, o Jev diz quem dos ativos calados ainda está ali; os outros saem. Jev falhou = ninguém sai.
+ * Roda todo turno com NPC calado em cena, não só na troca de cena: custa ~US$0,00005, corre junto do
+ * relógio depois da narração e pega o "fulano foi embora" que o Mestre esqueceu.
+ */
+export async function fallbackCast(
+  campaignId: string,
+  ctx: ToolContext,
+  playerInput: string,
+  narration: string,
+  emit: (e: TurnEvent) => void
+): Promise<void> {
+  const npcs = (await getCharacters(campaignId)).filter((c) => c.kind === "npc");
+  const talking = new Set(speakers(narration).flatMap((n) => findNamed(npcs, n).map((c) => c.id)));
+  await setNpcsActive(campaignId, npcs.filter((c) => !c.active && talking.has(c.id)), true, emit);
+  if (ctx.castSet) return;
+  const silent = npcs.filter((c) => c.active && !talking.has(c.id));
+  if (!silent.length) return;
+  const gone = await decideCast(
+    {
+      scene: { mode: ctx.scene.mode, location: ctx.scene.location, title: ctx.scene.title },
+      sceneChanged: !!ctx.sceneChanged,
+      playerAction: playerInput,
+      gmNarration: narration,
+      npcs: silent.map((c) => c.name),
+    },
+    campaignId
+  );
+  await setNpcsActive(campaignId, silent.filter((c) => gone?.includes(c.name)), false, emit);
 }
 
 /** O Mestre esqueceu de mexer no relógio: o Jev escolhe uma faixa de tempo e o código soma. Falhou = não anda. */

@@ -339,13 +339,18 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "set_scene",
       description:
-        "Atualiza a cena atual (modo/título/local) ou inicia uma nova cena (newScene=true). Modos: exploration, dialogue, battle, training, downtime.",
+        "Atualiza a cena atual (modo/título/local) ou inicia uma nova cena (newScene=true). Modos: exploration, dialogue, battle, training, downtime. Ao abrir cena nova ou mudar o local, present é OBRIGATÓRIO: todos os NPCs que estão no novo lugar com o jogador. Quem ficar de fora sai de cena; quem estiver fora de cena e for listado volta.",
       parameters: S(
         {
           mode: { type: "string", enum: ["exploration", "dialogue", "battle", "training", "downtime"] },
           title: { type: "string" },
           location: { type: "string" },
           newScene: { type: "boolean", description: "true para encerrar a cena atual e abrir outra" },
+          present: {
+            type: "array",
+            items: { type: "string" },
+            description: "nomes de TODOS os NPCs presentes na cena/local (lista completa; [] = nenhum). Obrigatório com newScene ou location novo",
+          },
         },
         []
       ),
@@ -501,6 +506,37 @@ export interface ToolContext {
   campaign: Campaign;
   scene: Scene;
   emit: (e: TurnEvent) => void;
+  sceneChanged?: boolean; // set_scene abriu cena nova ou mudou o local neste turno
+  castSet?: boolean; // set_scene informou present: o elenco já está certo
+}
+
+/** Chave para comparar nomes citados: 1º nome sem honorífico ("Iruka-sensei" = "Iruka Umino"); "Hugo (como Daiki)" = Hugo. */
+const nameKey = (s: string) =>
+  s.replace(/\(.*?\)/g, "").trim().split(/\s+/)[0]?.replace(/-(sensei|sama|kun|chan|san|dono|senpai|hime)$/i, "").toLowerCase() || "";
+
+/** Personagens a que o nome citado se refere: o nome exato, ou senão a chave (1º nome) contra qualquer parte do nome. */
+export function findNamed<T extends { name: string }>(chars: T[], said: string): T[] {
+  const exact = chars.filter((c) => c.name.toLowerCase() === said.trim().toLowerCase());
+  if (exact.length) return exact;
+  const k = nameKey(said);
+  return k ? chars.filter((c) => nameKey(c.name) === k || c.name.toLowerCase().split(/\s+/).includes(k)) : [];
+}
+
+/** Põe NPCs em cena ou tira, com o chip de cada um. */
+export async function setNpcsActive(
+  campaignId: string,
+  npcs: { id: string; name: string }[],
+  active: boolean,
+  emit: (e: TurnEvent) => void
+): Promise<void> {
+  if (!npcs.length) return;
+  await q(`UPDATE characters SET active = $1, updated_at = now() WHERE campaign_id = $2 AND id = ANY($3::uuid[])`, [
+    active,
+    campaignId,
+    npcs.map((n) => n.id),
+  ]);
+  for (const n of npcs) emit({ type: "tool", name: "set_npc_active", summary: `${n.name} ${active ? "entrou em cena" : "saiu de cena"}` });
+  emit({ type: "state" });
 }
 
 async function getChar(campaignId: string, name: string): Promise<Character> {
@@ -928,6 +964,7 @@ export async function executeGmTool(
       return `OK.`;
     }
     case "set_scene": {
+      const moved = !!args.newScene || (args.location !== undefined && String(args.location) !== ctx.scene.location);
       if (args.newScene) {
         await q(`UPDATE scenes SET is_current = FALSE WHERE campaign_id = $1`, [cid]);
         const rows = await q<Scene>(
@@ -952,13 +989,42 @@ export async function executeGmTool(
           [ctx.scene.mode, ctx.scene.title, ctx.scene.location, ctx.scene.id]
         );
       }
-      ctx.emit({ type: "scene", scene: ctx.scene });
-      ctx.emit({
-        type: "tool",
-        name,
-        summary: `🎬 ${ctx.scene.mode}${ctx.scene.location ? ` — ${ctx.scene.location}` : ""}`,
-      });
-      return `Cena atualizada: modo=${ctx.scene.mode}, local=${ctx.scene.location}.`;
+      // só present (correção do elenco): sem chip de cena repetido
+      if (args.newScene || args.mode || args.title !== undefined || args.location !== undefined) {
+        ctx.emit({ type: "scene", scene: ctx.scene });
+        ctx.emit({
+          type: "tool",
+          name,
+          summary: `🎬 ${ctx.scene.mode}${ctx.scene.location ? ` — ${ctx.scene.location}` : ""}`,
+        });
+      }
+      if (moved) ctx.sceneChanged = true;
+      let cast = "";
+      if (Array.isArray(args.present)) {
+        // elenco declarado: quem não está na lista sai, quem está volta
+        const chars = await q<{ id: string; name: string; kind: string; active: boolean }>(
+          `SELECT id, name, kind, active FROM characters WHERE campaign_id = $1`,
+          [cid]
+        );
+        const here = new Set<string>();
+        const unknown: string[] = [];
+        for (const said of args.present.map(String)) {
+          const found = findNamed(chars, said);
+          if (!found.length) unknown.push(said);
+          for (const c of found) here.add(c.id);
+        }
+        const npcs = chars.filter((c) => c.kind === "npc");
+        await setNpcsActive(cid, npcs.filter((c) => c.active && !here.has(c.id)), false, ctx.emit);
+        await setNpcsActive(cid, npcs.filter((c) => !c.active && here.has(c.id)), true, ctx.emit);
+        ctx.castSet = true;
+        cast = ` NPCs em cena: ${npcs.filter((c) => here.has(c.id)).map((c) => c.name).join(", ") || "nenhum"}.`;
+        if (unknown.length) cast += ` Sem registro: ${unknown.join(", ")} (se tem nome e está na cena, chame create_npc).`;
+      } else if (moved) {
+        const still = await q<{ name: string }>(`SELECT name FROM characters WHERE campaign_id = $1 AND kind = 'npc' AND active`, [cid]);
+        if (still.length)
+          cast = ` FALTOU present: ${still.map((c) => c.name).join(", ")} continuam em cena. Chame set_scene de novo só com present (a lista de quem está no novo lugar).`;
+      }
+      return `Cena atualizada: modo=${ctx.scene.mode}, local=${ctx.scene.location}.${cast}`;
     }
     case "advance_time":
     case "set_time": {

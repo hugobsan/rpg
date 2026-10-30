@@ -406,3 +406,51 @@ export async function decideElapsed(t: ElapsedInput, campaignId: string): Promis
   const a = answers?.elapsed;
   return a?.type === "choice" ? ELAPSED_MINUTES[a.choice as keyof typeof ELAPSED_MINUTES] : null;
 }
+
+// ---------- 8: quem continua na cena (quando o Mestre não informou present) ----------
+
+// NPC sai de cena se P(continua) < limiar. Probe (2026-10-30, jev-1.14): calado na mesma sala ou em batalha 0.76-0.93,
+// viajou com o grupo sem ser citado 0.86-0.90; foi embora 0.04-0.07, morreu 0.03, ficou no lugar de onde o jogador
+// saiu 0.20-0.27. Abaixo do meio do vão: tirar errado esconde o NPC do Mestre (volta sozinho se falar); deixar errado gasta tokens.
+export const PRESENT_MIN = 0.4;
+
+export interface CastInput {
+  scene: { mode: string; location: string | null; title: string | null };
+  sceneChanged: boolean;
+  playerAction: string;
+  gmNarration: string;
+  npcs: string[]; // ativos que não falaram na narração
+}
+
+export function buildCastRequest(t: CastInput): DecisionRequest {
+  return {
+    state: {
+      cena: { modo: t.scene.mode, local: t.scene.location, titulo: t.scene.title },
+      jogador_mudou_de_lugar_neste_turno: t.sceneChanged,
+      acao_do_jogador: t.playerAction,
+      narracao_do_mestre: t.gmNarration.slice(-3000),
+      npcs: Object.fromEntries(t.npcs.map((n, i) => [`n${i}`, n])),
+    },
+    questions: Object.fromEntries(
+      t.npcs.map((_, i) => [
+        `n${i}`,
+        {
+          type: "noul" as const,
+          instructions: `No fim da \`narracao_do_mestre\`, o personagem \`npcs.n${i}\` continua em cena: vivo e no mesmo lugar que o jogador, podendo agir ou falar?`,
+          criteria: {
+            true: "Sim: está ali com o jogador, mesmo sem ser citado. Quem já estava na cena continua nela enquanto o jogador não sai do lugar e a narração não mostra o personagem indo embora.",
+            false: "Não: foi embora, ficou no lugar de onde o jogador saiu, morreu ou ficou fora de combate para sempre, ou a cena passou para um lugar onde ele não está.",
+          },
+        },
+      ])
+    ),
+  };
+}
+
+/** Nomes que saíram de cena; null se o Jev falhar (aí ninguém sai). */
+export async function decideCast(t: CastInput, campaignId: string): Promise<string[] | null> {
+  if (!t.npcs.length) return [];
+  const answers = await decide(buildCastRequest(t), { campaignId, purpose: "quem continua na cena" });
+  if (!answers) return null;
+  return t.npcs.filter((_, i) => (noulOf(answers, `n${i}`) ?? 1) < PRESENT_MIN);
+}

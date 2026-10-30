@@ -83,6 +83,10 @@ As decisões 1, 2 e 4 vão numa única chamada antes do turno. Se o Jev falhar (
 
 A cena atual tem um modo — `exploration`, `dialogue`, `battle`, `training`, `downtime` — que o Mestre troca via `set_scene`. Cada modo muda as instruções de ritmo (batalha = turnos táticos com recursos honestos; diálogo = falas curtas; treino = progresso incremental com recompensas mecânicas) e a cor/indicador na interface.
 
+### Elenco da cena
+
+Só os NPCs em cena entram inteiros no prompt do Mestre. Ao abrir cena nova ou mudar de local, o Mestre informa em `set_scene` a lista `present` (todos os NPCs que estão no novo lugar): quem fica de fora sai de cena e quem é listado volta. Se ele esquecer, depois da narração o Jev julga, para cada NPC em cena que não falou, se ele continua ali (foi embora, ficou para trás, morreu); quem não continua sai. Isso roda todo turno com NPC calado em cena (custa ~US$0,00005 e corre junto do relógio, depois da narração) e, se o Jev falhar, ninguém sai. NPC registrado fora de cena que fala na narração (`**Nome:**`) volta sozinho, sem IA. Verificação: `npx tsx scripts/cast-check.ts`.
+
 ### Relógio do jogo
 
 A história tem dia e hora (`campaigns.state.clock`, minutos desde o "Dia 1, 00:00" da campanha; helpers em `src/lib/clock.ts`). O banner da cena mostra "Dia 1 · 08:40 · manhã" e a hora entra no contexto do Mestre a cada turno. O Mestre avança o relógio com `advance_time` (quanto a interação levou) e fixa com `set_time` (abertura e saltos como "na manhã seguinte"). Se ele esquecer, o Jev escolhe uma faixa de tempo (quase nada, alguns minutos, ~15 min, ~1 h, algumas horas, meio dia ou mais) e o código soma os minutos da faixa; se o Jev falhar, o relógio não anda. O "gerar novamente" volta o relógio junto com o resto do turno, e a imagem do ambiente usa o período do dia.
