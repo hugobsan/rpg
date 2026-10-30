@@ -448,7 +448,7 @@ Ficha básica:
 
 Hiruzen is a firm believer in the Will of Fire, which holds that all the people of Konoha are a family and that the Hokage is chiefly responsible for that family's well-being. Throughout his tenure, Hiruzen lives up to the Will of Fire by being available for Konoha's villagers and shinobi during their time of need, making decisions to the betterment of as many people as possible, and providing his wisdom and guidance whenever he can. In fact, he was considered to embody the Will of Fire more deeply than anyone else. His delicate, thoughtful approach to not only issues within the village but also his interactions with foreign powers has given Hiruzen the reputation of being soft, something the Konoha Council spends much of its time trying to rectify. Nevertheless, Hiruzen's kind and pacifist ways are widely valued by Konoha's residents and even his rival Kage, and for those reasons his eventual death is regretted by many.
 
-Although he loved all of Konoha, Hiruzen held his students especially dear, believing they were the village's future and, as such, must be cultivated and protected. Hiruzen's own son, Asuma, was defiant towards Hiruzen's philosophies during his youth, but eventually sees the merits in valuing future generations after Hiruzen's death.
+Although he loved all of Konoha, Hiruzen held his students especially dear, believing they were the village's future and, as such, must be cultivated and protected.
 
 **Hiruzen Sarutobi - papel no arco Prologue - Land of Waves**
 
@@ -519,12 +519,6 @@ Ficha básica:
 Zabuza was a tall and noticeably muscular man with light grayish skin, short spiky black hair, dark brown eyes, and small eyebrows. He was normally seen wearing bandages like a mask over the bottom half of his face. Under his mask, he had a relatively narrow jawline and jagged-teeth, a trait he shared with his fellow Swordsmen.
 
 During his second appearance, he wore a sleeveless black shirt and matching pants, complete with a waist-guard, and yet again, Kirigakure's striped wrist and leg-warmers. Other swordsmen of his generation wore attire identical to this, implying that they might be clothes related to the group. While donning this attire, much like his fellow Swordsmen, he had bandages loosely tied around his neck like a scarf.
-
-**Zabuza Momochi - Personalidade**
-
-According to his former follower Gengo, Zabuza was once seen as charismatic and inspiring as he had previously dreamed of a society with shinobi as the ruling class; a dream which motivated his attempted coup against the Fourth Mizukage whom he disagreed with. However he would become bitter and cynical after the coup ended in failure, and over time made him a ruthless hitman willing to be hired out by anyone corrupt.
-
-Zabuza was initially portrayed as aggressive, arrogant, cruel, cold and ambitious, willing to become Gatō's thug to gain enough funds to start a second coup d'etat on the Mizukage and have the nation under his feet, and kill anyone who stood in his path, including plotting to kill Gatō once he had received enough funds from him. His reputation for cruelty and ruthlessness began as a child where he killed every single candidate in Kirigakure's Academy, earning him the moniker of "Demon of the Hidden Mist" (Kirigakure no Kijin). He willingly uses his own men and others as pawns to fulfil his ambitions, as he raised Haku to be an efficient tool to be discarded when he had no use to exploit; although unlike future antagonists, he was blunt about the purpose that his recruits were needed for, forgoing any form of manipulation by pretending to be benevolent to inspire loyalty. This corresponds with his cynical view of the world, which only consists of the used and the users, as well as viewing shinobi to be nothing more than tools.
 
 **Zabuza Momochi - Habilidades (visão geral, até este ponto)**
 
@@ -740,11 +734,9 @@ These exceptions aside, the Demonic Mirroring Ice Crystals is still a formidable
 ### Chidori (literal: One Thousand Birds)
 Rank: A ; Classification: Ninjutsu ; Hand signs: Ox, Rabbit, Monkey or Monkey, Dragon, Rat, Bird, Ox, Snake, Dog, Tiger, Monkey
 
-He intended for the Chidori to be a weapon used only to protect friends and loved ones. The lightning chakra has been shown on occasions to damage the user's hand, peeling the skin and causing it to smoulder slightly, but this does not appear to actually be debilitating. Once the chakra is gathered, the user charges at their target and thrust the Chidori into them at immense speeds, piercing them and typically causing fatal damage.
+He intended for the Chidori to be a weapon used only to protect friends and loved ones. To perform, the user first induces flesh activation (nikutai kassei) or super flesh activation (nikutai dai kassei) which affords the production of immense chakra, allowing them to gather lightning to their hand; the high concentration of electricity produces a sound reminiscent of many birds chirping, hence the name. The lightning chakra has been shown on occasions to damage the user's hand, peeling the skin and causing it to smoulder slightly, but this does not appear to actually be debilitating. Once the chakra is gathered, the user charges at their target and thrust the Chidori into them at immense speeds, piercing them and typically causing fatal damage. Despite the sound it makes, the rapid speed at which it's used makes it useful for assassinations.
 
-The speed at which the Chidori is performed, despite being one of its greatest assets, also represents one of its biggest drawbacks: the technique makes the users move at their target so fast that its causes a tunnel vision-like effect for them. Because they charge in a straight line it is easy for opponents to attack them, and because of the tunnel vision it is difficult for the user to see these attacks, much less react to them. For this reason, most ninja cannot use the Chidori safely. However, a user of the Sharingan can overcome these drawbacks due to its heightened visual perception preventing the tunnel vision from occurring and its predictive capabilities making it easier for the user to avoid counterattacks.
-
-The Chidori requires a large amount of chakra to be performed, placing a limit on how many times it can be used per day. In Part I, Kakashi can use it four times per day and Sasuke Uchiha can use it twice per day under his own power.
+The speed at which the Chidori is performed, despite being one of its greatest assets, also represents one of its biggest drawbacks: the technique makes the users move at their target so fast that its causes a tunnel vision-like effect for them. Because they charge in a straight line it is easy for opponents to attack them, and because of the tunnel vision it is difficult for the user to see these attacks, much less react to them. For this reason, most ninja cannot use the Chidori safely.
 
 ### Sharingan (literal: Copy Wheel Eye)
 Classification: Kekkei Genkai, Dōjutsu

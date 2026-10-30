@@ -221,6 +221,24 @@ def first_paras(text, n):
     return "\n\n".join([p for p in text.split("\n") if p.strip()][:n])
 
 
+# termos que não devem aparecer nem no texto do próprio arco (revelações da Parte II / cânone tardio)
+ARC_TEXT_BAD = (r"Shisui|Part II|Shipp[uū]den|Boruto|Obito|Madara|Kaguya Ōtsutsuki|Namikaze|Kushina|Minato|"
+                r"Seventh Hokage|Sixth Hokage|Rinnegan|Hagoromo|Fourth Shinobi World War")
+
+
+def drop_sentences(text, rx, where=""):
+    """Corta frases com rx (e avisa no stderr); linhas de lista/curtas ficam se não casam."""
+    r = re.compile(rx)
+    out = []
+    for para in text.split("\n"):
+        sents = re.split(r"(?<=[.!?])\s+(?=[A-Z\"'(])", para)
+        kept = [x for x in sents if not r.search(x)]
+        if len(kept) != len(sents) and where:
+            print(f"  [corte em {where}] {[x[:90] for x in sents if r.search(x)]}")
+        out.append(" ".join(kept))
+    return "\n".join(out)
+
+
 def shorten(text, limit):
     if len(text) <= limit:
         return text
@@ -335,10 +353,13 @@ def technique_block(name, arc):
     # remove o infobox antes de pegar o corpo
     body = wt[m.end():] if m else wt
     lead, secs = sections(body)
-    txt = clean(lead)
-    if len(txt) < 100 and secs:  # algumas páginas só têm "Overview"
-        txt = clean(secs[0][2])
-    txt = sentence_filter(txt, arc["bad"])
+    cands = [clean(lead)] + [clean(b) for _, _, b in secs[:4]]
+    txt = ""
+    for c in cands:  # 1º trecho que sobrevive ao filtro (o lead às vezes só tem spoiler)
+        if len(c) >= 100 or c is cands[-1]:
+            txt = sentence_filter(c, arc["bad"])
+            if len(txt) >= 60:
+                break
     if not txt:
         return None
     return f"### {head}\n" + (" ; ".join(meta) + "\n\n" if meta else "\n") + shorten(txt, 1400) + "\n"
@@ -402,10 +423,10 @@ def build(key):
     wt = fetch(arc["arc_page"], "wikitext")
     intro = lead_text(wt)
     out.append(f"## Resumo do arco: {arc['name']}\n")
-    intro = re.sub(r"\s*This arc is followed by[^.]*\.", "", intro)
-    out.append(intro + "\n")
+    intro = drop_sentences(intro, r"followed by")
+    out.append(drop_sentences(intro, ARC_TEXT_BAD, "intro") + "\n")
     for t, body in subsections(wt, "Summary"):
-        out.append((f"### {t}\n\n" if t else "") + body + "\n")
+        out.append((f"### {t}\n\n" if t else "") + drop_sentences(body, ARC_TEXT_BAD, "summary") + "\n")
 
     # episódios
     out.append("## Sinopse dos episódios (ordem cronológica)\n")
@@ -438,7 +459,7 @@ def build(key):
         air = clean(m.group(1)) if m else ""
         out.append(f"### Episódio {num}: {title.replace('_', ' ')}\n")
         out.append(f"(arco {arc['name']}" + (f"; capítulo(s) do mangá: {chap}" if chap else "") + (f"; exibido no Japão em {air}" if air else "") + ")\n")
-        out.append(txt + "\n")
+        out.append(drop_sentences(txt, ARC_TEXT_BAD, f"ep{num}") + "\n")
         used.append(num)
         ep_pages.append(BASE + urllib.parse.quote(title.replace(" ", "_")))
 
@@ -490,20 +511,37 @@ def build(key):
 # ------------------------------------------------------------ configuração
 # Termos de spoiler: frases com eles são cortadas das páginas de personagem/técnica/lugar
 # (episódios e página do arco não são filtrados: são o próprio conteúdo do arco).
-ALWAYS = (r"Part II|Shippūden|Shippuden|Blank Period|New Era|Boruto|Kaguya|Madara|Obito|Minato|Namikaze|Kushina|"
-          r"Kurama|Tobi\b|Nagato|Konan\b|Zetsu|Hidan|Kakuzu|Deidara|Sasori|Danzō|Danzo|World War|Rinnegan|"
-          r"Susanoo|Amaterasu|Hagoromo|Six Paths|Ōtsutsuki|Otsutsuki|Pain\b|Kawaki|Sarada|Himawari|Mitsuki|"
-          r"Sage Mode|Senjutsu|Uzumaki clan|Chakra Mode|Tailed Beast Bomb|Hashirama|Tobirama|Land of Tea|"
-          r"Kazekage Rescue|Edo Tensei|Reanimation|adulthood|adult\b|The Last|Seventh Hokage|Sixth Hokage|"
-          r"defect|Fourth Hokage'?s? (?:son|child)|grew up to|eventually became|movie|Retsuden|Hiden|Shinden|"
-          r"strongest shinobi|years later|Konoha 11|Konoha Eleven|wanderer|wedding|married|wife|husband|daughter|"
-          r"children|\bwar\b|crimes|combined might|only rival|destroy the world|Hokage candidate|Konoha's hero|"
-          r"became Hokage|role as Hokage|end of his life|Shin Uchiha|Sixth|become the Hokage's|forgiven|Naruto's? (?:son|daughter)")
-ARC1_EXTRA = (r"Orochimaru|Itachi|Akatsuki|Kisame|Gaara|Rasengan|Chūnin Exam|Chunin Exam|Jiraiya|Tsunade|Sannin|Kabuto|"
-              r"Cursed Seal|\bSound\b|Otogakure|Mangekyō|Mangekyo|massacre|jinchūriki|jinchuriki|Kyūbi|Kyubi|"
-              r"Sunagakure|Tailed Beast|Rock Lee|Neji|Shukaku|Fifth Hokage|Shisui|Konoha Crush|Sasuke Recovery|"
-              r"Fourth Hokage|Yondaime|Kakashi Gaiden|Anbu|revenge|avenge|clan'?s? (?:deaths|massacre|destruction)|"
-              r"Sharingan.{0,40}(?:two|three) tomoe")
+# BASE vale para toda a Parte I; cada arco soma o que só é revelado depois dele.
+SPOILER_BASE = (r"Part II|Shippūden|Shippuden|Blank Period|New Era|Boruto|Kaguya|Madara|Obito|Minato|Namikaze|Kushina|"
+        r"Kurama|Tobi\b|Nagato|Konan\b|Zetsu|Hidan|Kakuzu|Deidara|Sasori|Danzō|Danzo|World War|Rinnegan|"
+        r"Susanoo|Amaterasu|Hagoromo|Six Paths|Ōtsutsuki|Otsutsuki|(?-i:Pain\b)|Kawaki|Sarada|Himawari|Mitsuki|"
+        r"Sage Mode|Senjutsu|Uzumaki clan|Chakra Mode|Tailed Beast Bomb|Land of Tea|Interlude|"
+        r"Kazekage Rescue|adulthood|(?-i:adult\b)|The Last|Seventh Hokage|Sixth Hokage|Fifth Kazekage|Kazekage Gaara|"
+        r"Fourth Hokage'?s? (?:son|child)|grew up to|eventually became|movie|Retsuden|Hiden|Shinden|"
+        r"strongest shinobi|years later|Konoha 11|Konoha Eleven|wanderer|wedding|married|wife|husband|daughter|"
+        r"children|\bwar\b|crimes|combined might|only rival|destroy the world|Hokage candidate|Konoha's hero|"
+        r"became Hokage|role as Hokage|end of his life|Shin Uchiha|Sixth|forgiven|Naruto's? (?:son|daughter)|"
+        r"two and a half years|training trip|Jiraiya.{0,30}(?:death|died|killed|dies)|"
+        r"Itachi.{0,40}(?:death|died|dies)|Root\b|\bcoup\b|Shisui|Anbu Root")
+ARC1 = (r"Orochimaru|Itachi|Akatsuki|Kisame|Gaara|Rasengan|Chūnin Exam|Chunin Exam|Jiraiya|Tsunade|Sannin|Kabuto|"
+        r"Cursed Seal|(?-i:\bSound\b)|Otogakure|Mangekyō|Mangekyo|massacre|jinchūriki|jinchuriki|Kyūbi|Kyubi|"
+        r"Sunagakure|Tailed Beast|Rock Lee|Neji|Shukaku|Fifth Hokage|Konoha Crush|Sasuke Recovery|"
+        r"Fourth Hokage|Yondaime|Kakashi Gaiden|Anbu|revenge|avenge|clan'?s? (?:deaths|massacre|destruction)|"
+        r"Edo Tensei|Reanimation|Hashirama|Tobirama|defect|Hiruzen.{0,40}(?:death|died|dies|killed|sacrific)")
+ARC2 = (r"invasion|Itachi|Akatsuki|Kisame|Mangekyō|Mangekyo|massacre|Tsunade|Fifth Hokage|Konoha Crush|Sasuke Recovery|"
+        r"Temple of Nirvana|Edo Tensei|Reanimation|Hashirama|Tobirama|defect|Anbu|"
+        r"(?:Hiruzen|Third Hokage).{0,40}(?:death|died|dies|killed|sacrific)|Kazekage.{0,30}(?:killed|death|dead|impersonat)|"
+        r"Valley of the End|Kimimaro|Sound Four|Tayuya|Jirōbō|Kidōmaru|Sakon|Ukon")
+ARC3 = (r"Itachi|Akatsuki|Kisame|Mangekyō|Mangekyo|massacre|Fifth Hokage|Sasuke Recovery|defect|"
+        r"Valley of the End|Kimimaro|Kabuto.{0,30}spy")
+ARC4 = (r"Sasuke Recovery|defect|Valley of the End|Kimimaro|Itachi.{0,60}(?:truth|ordered|true|real)|"
+        r"Sasuke.{0,30}(?:left|leaves|leaving) (?:the village|Konoha)|Sound Four.{0,40}(?:Sasuke|abduct)")
+ARC5 = (r"Kazekage Rescue|Akatsuki Suppression|Itachi.{0,60}(?:truth|ordered|true motive)|Hokage Rock.{0,20}Seventh")
+
+def bad(*extras):
+    return SPOILER_BASE + "|" + "|".join(extras)
+
+_CHARS_COMMON = ["Naruto Uzumaki", "Sasuke Uchiha", "Sakura Haruno", "Kakashi Hatake"]
 
 ARCS = {
     "pais-das-ondas": dict(
@@ -514,10 +552,9 @@ ARCS = {
         eps=(1, 19),
         chapters="1-33",
         part1_sections=["Prologue — Land of Waves"],
-        bad=ALWAYS + "|" + ARC1_EXTRA,
-        characters=["Naruto Uzumaki", "Sasuke Uchiha", "Sakura Haruno", "Kakashi Hatake", "Iruka Umino",
-                    "Hiruzen Sarutobi", "Mizuki", "Konohamaru Sarutobi", "Zabuza Momochi", "Haku",
-                    "Gatō", "Tazuna", "Inari", "Tsunami", "Demon Brothers"],
+        bad=bad(ARC1),
+        characters=_CHARS_COMMON + ["Iruka Umino", "Hiruzen Sarutobi", "Mizuki", "Konohamaru Sarutobi",
+                    "Zabuza Momochi", "Haku", "Gatō", "Tazuna", "Inari", "Tsunami", "Demon Brothers"],
         techniques=["Clone Technique", "Sexy Technique", "Multiple Shadow Clone Technique", "Transformation Technique",
                     "Body Replacement Technique", "Fire Release: Great Fireball Technique", "Hidden Mist Technique",
                     "Silent Killing", "Water Clone Technique", "Water Release: Water Dragon Bullet Technique",
@@ -526,6 +563,107 @@ ARCS = {
         places=["Konohagakure", "Land of Fire", "Land of Waves", "Kirigakure", "Ninja Academy", "Hokage",
                 "Team Kakashi", "Seven Ninja Swordsmen of the Mist", "Great Naruto Bridge", "Gatō Company",
                 "Scroll of Seals", "Missing-nin", "Shinobi"],
+    ),
+    "exame-chunin": dict(
+        file="02-exame-chunin.md",
+        title="Naruto Clássico (Parte I) - Arco do Exame Chunin",
+        name="Chūnin Exams",
+        arc_page="Chūnin Exams (Arc)",
+        eps=(20, 67),
+        chapters="34-115 (as sinopses dos episódios cobrem até o episódio 67; o fim das provas e a invasão estão no arquivo 03)",
+        part1_sections=["Chūnin Exams"],
+        bad=bad(ARC2),
+        characters=_CHARS_COMMON + ["Iruka Umino", "Hiruzen Sarutobi", "Orochimaru", "Kabuto Yakushi", "Anko Mitarashi",
+                    "Ibiki Morino", "Hayate Gekkō", "Gaara", "Temari", "Kankurō", "Baki", "Rock Lee", "Neji Hyūga",
+                    "Tenten", "Might Guy", "Hinata Hyūga", "Shino Aburame", "Kiba Inuzuka", "Shikamaru Nara",
+                    "Ino Yamanaka", "Chōji Akimichi", "Kurenai Yūhi", "Asuma Sarutobi", "Jiraiya", "Ebisu",
+                    "Dosu Kinuta", "Zaku Abumi", "Kin Tsuchi", "Konohamaru Sarutobi", "Gamabunta", "Akamaru"],
+        techniques=["Rasengan", "Cursed Seal of Heaven", "Chidori", "Sharingan", "Byakugan", "Gentle Fist",
+                    "Eight Trigrams Sixty-Four Palms", "Rotation", "Primary Lotus", "Hidden Lotus", "Eight Gates",
+                    "Lion Combo", "Leaf Whirlwind", "Leaf Hurricane", "Shadow Imitation Technique", "Mind Transfer Technique",
+                    "Multi-Size Technique", "Sand Coffin", "Sand Burial", "Sand Shield",
+                    "Fang Over Fang", "Beast Human Clone", "Wind Release: Great Sickle Weasel Technique", "Puppet Technique",
+                    "Summoning Technique", "Genjutsu", "Earth Release: Double Suicide Decapitation Technique",
+                    "Five Elements Seal", "Summoning: Rashomon", "Body Flicker Technique", "Shadow Clone Technique",
+                    "Multiple Shadow Clone Technique", "Tree Climbing Practice", "Sexy Technique"],
+        places=["Chūnin Exams", "Forest of Death", "Chūnin", "Genin", "Jōnin", "Sunagakure", "Otogakure",
+                "Land of Wind", "Hyūga clan", "Aburame clan", "Inuzuka clan", "Nara clan", "Akimichi clan",
+                "Yamanaka clan", "Team Gai", "Team Kurenai", "Team Asuma", "Three Sand Siblings", "Hokage",
+                "Konohagakure", "Sannin"],
+    ),
+    "invasao-de-konoha": dict(
+        file="03-invasao-de-konoha.md",
+        title="Naruto Clássico (Parte I) - Arco da Invasão de Konoha (Konoha Crush)",
+        name="Konoha Crush",
+        arc_page="Konoha Crush (Arc)",
+        eps=(68, 80),
+        chapters="116-138",
+        part1_sections=["Konoha Crush"],
+        bad=bad(ARC3),
+        characters=_CHARS_COMMON + ["Hiruzen Sarutobi", "Orochimaru", "Kabuto Yakushi", "Gaara", "Temari", "Kankurō",
+                    "Baki", "Rasa", "Jiraiya", "Anko Mitarashi", "Shikamaru Nara", "Shino Aburame", "Asuma Sarutobi",
+                    "Might Guy", "Rock Lee", "Neji Hyūga", "Hinata Hyūga", "Kiba Inuzuka", "Chōji Akimichi",
+                    "Ino Yamanaka", "Konohamaru Sarutobi", "Hayate Gekkō", "Pakkun", "Gamabunta", "Iruka Umino",
+                    "Tayuya", "Sakon and Ukon", "Jirōbō", "Kidōmaru", "Hashirama Senju", "Tobirama Senju", "Manda",
+                    "Ebisu", "Ibiki Morino"],
+        techniques=["Edo Tensei", "Temple of Nirvana Technique", "Four Violet Flames Formation", "Dead Demon Consuming Seal",
+                    "Three Giant Snakes", "Cursed Seal of Heaven", "Rasengan", "Chidori", "Sharingan",
+                    "Summoning Technique", "Genjutsu", "Shadow Possession Technique", "Sand Shield", "Sand Coffin",
+                    "Shukaku", "Jinchūriki", "Tailed Beast", "Sound Four", "Wind Release: Great Sickle Weasel Technique",
+                    "Puppet Technique", "Fire Release: Great Fireball Technique", "Multiple Shadow Clone Technique",
+                    "Shadow Clone Technique", "Eight Gates", "Primary Lotus", "Mind Transfer Technique", "Shadow Imitation Technique"],
+        places=["Konoha Crush", "Konohagakure", "Sunagakure", "Otogakure", "Land of Wind", "Land of Fire",
+                "Sound Four", "Hokage", "Sannin", "Chūnin Exams", "Fourth Kazekage", "Konoha Hospital"],
+    ),
+    "busca-por-tsunade": dict(
+        file="04-busca-por-tsunade.md",
+        title="Naruto Clássico (Parte I) - Arco da Busca por Tsunade",
+        name="Search for Tsunade",
+        arc_page="Search for Tsunade",
+        eps=(81, 100),
+        chapters="139-171",
+        part1_sections=["Search for Tsunade"],
+        bad=bad(ARC4),
+        characters=_CHARS_COMMON + ["Jiraiya", "Tsunade", "Shizune", "Tonton", "Orochimaru", "Kabuto Yakushi",
+                    "Itachi Uchiha", "Kisame Hoshigaki", "Might Guy", "Rock Lee", "Asuma Sarutobi", "Kurenai Yūhi",
+                    "Hiruzen Sarutobi", "Konohamaru Sarutobi", "Gamabunta", "Katsuyu", "Manda", "Pakkun",
+                    "Iruka Umino", "Ebisu", "Teuchi", "Ayame", "Kotetsu Hagane", "Izumo Kamizuki",
+                    "Hashirama Senju", "Dan Katō", "Nawaki"],
+        techniques=["Mangekyō Sharingan", "Tsukuyomi", "Samehada", "Water Release: Great Shark Bullet Technique",
+                    "Rasengan", "Chidori", "Sharingan", "Summoning Technique", "Creation Rebirth",
+                    "Strength of a Hundred Seal", "Medical Ninjutsu", "Mystical Palm Technique", "Genjutsu",
+                    "Fire Release: Great Fireball Technique", "Cursed Seal of Heaven", "Multiple Shadow Clone Technique",
+                    "Sexy Technique", "Shadow Clone Technique", "Hidden Mist Technique", "Water Clone Technique",
+                    "Water Prison Technique", "Body Flicker Technique", "Tree Climbing Practice", "Heavenly Foot of Pain",
+                    "Chakra Scalpel"],
+        places=["Konohagakure", "Tanzaku Quarters", "Akatsuki", "Sannin", "Hokage", "Kirigakure", "Land of Fire",
+                "Otogakure", "Konoha Hospital", "Third Hokage", "First Hokage", "Fifth Hokage", "Senju clan"],
+    ),
+    "fuga-de-sasuke": dict(
+        file="05-fuga-de-sasuke.md",
+        title="Naruto Clássico (Parte I) - Arco da Fuga de Sasuke (Sasuke Recovery Mission)",
+        name="Sasuke Recovery Mission",
+        arc_page="Sasuke Recovery Mission",
+        eps=(107, 135),
+        chapters="172-238 (episódios 107-135; os episódios 136 em diante são filler e ficaram de fora)",
+        part1_sections=["Sasuke Recovery Mission"],
+        bad=bad(ARC5),
+        characters=_CHARS_COMMON + ["Shikamaru Nara", "Neji Hyūga", "Chōji Akimichi", "Kiba Inuzuka", "Rock Lee",
+                    "Gaara", "Temari", "Kankurō", "Might Guy", "Tsunade", "Shizune", "Jiraiya", "Orochimaru",
+                    "Kabuto Yakushi", "Kimimaro", "Jirōbō", "Kidōmaru", "Sakon and Ukon", "Tayuya", "Akamaru",
+                    "Pakkun", "Hinata Hyūga", "Ino Yamanaka", "Shino Aburame", "Asuma Sarutobi", "Kurenai Yūhi",
+                    "Iruka Umino", "Itachi Uchiha", "Kisame Hoshigaki", "Fugaku Uchiha"],
+        techniques=["Cursed Seal of Heaven", "Chidori", "Rasengan", "Sharingan", "Shadow Imitation Technique",
+                    "Shadow Neck Bind Technique", "Mind Transfer Technique", "Eight Gates", "Primary Lotus",
+                    "Hidden Lotus", "Dance of the Camellia", "Dance of the Clematis", "Dance of the Seedling Fern",
+                    "Sand Waterfall Funeral", "Gentle Fist", "Rotation", "Byakugan",
+                    "Partial Multi-Size Technique", "Multi-Size Technique", "Puppet Technique", "Fang Over Fang",
+                    "Summoning Technique", "Multiple Shadow Clone Technique", "Shadow Clone Technique", "Sand Shield",
+                    "Fire Release: Great Fireball Technique", "Genjutsu", "Lightning Blade", "Mangekyō Sharingan",
+                    "Sound Four", "Body Flicker Technique", "Creation Rebirth"],
+        places=["Valley of the End", "Otogakure", "Sound Four", "Konohagakure", "Land of Fire", "Land of Rivers",
+                "Sunagakure", "Sannin", "Akatsuki", "Hokage", "Team Kakashi", "Konoha Hospital",
+                "Sasuke Recovery Team"],
     ),
 }
 
