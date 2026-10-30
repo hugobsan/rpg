@@ -1,6 +1,6 @@
 /* casca da tela de jogo: coluna do jogo (container "main") + lateral (painel + trilho) */
 .layout {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr);
   height: calc(100dvh - var(--nav-h)); overflow: hidden;
 }
 .main {
