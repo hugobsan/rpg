@@ -64,6 +64,8 @@ export interface Ruleset {
   theme?: string;
   /** Instruções de tom/lore/cânone injetadas no prompt do Mestre */
   loreNotes: string;
+  /** Sugestão de ponto de partida (o Criador de aventuras preenche; o assistente usa se o campo estiver vazio) */
+  startingPoint?: string;
   /** true = há uma obra/cânone a respeitar (o Roteirista monta linha do tempo canônica) */
   canonBased: boolean;
   attributes: AttributeDef[];

@@ -7,9 +7,10 @@ import { DEFAULT_THEME, THEMES, inferTheme, type ThemeKey } from "@/lib/theme";
 import Loader from "@/components/ui/Loader";
 import { toast } from "@/components/ui/Toast";
 import CampaignCard, { STYLE_LABEL } from "@/app/(home)/CampaignCard";
+import AdventureChat from "./AdventureChat";
 import s from "./new.module.css";
 
-type Preset = "naruto" | "default" | "import";
+type Preset = "naruto" | "default" | "import" | "ai";
 type Style = "open" | "hybrid" | "guided";
 const STEPS = ["Mundo", "Visual", "Estilo", "Personagem", "Extras", "Revisão"] as const;
 
@@ -39,7 +40,7 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
   const [imported, setImported] = useState<Ruleset | null>(null);
   const [importError, setImportError] = useState("");
   const [startingPoint, setStartingPoint] = useState("");
-  const ruleset = preset === "import" ? imported : presets[preset];
+  const ruleset = preset === "import" ? imported : preset === "ai" ? null : presets[preset];
 
   // visual (null = o tema sugerido pelo cenário) e estilo
   const [theme, setTheme] = useState<ThemeKey | null>(null);
@@ -72,16 +73,22 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
   };
   const pickPreset = (p: Preset) => {
     setPreset(p);
-    resetSheet(p === "import" ? imported : presets[p]);
+    resetSheet(p === "import" ? imported : p === "ai" ? null : presets[p]);
+  };
+  // arquivo importado ou aventura criada com IA: o mesmo caminho
+  const applyRuleset = (rs: Ruleset) => {
+    setImported(rs);
+    setPreset("import");
+    resetSheet(rs);
+    setImportError("");
+    if (rs.startingPoint && !startingPoint.trim()) setStartingPoint(rs.startingPoint);
   };
   const importRuleset = (f: File) => {
     f.text().then((t) => {
       try {
         const rs = JSON.parse(t) as Ruleset;
         if (!rs.attributes?.length) throw new Error("sem attributes");
-        setImported(rs);
-        resetSheet(rs);
-        setImportError("");
+        applyRuleset(rs);
       } catch {
         setImportError("JSON de mecânica inválido: precisa ter ao menos a lista de atributos (veja o naruto-ruleset.json).");
       }
@@ -210,7 +217,21 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
                 </span>
                 {imported && <span className={s.optFacts}>{facts(imported).map((f) => <span key={f} className="pill">{f}</span>)}</span>}
               </button>
+              <button type="button" role="radio" aria-checked={preset === "ai"} className={s.option} onClick={() => pickPreset("ai")}>
+                <span className={s.optTitle}>Criar com IA</span>
+                <span className={s.optText}>
+                  Harry Potter, piratas, faroeste: conte o que quer jogar e a IA monta as regras com você numa conversa. No fim, baixe o JSON ou comece a campanha com ele.
+                </span>
+              </button>
             </div>
+            {preset === "ai" && (
+              <AdventureChat onUse={(rs) => {
+                applyRuleset(rs);
+                if (!name.trim()) setName(rs.name);
+                toast(`${rs.name} pronta para a campanha.`, { kind: "sucesso" });
+                go(1);
+              }} />
+            )}
             {preset === "import" && (
               <>
                 <label className={s.drop}>

@@ -53,6 +53,7 @@ Cada agente é um registro editável (modelo + system prompt + parâmetros) na t
 | **Jev (decisões)** | `typesafe/jev-1.14-20261014` | Decide, sem gerar texto: modelo do turno, busca web, memórias relevantes, recusa de NPC, importância de memórias | Modelo de decisão: ~US$0,00005 e <1 s por chamada |
 | **Ilustrador** | `google/gemini-3.1-flash-image-preview` | Gera a imagem do ambiente atual sob demanda | Nano Banana 2: qualidade alta, custo baixo |
 | **Voz** | `heygen/heygen-voice-1-turbo:free` | Lê as falas dos NPCs (TTS), com voz padrão por sexo | Grátis e fala português; áudio em cache |
+| **Criador de aventuras** | `nvidia/nemotron-3.5-super-vl:free` | Entrevista o jogador e monta o JSON de uma aventura nova (Criar com IA) | Grátis; raciocina antes de responder (rodada de 1 a 2 min) |
 
 O seletor de modelos busca a lista viva de `openrouter.ai/api/v1/models` com preço e contexto — os defaults nunca ficam obrigatórios.
 
@@ -124,6 +125,8 @@ A mecânica (atributos, barras de recurso, tipos de habilidade, ranks/progressã
 
 Para criar outro cenário (Star Wars, D&D, cyberpunk...), copie o JSON, ajuste os campos e importe no assistente de nova campanha. Exportação: aba **Roteiro** da campanha (mecânica ou campanha completa).
 
+Sem mexer em JSON: **Criar com IA**, no primeiro passo do assistente, abre uma conversa com o agente **Criador de aventuras** (`adventure`, modelo grátis por padrão). Ele pergunta em linguagem natural (universo, recorte, tom, como o poder funciona, progressão), infere o resto pela obra e monta o JSON por trás; ao lado, a lista do que já está definido. A resposta do agente traz o texto e um bloco `{"patch", "choices", "done"}` (`src/lib/adventure.ts` faz o parse, o merge e a validação final: só fecha quando o JSON funciona numa campanha). O rascunho fica em `adventure_drafts` e dá para retomar depois de um refresh. No fim: **Baixar JSON** ou **Iniciar campanha com esta aventura** (o mesmo caminho do Importar). Verificação sem IA: `npx tsx scripts/adventure-check.ts`.
+
 ### Regras e progressão
 
 As contas ficam no servidor (`src/lib/progression.ts`); o Mestre só escolhe a CD e as horas. Os parâmetros ficam no ruleset, com padrão no código para rulesets antigos.
@@ -185,6 +188,7 @@ src/lib/
   retrieval.ts             # busca vetorial com fallback FTS
   books.ts                 # ingestão/paginação/chunking de livros
   ruleset.ts               # mecânica agnóstica + normalização
+  adventure.ts             # Criador de aventuras: parse da resposta, merge do rascunho, validação, progresso
   progression.ts           # domínio, nível de poder, pontos livres, teto e treino
   map.ts                   # mapa do mundo (locais, rotas, layout) e palco da cena
 src/app/                   # telas + rotas de API (Next.js App Router)

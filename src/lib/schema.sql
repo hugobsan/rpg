@@ -214,6 +214,16 @@ CREATE TABLE IF NOT EXISTS library (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS library_name_idx ON library (campaign_id, kind, lower(name));
 
+-- Criador de aventuras: a entrevista (mensagens) e o ruleset parcial, para retomar depois de um refresh
+CREATE TABLE IF NOT EXISTS adventure_drafts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  messages JSONB NOT NULL DEFAULT '[]', -- [{ role: user|assistant, content, choices? }]
+  draft JSONB NOT NULL DEFAULT '{}',    -- ruleset parcial (+ startingPoint)
+  done BOOLEAN NOT NULL DEFAULT FALSE,  -- o agente fechou e a validação passou
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- retrato do personagem (lib/portrait.ts): SVG do Pixel artista ou imagem do Ilustrador. Fora de characters,
 -- que é lido em todo turno; a tela monta a URL com a versão (cache longo)
 CREATE TABLE IF NOT EXISTS portraits (
