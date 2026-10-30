@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { q } from "./db";
 import { ToolDef } from "./openrouter";
 import { rollDice } from "./dice";
-import { addMemory, searchMemories, searchBookChunks } from "./retrieval";
+import { addMemory, formatHistory, searchHistory, searchMemories, searchBookChunks } from "./retrieval";
 import { listBooks, readPages } from "./books";
 import { Ability, Campaign, Character, LibraryAbility, LibraryItem, Scene, Sheet, TableRules, TurnEvent } from "./types";
 import { abilityPromptLine, blankSheet, currentMilestone, nextMilestone } from "./ruleset";
@@ -290,6 +290,18 @@ export const GM_TOOLS: ToolDef[] = [
         "Busca semântica nas memórias da campanha (eventos passados, interações com NPCs, descobertas, marcos).",
       parameters: S(
         { query: { type: "string" }, kind: { type: "string" }, subject: { type: "string" } },
+        ["query"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_history",
+      description:
+        "Busca no chat inteiro da campanha, desde o começo (turnos e conversas particulares com NPCs). Devolve trechos curtos com dia, hora e local. Use para lembrar exatamente o que alguém disse ou fez, ou detalhes antigos que não viraram memória. É o que aconteceu naquele momento: ficha e memórias atuais valem mais.",
+      parameters: S(
+        { query: { type: "string" }, npc: { type: "string", description: "nome do NPC: só trechos com ele" } },
         ["query"]
       ),
     },
@@ -934,6 +946,10 @@ export async function executeGmTool(
       return hits
         .map((h) => `[${h.kind}${h.subject ? `/${h.subject}` : ""} imp=${h.importance}] ${h.content}`)
         .join("\n");
+    }
+    case "search_history": {
+      const hits = await searchHistory(cid, String(args.query), { npc: args.npc ? String(args.npc) : undefined, limit: 4 });
+      return hits.length ? formatHistory(hits, String(args.query)) : "Nada encontrado no histórico.";
     }
     case "create_npc": {
       // registro na hora (o portão de NPC exige antes da narração); perfil e ficha vêm do Criador em segundo plano

@@ -158,9 +158,9 @@ const NODES: (FlowNode | LaneNode)[] = [
     quando: "A cada turno.",
   }),
   n("t_mem", X[1], 60, "code", "Memórias candidatas", "6 parecidas + 8 importantes", {
-    oque: "Sem IA: busca no Postgres as 6 memórias mais parecidas com a ação (vetorial no pgvector, ou por texto se não houver embeddings) e junta as 8 de maior importância e mais recentes, sem repetir. Também lê o histórico recente (janela de ≈9 mil tokens).",
+    oque: "Sem IA: busca no Postgres as 6 memórias mais parecidas com a ação (vetorial no pgvector, ou por texto se não houver embeddings) e junta as 8 de maior importância e mais recentes, sem repetir. Com embeddings, junta também até 2 trechos antigos do chat (fora da janela recente) muito parecidos com a ação, que só entram se o Jev aprovar com folga. Também lê o histórico recente (janela de ≈9 mil tokens).",
     quando: "Logo depois que a ação é salva.",
-    custo: "Um embedding da ação (barato) e consultas SQL.",
+    custo: "Dois embeddings da ação (baratos) e consultas SQL.",
   }),
   n("t_jev", X[2], 60, "jev", "Jev: decide o turno", "modelo, web e memórias", {
     oque: "Uma única chamada devolve probabilidades, não texto: (1) turno complexo? Escolhe entre o modelo do Mestre e o caro de turnos complexos (se configurado). (2) Precisa de busca web (:online)? Só quando o turno depende de um fato do cânone que não está no contexto. (3) Cada memória candidata é relevante? As de importância 5 entram sem perguntar. Os limiares ficam em src/lib/decisions.ts.",
@@ -180,9 +180,9 @@ const NODES: (FlowNode | LaneNode)[] = [
     custo: "O mais caro: cada rodada reenvia prompt, ficha, memórias, histórico (até ≈9 mil tokens) e as definições das ferramentas. A busca web (:online) vale só na 1ª rodada e é cobrada por busca.",
   }),
   n("t_tools", X[5], 60, "code", "Ferramentas", "dados, ficha, cena, delegações", {
-    oque: "Executadas pelo código a pedido do Mestre: rolar dados, mudar recursos, atributos, habilidades, itens e XP, criar NPC, trocar a cena, gravar e buscar memórias, consultar livros, roteiro e biblioteca, pedir mapas 3D. As escritas vão direto ao Postgres; criar NPC, técnica nova e mapa são delegados aos criadores (lane 4).",
+    oque: "Executadas pelo código a pedido do Mestre: rolar dados, mudar recursos, atributos, habilidades, itens e XP, criar NPC, trocar a cena, gravar e buscar memórias, buscar no chat inteiro da campanha (search_history: trechos curtos com dia, hora e local), consultar livros, roteiro e biblioteca, pedir mapas 3D. As escritas vão direto ao Postgres; criar NPC, técnica nova e mapa são delegados aos criadores (lane 4).",
     quando: "Sempre que o Mestre pedir, em qualquer rodada.",
-    custo: "Sem IA: só SQL (e embeddings ao gravar ou buscar memórias).",
+    custo: "Sem IA: só SQL (e embeddings ao gravar ou buscar memórias e histórico).",
   }),
   n("t_fx", X[4], 230, "code", "Efeitos persistidos", "narração e opções salvas", {
     oque: "Fichas, cena, NPCs, memórias e roteiro já foram gravados pelas ferramentas durante o loop. No fim, a narração e o bloco de opções são salvos e enviados ao jogador.",

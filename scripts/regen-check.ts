@@ -29,6 +29,8 @@ async function main() {
     // o que um turno faria
     await q(`INSERT INTO messages (campaign_id, scene_id, role, content) VALUES ($1, $2, 'player', 'ataco o boneco de treino'), ($1, $2, 'gm', 'resposta')`, [id, scene.id]);
     await q(`UPDATE messages SET compacted = TRUE WHERE campaign_id = $1`, [id]);
+    // trechos do histórico vetorial (um por narração): o do turno refeito some pela FK
+    await q(`INSERT INTO history_chunks (campaign_id, message_id, content) SELECT campaign_id, id, content FROM messages WHERE campaign_id = $1 AND role = 'gm'`, [id]);
     await q(`UPDATE characters SET sheet = '{"hp":12,"xp":50}', active = FALSE WHERE id = $1`, [hero.id]);
     await q(`INSERT INTO characters (campaign_id, kind, name) VALUES ($1, 'npc', 'Mizuki')`, [id]);
     await q(`UPDATE scenes SET mode = 'battle', location = 'Floresta', is_current = FALSE WHERE id = $1`, [scene.id]);
@@ -50,12 +52,14 @@ async function main() {
     const msgs = await q<{ content: string; compacted: boolean }>(
       `SELECT content, compacted FROM messages WHERE campaign_id = $1 ORDER BY id`, [id]);
     assert.deepEqual(msgs, [{ content: "abertura", compacted: false }], "mensagens do turno somem e a compactação é desfeita");
+    const chunks = await q<{ content: string }>(`SELECT content FROM history_chunks WHERE campaign_id = $1`, [id]);
+    assert.deepEqual(chunks.map((h) => h.content), ["abertura"], "trecho do histórico do turno some");
     const mems = await q<{ content: string }>(`SELECT content FROM memories WHERE campaign_id = $1`, [id]);
     assert.deepEqual(mems.map((m) => m.content), ["memória antiga"]);
     const [camp] = await q<{ script: unknown }>(`SELECT script FROM campaigns WHERE id = $1`, [id]);
     assert.deepEqual(camp.script, { arcs: [] }, "roteiro volta");
 
-    console.log("ok: gerar novamente restaura ficha, NPCs, cena, mensagens, memórias e roteiro");
+    console.log("ok: gerar novamente restaura ficha, NPCs, cena, mensagens, memórias, histórico e roteiro");
   } finally {
     await q(`DELETE FROM campaigns WHERE id = $1`, [id]);
     await pool().end();

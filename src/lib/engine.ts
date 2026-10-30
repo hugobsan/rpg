@@ -2,7 +2,18 @@ import { q } from "./db";
 import { getAgent } from "./agents";
 import { chat, ChatMessage, estimateTokens } from "./openrouter";
 import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
-import { activeDirectives, addMemory, MemoryHit, recentMemories, searchMemories } from "./retrieval";
+import {
+  activeDirectives,
+  addMemory,
+  formatHistory,
+  HistoryHit,
+  historyLine,
+  indexHistory,
+  MemoryHit,
+  recentMemories,
+  searchHistory,
+  searchMemories,
+} from "./retrieval";
 import { decideCast, decideElapsed, decideMoved, decideTurn, scoreImportance } from "./decisions";
 import { attributeCap, attributePoints, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
@@ -130,6 +141,7 @@ async function buildGmSystem(
   scene: Scene,
   chars: Character[],
   memories: MemoryHit[],
+  past: string, // trechos antigos do chat aprovados pelo Jev (formatHistory)
   basePrompt: string
 ): Promise<string> {
   const player = chars.find((c) => c.kind === "player");
@@ -175,6 +187,8 @@ async function buildGmSystem(
           .map((m) => `[${m.kind}${m.subject ? `/${m.subject}` : ""}] ${m.content}`)
           .join("\n")}`
       : "",
+    "search_history busca no chat inteiro da campanha (turnos e conversas com NPCs, com dia, hora e local): use para lembrar exatamente o que alguém disse ou fez, ou detalhes antigos que não viraram memória.",
+    past ? `\n--- TRECHOS ANTIGOS DO CHAT (lembrados para esta ação) ---\n${past}` : "",
     directives.length
       ? `\n--- DIRETRIZES DO JOGADOR (fora do jogo) — siga ---\n${directives
           .map((d) => `- ${d.content}${d.subject === "proxima_cena" ? " (vale nesta cena e na próxima)" : ""}`)
@@ -292,6 +306,10 @@ export async function runTurn(
   // a busca de memórias (embedding da ação, ida à rede) corre junto da foto e das leituras do banco
   const candidatesP = candidateMemories(campaignId, playerInput);
   candidatesP.catch(() => {}); // o erro sobe no await abaixo, sem virar rejeição solta antes dele
+  // até 2 trechos antigos do chat muito parecidos com a ação: só entram se o Jev aprovar com folga
+  const pastP = playerInput
+    ? searchHistory(campaignId, playerInput, { limit: 2, auto: true }).catch((): HistoryHit[] => [])
+    : Promise.resolve([]);
   // foto do estado antes do turno, para poder gerar a resposta de novo depois
   await takeSnapshot(campaignId, playerInput);
   const [campaign, firstScene, chars, gm] = await Promise.all([
@@ -306,9 +324,10 @@ export async function runTurn(
 
   await saveMessage(campaignId, scene.id, "player", playerInput);
 
-  const [history, candidates] = await Promise.all([
+  const [history, candidates, pastHits] = await Promise.all([
     historyWindow(campaignId, scene.id, params.historyBudgetTokens ?? 9000),
     candidatesP,
+    pastP,
   ]);
 
   // Jev, numa chamada só: modelo do turno (1), busca web (2) e filtro de memórias (4)
@@ -329,6 +348,7 @@ export async function runTurn(
       lastGmNarration: typeof lastGm?.content === "string" ? lastGm.content : "",
       playerAction: playerInput,
       memories: candidates,
+      history: pastHits.map((h) => ({ id: h.id, text: historyLine(h, playerInput) })),
       askComplexity: !!complexModel,
       askWeb: gm.web_search,
     },
@@ -339,8 +359,16 @@ export async function runTurn(
   // falha do Jev = web conforme o agente
   const useWeb = gm.web_search && decision.web !== false;
   const memories = candidates.filter((m) => decision.keepMemory(m.id, m.importance));
+  const past = pastHits.filter((h) => decision.keepHistory(h.id));
 
-  const system = await buildGmSystem(campaign, scene, chars, memories, gm.system_prompt);
+  const system = await buildGmSystem(
+    campaign,
+    scene,
+    chars,
+    memories,
+    past.length ? formatHistory(past, playerInput) : "",
+    gm.system_prompt
+  );
   // a última mensagem do histórico já é o input do jogador recém-salvo? Não: janela foi lida após salvar.
   const messages: ChatMessage[] = [{ role: "system", content: system }, ...history];
   if (
@@ -458,6 +486,8 @@ export async function runTurn(
       .then(() => fallbackCast(campaignId, toolCtx, playerInput, narration, emit))
       .catch(() => {}),
   ]);
+  // o turno entra no histórico vetorial sem segurar o done; um "gerar novamente" no meio não deixa sobra (FK com CASCADE)
+  indexHistory(campaignId).catch((e) => console.warn("[histórico]", e));
   emit({ type: "done" });
 }
 
@@ -586,6 +616,8 @@ function toolSummary(name: string, args: Record<string, unknown>): string {
       return `🎲 rolando ${args.notation}${args.reason ? ` — ${args.reason}` : ""}`;
     case "search_memories":
       return `🔍 buscando memórias: "${args.query}"`;
+    case "search_history":
+      return `🔍 buscando no histórico: "${args.query}"`;
     case "search_book":
       return `📖 consultando livros: "${args.query}"`;
     case "read_pages":

@@ -45,6 +45,9 @@ async function applySchema(): Promise<boolean> {
       await client.query(
         `ALTER TABLE book_chunks ADD COLUMN IF NOT EXISTS embedding vector`
       );
+      await client.query(
+        `ALTER TABLE history_chunks ADD COLUMN IF NOT EXISTS embedding vector`
+      );
     }
     globalAny.__hasVector = hasVector;
     return hasVector;

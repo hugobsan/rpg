@@ -250,3 +250,19 @@ CREATE TABLE IF NOT EXISTS maps (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS maps_campaign_idx ON maps (campaign_id, updated_at DESC);
+
+-- 4ª camada da memória: o chat inteiro em trechos com embedding (coluna em db.ts), para o Mestre consultar com
+-- search_history. Turno = ação do jogador + narração (message_id = narração); conversa com NPC = falas do jogador +
+-- resposta do NPC (npc_chat_id = resposta). As FKs com CASCADE limpam no "gerar novamente" e ao apagar a campanha.
+CREATE TABLE IF NOT EXISTS history_chunks (
+  id BIGSERIAL PRIMARY KEY,
+  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  message_id BIGINT UNIQUE REFERENCES messages(id) ON DELETE CASCADE,
+  npc_chat_id BIGINT UNIQUE REFERENCES npc_chats(id) ON DELETE CASCADE,
+  npc TEXT,       -- NPC da conversa particular
+  clock INT,      -- relógio do jogo no turno (minutos, lib/clock.ts); NULL = não registrado
+  location TEXT,  -- local da cena
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS history_chunks_campaign_idx ON history_chunks (campaign_id, id);

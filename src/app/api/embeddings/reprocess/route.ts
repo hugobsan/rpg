@@ -5,11 +5,11 @@ import { getSource } from "@/lib/openrouter";
 
 export const dynamic = "force-dynamic";
 
-const BATCH = 64;
-const TABLES = ["memories", "book_chunks"] as const;
+const TABLES = ["memories", "book_chunks", "history_chunks"] as const;
+const BATCH = { memories: 64, book_chunks: 64, history_chunks: 16 }; // trecho do chat é um turno inteiro
 
 /**
- * Regera os embeddings de memories e book_chunks com o modelo salvo.
+ * Regera os embeddings de memories, book_chunks e history_chunks com o modelo salvo.
  * Tudo numa transação: a busca só vê vetores antigos ou novos, nunca misturados.
  */
 export async function POST() {
@@ -23,15 +23,15 @@ export async function POST() {
   if (srcError) return fail(srcError);
 
   const client = await (await db()).connect();
-  const n = { memories: 0, book_chunks: 0 }; // reprocessados
-  const last = { memories: "0", book_chunks: "0" }; // último id reprocessado
+  const n = { memories: 0, book_chunks: 0, history_chunks: 0 }; // reprocessados
+  const last = { memories: "0", book_chunks: "0", history_chunks: "0" }; // último id reprocessado
   try {
     await client.query("BEGIN");
     try {
       for (const t of TABLES) {
         for (;;) {
           const { rows } = await client.query(
-            `SELECT id, content FROM ${t} WHERE id > $1 ORDER BY id LIMIT ${BATCH}`,
+            `SELECT id, content FROM ${t} WHERE id > $1 ORDER BY id LIMIT ${BATCH[t]}`,
             [last[t]]
           );
           if (!rows.length) break;
@@ -59,7 +59,7 @@ export async function POST() {
         // o próprio banco falhou: desfaz tudo e zera tudo
         await client.query("ROLLBACK");
         for (const t of TABLES) await client.query(`UPDATE ${t} SET embedding = NULL`);
-        n.memories = n.book_chunks = 0;
+        n.memories = n.book_chunks = n.history_chunks = 0;
       }
       return NextResponse.json({ error, ...n }, { status: 502 });
     }

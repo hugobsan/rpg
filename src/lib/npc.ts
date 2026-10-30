@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { q } from "./db";
 import { getAgent } from "./agents";
 import { chat, ChatMessage } from "./openrouter";
-import { addMemory, searchMemories } from "./retrieval";
+import { addMemory, indexHistory, searchMemories } from "./retrieval";
 import { getCampaign, getCurrentScene } from "./engine";
 import { Character, InboxItem } from "./types";
 import { decideNpcWilling, scoreImportance } from "./decisions";
@@ -159,6 +159,7 @@ export async function npcTalk(
      VALUES ($1,$2,$3,'player',$4), ($1,$2,$3,'npc',$5)`,
     [campaignId, npcId, sid, playerText, reply]
   );
+  indexHistory(campaignId).catch((e) => console.warn("[histórico]", e)); // a troca entra no histórico vetorial
   // respondeu = leu (vale também se a UI abriu a sessão sem passar por openPending)
   if (initiated) await q(`UPDATE npc_chats SET unread = FALSE WHERE session_id = $1 AND unread`, [sid]);
 

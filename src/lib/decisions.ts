@@ -26,6 +26,9 @@ export const MEMORY_MIN = 0.55;
 // "uma proposta": 0.29), Sasuke frio 0.53-0.55, amigável 0.85-0.91. Recusa errada trava o jogador (mas ele pode
 // insistir e o Jev decide de novo); aceite errado o NPC ainda pode cortar em personagem.
 export const NPC_WILLING_MIN = 0.4;
+// Trecho antigo do chat (recuperação automática) só entra se P(precisa) >= limiar: bem acima do das memórias
+// ("com folga"), porque turno inteiro custa mais tokens que um fato. Sem probe ainda; refaça com scripts/jev-check.ts.
+export const HISTORY_MIN = 0.8;
 // Importância 5 entra sempre no contexto, sem passar pelo filtro.
 export const ALWAYS_KEEP_IMPORTANCE = 5;
 
@@ -122,6 +125,7 @@ export interface TurnInput {
   lastGmNarration: string;
   playerAction: string;
   memories: { id: number; kind: string; subject: string | null; content: string; importance: number }[];
+  history?: { id: number; text: string }[]; // trechos antigos do chat muito parecidos com a ação
   askComplexity: boolean;
   askWeb: boolean;
 }
@@ -161,6 +165,15 @@ export function buildTurnRequest(t: TurnInput): DecisionRequest {
         false: "Não: é sobre outro assunto, que não pesa nesta ação.",
       },
     };
+  for (const h of t.history || [])
+    questions[`hist_${h.id}`] = {
+      type: "noul",
+      instructions: `O trecho antigo do chat \`historico.h${h.id}\` traz algo que o Mestre precisa saber exatamente para narrar ou arbitrar a \`acao_do_jogador\` (o que alguém disse ou fez naquela vez e a ação retoma)?`,
+      criteria: {
+        true: "Sim: a ação retoma diretamente o que aconteceu no trecho (a mesma pessoa, conversa, promessa, objeto ou acontecimento) e narrar sem ele daria errado.",
+        false: "Não: o trecho só se parece no assunto ou nas palavras, ou a ação se resolve sem ele.",
+      },
+    };
   return {
     state: {
       cenario: { nome: t.setting.name, baseado_em_obra: t.setting.canonBased },
@@ -177,6 +190,7 @@ export function buildTurnRequest(t: TurnInput): DecisionRequest {
       memorias: Object.fromEntries(
         t.memories.map((m) => [`m${m.id}`, `[${m.kind}${m.subject ? `/${m.subject}` : ""}] ${m.content}`])
       ),
+      ...(t.history?.length ? { historico: Object.fromEntries(t.history.map((h) => [`h${h.id}`, h.text])) } : {}),
     },
     questions,
   };
@@ -186,6 +200,7 @@ export interface TurnDecision {
   complex: boolean | null; // null = não perguntou ou falhou
   web: boolean | null;
   keepMemory: (id: number, importance: number) => boolean;
+  keepHistory: (id: number) => boolean; // falha do Jev = nenhum trecho (não infla o contexto)
 }
 
 export function gateTurn(answers: Record<string, Answer> | null): TurnDecision {
@@ -199,6 +214,7 @@ export function gateTurn(answers: Record<string, Answer> | null): TurnDecision {
       const p = noulOf(answers, `mem_${id}`);
       return p === undefined || p >= MEMORY_MIN;
     },
+    keepHistory: (id) => (answers ? (noulOf(answers, `hist_${id}`) ?? 0) >= HISTORY_MIN : false),
   };
 }
 
