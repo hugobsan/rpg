@@ -3,7 +3,7 @@
 // chat, Jev (decider), Voz (TTS), Ilustrador (imagem) e embeddings chamando a URL e a chave da fonte certa.
 // O banco é um pool falso posto em global.__pgPool (o mesmo global que src/lib/db.ts usa) e o fetch é trocado.
 import assert from "node:assert";
-import { chat, chatRequest, maskKey, pickSource, sourceView, type ChatOptions, type Source } from "../src/lib/openrouter";
+import { authHeader, chat, chatRequest, maskKey, pickSource, sourceView, type ChatOptions, type Source } from "../src/lib/openrouter";
 import { decide, type DecisionRequest } from "../src/lib/decisions";
 import { synthesize } from "../src/lib/tts";
 import { embed } from "../src/lib/embeddings";
@@ -171,6 +171,9 @@ async function main() {
     const res = await fn(new NextRequest("http://x/api/sources", { method: "POST", body: JSON.stringify(body) }));
     return { status: res.status, d: await res.json() };
   };
+  // Anthropic: anthropic-version em toda chamada (sem ele GET /models dá 400)
+  assert.equal(authHeader({ ...POD, kind: "anthropic" })["anthropic-version"], "2023-06-01");
+  assert.equal(authHeader(POD)["anthropic-version"], undefined);
   const OPENAI_URL = SOURCE_PRESETS.find((p) => p.kind === "openai")!.url;
   let res = await call(POST, { kind: "openai", name: "OpenAI", url: "http://evil", auth: "chatgpt" });
   assert.equal(res.status, 200);

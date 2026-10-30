@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ChatgptStatus, SourceView } from "@/lib/types";
 import { presetOf, SOURCE_PRESETS } from "@/lib/sourcePresets";
 import Loader from "@/components/ui/Loader";
@@ -36,8 +36,10 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
   const [gpt, setGpt] = useState(initialChatgpt);
   // fontes além do OpenRouter: recolhidas, e abertas viram um carrossel (abre sozinho na volta do Login com ChatGPT)
   const [showAll, setShowAll] = useState(!!notice);
-  const track = useRef<HTMLDivElement>(null);
-  const slide = (dir: 1 | -1) => track.current?.scrollBy({ left: dir * track.current.clientWidth, behavior: "smooth" });
+  // carrossel: um cartão por vez, anda só pelos botões (translateX, sem rolagem)
+  const [idx, setIdx] = useState(0);
+  const last = Math.max(sources.length - 1, 0);
+  const cur = Math.min(idx, last);
   const gptTaken = (id?: string) => sources.find((x) => x.auth && x.id !== id);
 
   // volta do /auth/callback: confirma uma vez e tira o ?chatgpt da URL
@@ -84,7 +86,7 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
     setSources((list) => (draft.id ? list.map((x) => (x.id === d.id ? d : x)) : [...list, d]));
     setDraft(null);
     setShowAll(true);
-    if (!draft.id) requestAnimationFrame(() => track.current?.scrollTo({ left: track.current.scrollWidth, behavior: "smooth" })); // mostra a nova
+    if (!draft.id) setIdx(sources.length); // mostra a nova (vai para o fim da lista)
     toast(`Fonte ${d.name} salva.`, { kind: "sucesso" });
     if (!d.auth || gpt.connected) test(d.id); // confere a conexão já com a URL e a chave novas
   };
@@ -164,17 +166,20 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
           </button>
           {showAll && sources.length > 1 && (
             <span className={s.srcNav}>
-              <button type="button" className="btn small ghost" aria-label="Fonte anterior" onClick={() => slide(-1)}>‹</button>
-              <button type="button" className="btn small ghost" aria-label="Próxima fonte" onClick={() => slide(1)}>›</button>
+              <button type="button" className="btn small ghost" aria-label="Fonte anterior" disabled={cur <= 0} onClick={() => setIdx(cur - 1)}>‹</button>
+              <span className={s.srcPos} aria-live="polite">{cur + 1} de {sources.length}</span>
+              <button type="button" className="btn small ghost" aria-label="Próxima fonte" disabled={cur >= last} onClick={() => setIdx(cur + 1)}>›</button>
             </span>
           )}
         </div>
       )}
 
       {showAll && (
-      <div id="src-others" ref={track} className={s.carousel} role="region" aria-roledescription="carrossel" aria-label="Outras fontes de modelos" tabIndex={0}>
-      {sources.map((x) => (
-        <div key={x.id} className={s.srcCard}>
+      <div id="src-others" className={s.carousel} role="region" aria-roledescription="carrossel" aria-label="Outras fontes de modelos">
+      <div className={s.track} style={{ transform: `translateX(calc(${-cur} * (100% + var(--s-3))))` }}>
+      {sources.map((x, n) => (
+        // fora da vista: inert tira os botões do Tab e do leitor de tela
+        <div key={x.id} className={s.srcCard} inert={n !== cur} aria-roledescription="slide" aria-label={`${n + 1} de ${sources.length}: ${x.name}`}>
           <div className={s.srcInfo}>
             <span><b>{x.name}</b><span className="pill">{x.id}</span></span>
             <span className={s.srcMeta}>
@@ -226,6 +231,7 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
           {testLine(x.id)}
         </div>
       ))}
+      </div>
       </div>
       )}
 

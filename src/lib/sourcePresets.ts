@@ -7,6 +7,7 @@ export interface SourcePreset {
   note: string; // limitações, mostradas no aviso da fonte
   noTemperature?: boolean; // não mandar temperature (o provedor rejeita os valores que os agentes usam)
   reasoningEffort?: boolean; // params.reasoning.effort vira reasoning_effort (formato da OpenAI)
+  headers?: Record<string, string>; // cabeçalhos extras em toda chamada à fonte
 }
 
 export const SOURCE_PRESETS: SourcePreset[] = [
@@ -22,6 +23,7 @@ export const SOURCE_PRESETS: SourcePreset[] = [
     name: "Anthropic",
     url: "https://api.anthropic.com/v1",
     noTemperature: true,
+    headers: { "anthropic-version": "2023-06-01" }, // sem ele GET /models (nativo) dá 400
     note:
       "Camada de compatibilidade com a OpenAI, que a própria Anthropic diz não ser solução de produção. Sem response_format nem cache de prompt; as mensagens de sistema vão juntas para o início. Nos Claude 4.7 ou mais novos temperature abaixo de 1 dá erro: a temperatura e o raciocínio do agente (params.reasoning) não são enviados. Modelos: claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5, claude-fable-5-1.",
   },

@@ -108,8 +108,10 @@ export async function agentSource(agentId: string): Promise<Source> {
 }
 
 /** Cabeçalho de autenticação da fonte (sem chave, nenhum: Ollama local, por exemplo). */
-export const authHeader = (src: Source): Record<string, string> =>
-  src.apiKey ? { Authorization: `Bearer ${src.apiKey}` } : {};
+export const authHeader = (src: Source): Record<string, string> => ({
+  ...presetOf(src.kind)?.headers,
+  ...(src.apiKey ? { Authorization: `Bearer ${src.apiKey}` } : {}),
+});
 
 /** Chave para mostrar na tela: começo e fim, nunca inteira. */
 export function maskKey(key: string): string {
@@ -411,12 +413,12 @@ export async function listSourceModels(id: string): Promise<{ id: string; name: 
     throw new Error(`${src.name} não respondeu em ${src.url}/models (${e.cause?.code || e.message})`);
   });
   if (!res.ok) throw new Error(`${src.name} GET /models: ${res.status}`);
-  const data = (await res.json()) as { data?: { id: string; name?: string }[]; models?: { slug: string; display_name?: string; visibility?: string }[] };
+  const data = (await res.json()) as { data?: { id: string; name?: string; display_name?: string }[]; models?: { slug: string; display_name?: string; visibility?: string }[] };
   // Login com ChatGPT: catálogo da conta em `models`, na ordem do servidor; só os de visibility "list"
   if (Array.isArray(data.models))
     return data.models.filter((m) => m.visibility === "list").map((m) => ({ id: m.slug, name: m.display_name || m.slug }));
   if (!Array.isArray(data.data)) throw new Error(`${src.name} GET /models: resposta fora do formato OpenAI`);
-  return data.data.map((m) => ({ id: m.id, name: m.name || m.id })).sort((a, b) => a.id.localeCompare(b.id));
+  return data.data.map((m) => ({ id: m.id, name: m.name || m.display_name || m.id })).sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /** Preço salvo no agente: USD por milhão de tokens + contexto. null se o modelo não existe no catálogo. */
