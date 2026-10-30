@@ -109,6 +109,15 @@ Na tela, `src/components/map/MapPanel.tsx` (props: `campaign`, `scene`, `charact
 
 Escolhido na criação: **Aberta** (você descreve tudo livremente), **Híbrida** (opções sugeridas + digitação livre; diálogos sempre livres) ou **Guiada** (o Mestre dá opções concretas e a história fica mais controlada e verossímil).
 
+### Interface e temas
+
+O design system está em [`DESIGN.md`](./DESIGN.md) (tokens, temas, primitivas e o que é proibido). Cada campanha tem um tema visual (`chronicle`, `arcano`, `shinobi`, `neon`, `estelar`, `gotico`): `campaign.state.theme` (escolhido na criação ou no painel **Mesa**) > `ruleset.theme` > palpite pelo nome do cenário (`src/lib/theme.ts`). A tela de jogo aplica o tema na raiz e a página inteira acompanha.
+
+- A narração chega em streaming (`narration_delta`/`narration_reset`) e a espera mostra a fase do turno (lendo a cena, consultando, dados, escrevendo).
+- A campanha vem pronta no HTML (`src/lib/campaignView.ts`, usado pela página e pelo GET); imagens são servidas por URL com cache, não em base64 no JSON.
+- Avisos (dano, cura, XP, nível, itens, NPC entrando/saindo, missões, salto de tempo) saem da diferença de estado a cada turno (`src/components/game/stateToasts.ts`).
+- No celular, a lateral vira uma folha que sobe de baixo, com barra fixa de atalhos.
+
 ## Mecânica configurável (agnóstica de cenário)
 
 A mecânica (atributos, barras de recurso, tipos de habilidade, ranks/progressão, campos extras, notas de rolagem e lore) é um JSON importável/exportável. O preset de Naruto está em [`naruto-ruleset.json`](./naruto-ruleset.json) na raiz — chakra, ranks ninja (Genin → Kage), jutsus por categoria, kekkei genkai, elementos, custos de chakra por rank de jutsu.

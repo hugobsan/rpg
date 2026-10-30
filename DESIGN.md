@@ -88,18 +88,7 @@ Cartão / painel e campo:
 </div>
 ```
 
-Abas (lateral do jogo e qualquer conjunto de abas): botão ativo com `.active` ou `aria-selected="true"`.
-```html
-<div class="side-tabs" role="tablist"><button role="tab" aria-selected="true" class="active">Ficha</button><button role="tab">NPCs</button></div>
-```
-
-Chips: `.pill` (etiqueta), `.pill.on` (ativo/ok), `.pill.err`; filtro clicável: `<button class="pill filter-pill on">`. Eventos do feed: `.event-chip`, `.event-chip.dice.ok|.fail`. Badge de modo: `.mode-badge` com `style={{ color: "var(--mode-battle)" }}` (borda e fundo seguem `currentColor`).
-
-Barra de recurso (cor do ruleset inline):
-```html
-<div class="bar-row"><div class="bar-name"><span>Chakra</span><span>41/50</span></div>
-  <div class="bar-outer"><div class="bar-inner" style="width:82%;background:#4a8fe7"></div></div></div>
-```
+Chips: `.pill` (etiqueta), `.pill.on` (ativo/ok), `.pill.err`; filtro clicável: `<button class="pill filter-pill on">`. Badge de modo: `.mode-badge` com `style={{ color: "var(--mode-battle)" }}` (borda e fundo seguem `currentColor`).
 
 Modal (no celular vira folha que sobe de baixo):
 ```html
@@ -109,11 +98,13 @@ Modal (no celular vira folha que sobe de baixo):
 </div></div>
 ```
 
-Outros já prontos: `.npc-row`, `.ability-item`, `.attr-grid/.attr-cell/.attr-tip`, `.choice-btn`, `.msg-player`, `.npc-bubble.player|.npc|.ooc-player`, `.ooc-*`, `table.plain`, `pre.log-json`, `.error-box`, `.wizard-steps`, `.campaign-card`, `.gallery*`, `.viewer*`, `.thinking`.
+Outros globais: `.msg-gm`, `.msg-player`, `table.plain`, `pre.log-json`, `.error-box`.
+
+Componentes com estilo próprio (CSS Module ao lado do `.tsx`): estilo específico de um componente vai no `.module.css` dele, só com tokens; o `globals.css` fica para o que é genérico. Referências: abas e trilho em `src/components/game/SidePanel`, feed (falas, rolagens, escolhas) em `game/Feed`, barras de recurso e atributos em `SheetView`, conversa em `NpcModal`, cartões de campanha em `src/app/(home)`, passos do assistente em `src/app/campaigns/new`.
 
 Utilitários: `.sr-only`, `.muted`, `.faint`, `.num`, `.overline`, `.display`, `.divider` (`<div class="divider"><span></span></div>`: linha com o glifo do tema no meio).
 
-Tooltip (CSS puro, sem componente): `<span data-tip="Gasta 1 ponto livre">+</span>`. Põe `position: relative` no elemento; não funciona dentro de `overflow: hidden` (use `title` ou `.attr-tip` ali).
+Tooltip (CSS puro, sem componente): `<span data-tip="Gasta 1 ponto livre">+</span>`. Põe `position: relative` no elemento; não funciona dentro de `overflow: hidden` (use `title` ali, ou um balão controlado por estado como o dos atributos em `SheetView`).
 
 Drawer (base para a lateral do jogo no celular):
 ```html
