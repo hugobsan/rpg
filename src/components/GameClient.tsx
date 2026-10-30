@@ -6,6 +6,7 @@ import type { CampaignView } from "@/lib/campaignView";
 import { getClock } from "@/lib/clock";
 import { campaignTheme } from "@/lib/theme";
 import { effectiveCost } from "@/lib/progression";
+import { DIFFICULTIES, getTable } from "@/lib/table";
 import { useTurn } from "./game/useTurn";
 import NpcModal from "./NpcModal";
 import OocModal from "./OocModal";
@@ -21,6 +22,7 @@ import BooksView from "./BooksView";
 import ScriptView from "./ScriptView";
 import DiceRoller from "./DiceRoller";
 import MapPanel from "./map/MapPanel";
+import TableRulesPanel from "./TableRulesPanel";
 import Skeleton from "./ui/Skeleton";
 import { toast } from "./ui/Toast";
 import SceneHeader from "./game/SceneHeader";
@@ -32,7 +34,7 @@ import { groupFeed, phaseOf, type Phase } from "./game/feedModel";
 import { stateToasts } from "./game/stateToasts";
 import s from "./GameClient.module.css";
 
-type Tab = "sheet" | "abilities" | "inventory" | "objectives" | "npcs" | "map" | "memories" | "books" | "script" | "gallery";
+type Tab = "sheet" | "abilities" | "inventory" | "objectives" | "npcs" | "map" | "memories" | "books" | "script" | "gallery" | "table";
 
 const MODE_PLACEHOLDER: Record<string, string> = {
   exploration: "O que você faz?",
@@ -208,6 +210,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   const { campaign, scene } = state;
   const clock = getClock(campaign.state)?.minutes ?? null;
   const unread = state.inbox?.reduce((n, i) => n + i.unread, 0) ?? 0;
+  const difficulty = getTable(campaign.state).difficulty;
   const lastGm = feed.findLast((i) => i.kind === "gm")?.content;
   const placeholder =
     choices.length && campaign.style !== "open"
@@ -225,6 +228,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
     { key: "books", label: "Livros", icon: "book" },
     { key: "script", label: "Roteiro", icon: "scroll" },
     { key: "gallery", label: "Galeria", icon: "image" },
+    { key: "table", label: "Mesa", icon: "sliders", end: true },
   ];
   // header e atalhos abrem uma aba: no desktop expande o painel, no celular sobe a folha
   const show = (k: Tab) => {
@@ -276,6 +280,8 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
         return <ScriptView script={campaign.script} campaignId={campaignId} onChange={reloadState} />;
       case "gallery":
         return <Gallery campaignId={campaignId} refreshKey={sceneImage?.id} onDeleted={reloadState} />;
+      case "table":
+        return <TableRulesPanel campaign={campaign} onChange={reloadState} />;
     }
   })();
 
@@ -288,6 +294,8 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           image={state.ui.imageGeneration ? { busy: imageBusy, onClick: generateImage } : undefined}
           onOoc={() => setOocOpen(true)}
           onMap={() => show("map")}
+          onTable={() => show("table")}
+          tableHint={difficulty === "normal" ? undefined : DIFFICULTIES.find((d) => d.key === difficulty)?.label}
         />
 
         <div className={s.feedWrap}>
