@@ -55,6 +55,10 @@ Cada agente é um registro editável (modelo + system prompt + parâmetros) na t
 | **Voz** | `heygen/heygen-voice-1-turbo:free` | Lê as falas dos NPCs (TTS), com voz padrão por sexo | Grátis e fala português; áudio em cache |
 | **Criador de personagens** | `nvidia/nemotron-3.5-super-vl:free` | Monta em segundo plano o perfil rico e a ficha de cada NPC novo (`create_npc`) e do botão Refazer perfil, a partir da biblioteca | Grátis; raciocina antes (~1,5 min por NPC), fora do turno |
 | **Criador de aventuras** | `nvidia/nemotron-3.5-super-vl:free` | Entrevista o jogador e monta o JSON de uma aventura nova (Criar com IA) | Grátis; raciocina antes de responder (rodada de 1 a 2 min) |
+| **Criador de habilidades** | `nvidia/nemotron-3.5-super-vl:free` | Cria técnicas (jutsus, feitiços...) para a biblioteca: na hora, quando o `add_ability` pede uma que não existe, e em lotes no segundo plano | Grátis; prazo de 90 s dentro do turno |
+| **Criador de itens** | `nvidia/nemotron-3.5-super-vl:free` | Cria ferramentas, armas e consumíveis para a biblioteca, em lotes | Grátis |
+| **Pixel artista** | `anthropic/claude-opus-5.5` (raciocínio baixo) | Desenha o retrato de cada personagem como grade de pixels, que o código converte em SVG | ~US$0,02 e ~10 s por retrato; com imagens ligadas, quem pinta é o Ilustrador |
+| **Cartógrafo** | `anthropic/claude-opus-5.5` (raciocínio médio) | Compõe o mapa 3D de um lugar como descrição declarativa (relevo, contornos, caminhos, espalhamento, materiais, luz, pontos de interesse) | ~US$0,14 por mapa novo e US$0,18 por edição; só gera quando pedido |
 
 O seletor de modelos busca a lista viva de `openrouter.ai/api/v1/models` com preço e contexto — os defaults nunca ficam obrigatórios.
 
@@ -108,6 +112,16 @@ O mapa (`campaigns.state.map`, `src/lib/map.ts`) se monta sozinho: todo `set_sce
 O palco (`scenes.state.stage`, ferramenta `set_stage`) guarda as zonas do lugar e onde cada personagem está em relação ao jogador: distância (corpo a corpo, perto, médio, longe), postura (aliado, hostil, neutro), cobertura e elevação. É o que mantém a batalha coerente entre os turnos: sem palco em batalha, o contexto pede ao Mestre que monte. Mudar de lugar dentro da mesma cena limpa o palco. O contexto do Mestre leva um bloco curto com o local atual, as rotas daqui, os locais por perto e o palco. O "gerar novamente" volta mapa e palco junto com o resto. Verificação: `npx tsx scripts/map-check.ts`.
 
 Na tela, `src/components/map/MapPanel.tsx` (props: `campaign`, `scene`, `characters`) mostra o mapa como um diorama 3D low-poly (three, carregado sob demanda): cada tipo de lugar vira uma miniatura, rotas são trilhas pontilhadas, o jogador e quem está com ele são peões (cor pela postura no palco), lugares conhecidos e não visitados aparecem translúcidos e a luz segue o período do dia. Arrastar gira, clicar num lugar abre o cartão dele, a câmera desliza até o lugar novo quando você se move, e "Ampliar" abre o mapa em tela cheia com zoom. Cores e fontes vêm dos tokens do tema da campanha. Só renderiza quando algo se mexe; sem WebGL, cai para uma visão 2D em SVG. O palco aparece em 2D no mesmo painel (anéis de distância, zonas, cobertura e elevação), primeiro em batalha.
+
+### Mapas 3D dos lugares (Cartógrafo)
+
+Além do diorama do mundo, cada lugar pode ter uma maquete 3D própria, composta pelo **Cartógrafo** a partir da obra, da narração e da cena (`src/lib/cartographer.ts`). O modelo devolve um spec declarativo, nunca código; `src/lib/mapSpec.ts` valida e limita tudo (quantidades, faixas, cores) e o mapa fica na tabela `maps`, ligado ao lugar do mapa do mundo. O Mestre usa a ferramenta `local_map` (gerar, editar, remover) quando o jogador chega a um lugar relevante sem mapa ou a história muda o lugar; os pontos de interesse do mapa viram as zonas do `set_stage`, e os peões aparecem nelas. Na aba **Mapa**: **Local** traz em destaque o mapa da cena atual (girar, zoom, pontos clicáveis, tela cheia), com os botões Gerar, Editar, Regerar e Remover e a galeria dos outros lugares; **Mundo** é o diorama. Como o Opus custa, a iniciativa do Mestre tem um interruptor nas Configurações ("O Mestre gera mapas 3D sozinho"); os botões funcionam sempre. Verificação sem IA: `npx tsx scripts/cartographer-check.ts`.
+
+### Biblioteca, retratos e tarefas em segundo plano
+
+- **Biblioteca** (tabela `library`, `src/lib/library.ts`, aba Biblioteca): técnicas e itens do mundo da campanha. O `add_ability` do Mestre recebe só nome e brief: vem da biblioteca ou o **Criador de habilidades** cria na hora (e guarda); `add_item` completa a descrição pela biblioteca; `search_library` consulta antes de inventar. Na aba (ou pedindo ao Mestre fora do jogo, `generate_library`) o jogador manda gerar N técnicas ou itens com um foco, em lotes que recebem os nomes já existentes para não repetir. Verificação: `npx tsx scripts/library-check.ts`.
+- **Retratos** (tabela `portraits`, `src/lib/portrait.ts`, componente `Portrait`): um por personagem, gerado sozinho para o protagonista ao criar a campanha e para cada NPC depois do perfil; personagens antigos ganham com o botão Gerar retrato. Com a geração de imagens ligada, pinta o Ilustrador; desligada, o **Pixel artista** devolve uma grade de pixels com paleta que vira SVG. Verificação: `npx tsx scripts/portrait-check.ts`.
+- **Tarefas em segundo plano** (tabela `jobs`, `src/lib/jobs.ts`): perfis de NPC, retratos, lotes da biblioteca e mapas rodam fora do turno. O cabeçalho do jogo mostra o que está rodando (com progresso) e, quando termina, a tela recarrega e avisa. Duas tarefas iguais não rodam juntas; uma parada há 15 min sem sinal (servidor reiniciado) vira erro. Verificação: `npx tsx scripts/jobs-check.ts`.
 
 ### Estilos de campanha
 
@@ -189,6 +203,11 @@ src/lib/
   tts.ts                   # voz dos NPCs (TTS do OpenRouter) + cache de áudio
   npc.ts                   # conversas particulares com NPCs
   characters.ts            # Criador de personagens: perfil e ficha do NPC em segundo plano, merge sem atropelar o Mestre
+  library.ts               # biblioteca de técnicas e itens, Criador de habilidades e de itens, lotes
+  portrait.ts              # retratos: Pixel artista (grade → SVG) ou Ilustrador
+  cartographer.ts          # Cartógrafo: mapas 3D por lugar (pedido, entrada, gravação)
+  mapSpec.ts               # spec declarativo do mapa 3D: validação e limites
+  jobs.ts                  # tarefas em segundo plano acompanhadas pela tela
   retrieval.ts             # busca vetorial com fallback FTS
   books.ts                 # ingestão/paginação/chunking de livros
   ruleset.ts               # mecânica agnóstica + normalização

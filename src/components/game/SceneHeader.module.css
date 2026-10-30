@@ -86,10 +86,11 @@
   .actionLabel { display: none; }
   .action { width: 36px; padding: 0; justify-content: center; }
   .action:has(.hint) { width: auto; padding: 0 8px; }
-  .jobText { display: none; }
-  .jobs { padding: 0 8px; }
+  .jobs { max-width: 170px; }
 }
 @container main (max-width: 600px) {
+  .jobText { display: none; }
+  .jobs { padding: 0 8px; }
   .head { gap: var(--s-3); padding: 8px 10px 8px 14px; min-height: 56px; }
   .title { font-size: calc(16px * var(--display-scale)); }
   .loc { font-size: 12px; }
