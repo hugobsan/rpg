@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { runTurn } from "@/lib/engine";
+import { restoreSnapshot } from "@/lib/turnSnapshot";
 import { TurnEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const { input } = (await req.json()) as { input: string };
+  const { input, regenerate, feedback } = (await req.json()) as {
+    input?: string;
+    regenerate?: boolean; // gerar de novo a resposta do último turno
+    feedback?: string;
+  };
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -24,7 +29,13 @@ export async function POST(
         }
       };
       try {
-        await runTurn(id, String(input || "").trim() || "(o jogador hesita)", emit);
+        if (regenerate) {
+          // volta ao estado antes do último turno e roda a mesma ação de novo
+          const lastInput = await restoreSnapshot(id);
+          await runTurn(id, lastInput, emit, { feedback: String(feedback || "").slice(0, 1000) });
+        } else {
+          await runTurn(id, String(input || "").trim() || "(o jogador hesita)", emit);
+        }
       } catch (e) {
         emit({ type: "error", message: e instanceof Error ? e.message : String(e) });
         emit({ type: "done" });

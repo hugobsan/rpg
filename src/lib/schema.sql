@@ -146,3 +146,11 @@ CREATE TABLE IF NOT EXISTS scene_images (
   data_url TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- estado antes do último turno, para "gerar novamente" a resposta do Mestre
+CREATE TABLE IF NOT EXISTS turn_snapshots (
+  campaign_id UUID PRIMARY KEY REFERENCES campaigns(id) ON DELETE CASCADE,
+  player_input TEXT NOT NULL,
+  data JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

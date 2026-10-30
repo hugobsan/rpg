@@ -1,0 +1,89 @@
+import { db, q } from "./db";
+
+/**
+ * Foto do estado da campanha antes do último turno, para "gerar novamente" a
+ * resposta do Mestre sem duplicar o que as ferramentas mudaram (dano, XP, itens,
+ * NPCs criados, cena, memórias). Só o último turno pode ser refeito.
+ *
+ * ponytail: volta o estado inteiro da campanha; uma conversa particular com NPC
+ * feita depois do turno também é desfeita (memórias novas e mudanças nas fichas).
+ */
+interface Snapshot {
+  characters: Record<string, unknown>[];
+  scenes: Record<string, unknown>[];
+  campaign: { script: unknown; state: unknown };
+  maxMessageId: number;
+  maxMemoryId: number;
+  openMessageIds: number[]; // mensagens não compactadas (a compactação pós-turno as marca)
+}
+
+export async function takeSnapshot(campaignId: string, playerInput: string): Promise<void> {
+  const [characters, scenes, [campaign], [ids], open] = await Promise.all([
+    q(`SELECT * FROM characters WHERE campaign_id = $1`, [campaignId]),
+    q(`SELECT * FROM scenes WHERE campaign_id = $1`, [campaignId]),
+    q<{ script: unknown; state: unknown }>(`SELECT script, state FROM campaigns WHERE id = $1`, [campaignId]),
+    q<{ msg: string | null; mem: string | null }>(
+      `SELECT (SELECT MAX(id) FROM messages WHERE campaign_id = $1) AS msg,
+              (SELECT MAX(id) FROM memories WHERE campaign_id = $1) AS mem`,
+      [campaignId]
+    ),
+    q<{ id: string }>(`SELECT id FROM messages WHERE campaign_id = $1 AND NOT compacted`, [campaignId]),
+  ]);
+  const snap: Snapshot = {
+    characters,
+    scenes,
+    campaign,
+    maxMessageId: Number(ids.msg ?? 0),
+    maxMemoryId: Number(ids.mem ?? 0),
+    openMessageIds: open.map((m) => Number(m.id)),
+  };
+  await q(
+    `INSERT INTO turn_snapshots (campaign_id, player_input, data) VALUES ($1, $2, $3)
+     ON CONFLICT (campaign_id) DO UPDATE SET player_input = EXCLUDED.player_input, data = EXCLUDED.data, created_at = now()`,
+    [campaignId, playerInput, JSON.stringify(snap)]
+  );
+}
+
+/** Volta a campanha ao estado anterior ao último turno e devolve a ação do jogador daquele turno. */
+export async function restoreSnapshot(campaignId: string): Promise<string> {
+  const [row] = await q<{ player_input: string; data: Snapshot }>(
+    `SELECT player_input, data FROM turn_snapshots WHERE campaign_id = $1`,
+    [campaignId]
+  );
+  if (!row) throw new Error("Não há turno para gerar novamente.");
+  const s = row.data;
+  const client = await (await db()).connect();
+  try {
+    await client.query("BEGIN");
+    // linhas criadas no turno somem; as que já existiam voltam ao valor da foto
+    for (const [table, rows] of [["characters", s.characters], ["scenes", s.scenes]] as const) {
+      await client.query(
+        `DELETE FROM ${table} WHERE campaign_id = $1 AND NOT (id = ANY($2::uuid[]))`,
+        [campaignId, rows.map((r) => r.id)]
+      );
+      for (const r of rows) {
+        const cols = Object.keys(r).filter((c) => c !== "id").map((c) => `"${c}"`);
+        await client.query(
+          `UPDATE ${table} SET (${cols.join(",")}) = (SELECT ${cols.join(",")} FROM jsonb_populate_record(NULL::${table}, $1))
+           WHERE id = $2`,
+          [JSON.stringify(r), r.id]
+        );
+      }
+    }
+    await client.query(`UPDATE campaigns SET script = $1, state = $2 WHERE id = $3`, [
+      JSON.stringify(s.campaign.script),
+      JSON.stringify(s.campaign.state),
+      campaignId,
+    ]);
+    await client.query(`DELETE FROM messages WHERE campaign_id = $1 AND id > $2`, [campaignId, s.maxMessageId]);
+    await client.query(`DELETE FROM memories WHERE campaign_id = $1 AND id > $2`, [campaignId, s.maxMemoryId]);
+    await client.query(`UPDATE messages SET compacted = FALSE WHERE id = ANY($1::bigint[])`, [s.openMessageIds]);
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+  return row.player_input;
+}

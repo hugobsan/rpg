@@ -55,6 +55,9 @@ interface StateShape {
   lastImage: { data_url: string } | null;
 }
 
+const toFeed = (messages: StateShape["messages"]): FeedItem[] =>
+  messages.map((m) => ({ key: `m${m.id}`, kind: m.role === "player" ? "player" : "gm", content: m.content }));
+
 export default function GameClient({ campaignId }: { campaignId: string }) {
   const [state, setState] = useState<StateShape | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
@@ -90,12 +93,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   useEffect(() => {
     reloadState().then((data) => {
       if (!data) return;
-      const items: FeedItem[] = data.messages.map((m) => ({
-        key: `m${m.id}`,
-        kind: m.role === "player" ? "player" : "gm",
-        content: m.content,
-      }));
-      setFeed(items);
+      setFeed(toFeed(data.messages));
       const last = data.messages[data.messages.length - 1];
       if (last?.meta?.choices?.length) setChoices(last.meta.choices);
     });
@@ -107,20 +105,31 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
 
   // ---------- turno ----------
 
-  const sendTurn = async (text: string) => {
-    if (busy || !text.trim()) return;
+  // regen: gera de novo a resposta do último turno (o servidor volta o estado de antes dele)
+  const sendTurn = async (text: string, regen?: { feedback: string }) => {
+    if (busy || (!regen && !text.trim())) return;
+    setRegenOpen(false);
     setBusy(true);
     setError("");
     setChoices([]);
-    setFeed((f) => [...f, { key: nextKey(), kind: "player", content: text }]);
-    setInput("");
+    if (regen) {
+      // tira do chat o que veio depois da última ação do jogador
+      setFeed((f) => {
+        const lastPlayer = f.map((i) => i.kind).lastIndexOf("player");
+        return lastPlayer >= 0 ? f.slice(0, lastPlayer + 1) : f;
+      });
+    } else {
+      setFeed((f) => [...f, { key: nextKey(), kind: "player", content: text }]);
+      setInput("");
+    }
     setStatusText("O Mestre está pensando...");
     let stateDirty = false;
+    let failed = false;
     try {
       const res = await fetch(`/api/campaigns/${campaignId}/turn`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: text }),
+        body: JSON.stringify(regen ? { regenerate: true, feedback: regen.feedback } : { input: text }),
       });
       if (!res.ok || !res.body) throw new Error(`Erro ${res.status}`);
       const reader = res.body.getReader();
@@ -166,6 +175,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
               stateDirty = true;
               break;
             case "error":
+              failed = true;
               setError(ev.message);
               break;
             case "done":
@@ -174,24 +184,22 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
         }
       }
     } catch (e) {
+      failed = true;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
       setStatusText("");
-      if (stateDirty || true) reloadState();
+      const data = await reloadState();
+      // se o "gerar novamente" falhou, o chat volta a refletir o que está salvo
+      if (regen && failed && data) setFeed(toFeed(data.messages));
     }
   };
 
-  const generateImage = async (regen?: { feedback: string }) => {
-    setRegenOpen(false);
+  const generateImage = async () => {
     setImageBusy(true);
     setError("");
     try {
-      const res = await fetch(`/api/campaigns/${campaignId}/image`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(regen ? { regenerate: true, feedback: regen.feedback } : {}),
-      });
+      const res = await fetch(`/api/campaigns/${campaignId}/image`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Falha ao gerar imagem");
       setSceneImage(data.dataUrl);
@@ -259,6 +267,12 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
               </div>
             )}
             {error && <div className="error-box">{error}</div>}
+            {!busy && feed.some((i) => i.kind === "player") && (
+              <button className="btn ghost small" style={{ alignSelf: "flex-start" }}
+                onClick={() => { setRegenReason(""); setRegenOpen(true); }}>
+                ↻ Gerar novamente
+              </button>
+            )}
             {!busy && choices.length > 0 && (
               <div className="choices">
                 {choices.map((c, i) => (
@@ -338,19 +352,23 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
       {regenOpen && (
         <div className="modal-backdrop" onClick={() => setRegenOpen(false)}>
           <div className="modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head"><h3 style={{ margin: 0 }}>Gerar a imagem novamente</h3></div>
+            <div className="modal-head"><h3 style={{ margin: 0 }}>Gerar a resposta do Mestre novamente</h3></div>
             <div className="modal-body">
+              <p className="muted" style={{ marginTop: 0 }}>
+                O turno é desfeito (dano, XP, itens, NPCs e memórias voltam ao que eram antes da sua última ação)
+                e o Mestre responde de novo à mesma ação.
+              </p>
               <label className="field" style={{ marginBottom: 0 }}>
-                <span>O que você quer mudar? (opcional)</span>
+                <span>O que você quer diferente? (opcional)</span>
                 <textarea autoFocus value={regenReason} onChange={(e) => setRegenReason(e.target.value)}
-                  placeholder="Ex: o Iruka está sem a cicatriz no nariz; quero a cena de dia, vista de cima..." />
+                  placeholder="Ex: o Iruka não falaria assim; quero menos descrição e mais ação; respeite que já anoiteceu..." />
               </label>
             </div>
             <div className="modal-foot">
               <button className="btn ghost small" onClick={() => setRegenOpen(false)}>Cancelar</button>
-              <button className="btn ghost small" onClick={() => generateImage({ feedback: "" })}>Gerar sem motivo</button>
+              <button className="btn ghost small" onClick={() => sendTurn("", { feedback: "" })}>Gerar sem motivo</button>
               <button className="btn primary small" disabled={!regenReason.trim()}
-                onClick={() => generateImage({ feedback: regenReason })}>Gerar com esse ajuste</button>
+                onClick={() => sendTurn("", { feedback: regenReason })}>Gerar com esse ajuste</button>
             </div>
           </div>
         </div>

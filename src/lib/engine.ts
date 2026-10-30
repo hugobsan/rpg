@@ -4,6 +4,7 @@ import { chat, ChatMessage, estimateTokens } from "./openrouter";
 import { currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
 import { addMemory, MemoryHit, recentMemories, searchMemories } from "./retrieval";
 import { decideTurn, scoreImportance } from "./decisions";
+import { takeSnapshot } from "./turnSnapshot";
 import { executeGmTool, GM_TOOLS, ToolContext } from "./tools";
 import {
   Campaign,
@@ -230,8 +231,12 @@ function parseChoices(text: string): { clean: string; choices: string[] } {
 export async function runTurn(
   campaignId: string,
   playerInput: string,
-  emit: (e: TurnEvent) => void
+  emit: (e: TurnEvent) => void,
+  // "gerar novamente": o estado já foi restaurado; feedback = motivo opcional do jogador
+  regen?: { feedback: string }
 ): Promise<void> {
+  // foto do estado antes do turno, para poder gerar a resposta de novo depois
+  await takeSnapshot(campaignId, playerInput);
   const campaign = await getCampaign(campaignId);
   let scene = await getCurrentScene(campaignId);
   const chars = await getCharacters(campaignId);
@@ -285,6 +290,15 @@ export async function runTurn(
     history[history.length - 1].content !== playerInput
   )
     messages.push({ role: "user", content: playerInput });
+  if (regen) {
+    // nota fora do jogo só no prompt; a mensagem salva continua sendo a ação original
+    const last = messages[messages.length - 1];
+    last.content = `${last.content}\n\n(Nota do jogador ao Mestre, fora do jogo: ele pediu para você escrever de novo a resposta a esta ação. ${
+      regen.feedback.trim()
+        ? `Motivo, que tem prioridade: ${regen.feedback.trim()}`
+        : "Sem motivo específico: escreva uma versão diferente, com outro rumo ou outra abordagem."
+    })`;
+  }
 
   const toolCtx: ToolContext = { campaign, scene, emit };
   const maxRounds = params.maxToolRounds ?? 8;
