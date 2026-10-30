@@ -6,7 +6,7 @@ import { playLine } from "../NpcModal";
 import { initials } from "../NpcList";
 import Loader from "../ui/Loader";
 import Icon from "./Icon";
-import { chipIcon, chipText, excerpt, md, narrationBlocks, PHASES, speakerColor, type Phase } from "./feedModel";
+import { chipIcon, chipText, draftSafe, excerpt, md, narrationBlocks, PHASES, speakerColor, type Phase } from "./feedModel";
 import s from "./Feed.module.css";
 
 /** Quem pode aparecer nas falas: NPCs por nome (minúsculo) e o nome do jogador. */
@@ -87,7 +87,7 @@ export function Draft({ text, cast, ghost }: { text: string; cast: Cast; ghost?:
   if (!ghost) lastDraft = text;
   return (
     <div className={`msg-gm ${s.narr} ${ghost ? s.ghost : ""}`} aria-busy="true">
-      <Narration text={text} cast={cast} cursor={!ghost} />
+      <Narration text={draftSafe(text)} cast={cast} cursor={!ghost} />
     </div>
   );
 }

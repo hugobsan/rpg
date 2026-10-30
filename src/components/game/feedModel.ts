@@ -124,3 +124,10 @@ export function excerpt(text: string, max = 240): string {
   const tail = plain.slice(-max - 1); // um caractere a mais: se for espaço, a primeira palavra está inteira
   return `…${tail.slice(tail.indexOf(" ") + 1)}`;
 }
+
+/** Rascunho do streaming sem negrito aberto no fim (o "**Nome" aparece quando fecha, sem asteriscos soltos). */
+export function draftSafe(text: string): string {
+  const cut = text.lastIndexOf("\n") + 1;
+  const last = text.slice(cut);
+  return (last.match(/\*\*/g)?.length ?? 0) % 2 ? text.slice(0, cut) + last.slice(0, last.lastIndexOf("**")) : text;
+}

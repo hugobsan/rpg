@@ -2,7 +2,7 @@
 // Blocos da narração, grupos do feed, fases do turno e os avisos pela diferença de estado.
 import assert from "node:assert/strict";
 import ruleset from "../naruto-ruleset.json";
-import { chipIcon, chipText, excerpt, groupFeed, narrationBlocks, phaseOf } from "../src/components/game/feedModel";
+import { chipIcon, chipText, draftSafe, excerpt, groupFeed, narrationBlocks, phaseOf } from "../src/components/game/feedModel";
 import { stateToasts } from "../src/components/game/stateToasts";
 import type { CampaignView } from "../src/lib/campaignView";
 import type { Character, Ruleset, Sheet } from "../src/lib/types";
@@ -17,6 +17,9 @@ assert.deepEqual(blocks[3], { kind: "list", items: ["A Academia", "O Monumento"]
 assert.equal(blocks[4].kind === "say" && blocks[4].name, "Iruka");
 assert.equal(blocks[5].kind === "p" && blocks[5].text, "*Ele suspira.*", "itálico no começo da linha não vira lista");
 assert.equal(excerpt("**Naruto:** curto"), "Naruto: curto");
+assert.equal(draftSafe("Ele ri.\n\n**Naru"), "Ele ri.\n\n");
+assert.equal(draftSafe("**Naruto:** \"Ei"), "**Naruto:** \"Ei", "negrito fechado fica");
+assert.equal(draftSafe("Ele viu **Kaka"), "Ele viu ");
 assert.equal(excerpt("um dois três quatro cinco", 12), "…quatro cinco");
 
 // ---------- feed ----------
