@@ -10,6 +10,7 @@ import type {
 import NpcModal, { playLine } from "./NpcModal";
 import ImageViewer from "./ImageViewer";
 import Gallery from "./Gallery";
+import InventoryView from "./InventoryView";
 
 // ---------- helpers ----------
 
@@ -66,7 +67,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   const [busy, setBusy] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<"sheet" | "npcs" | "memories" | "books" | "script" | "gallery">("sheet");
+  const [tab, setTab] = useState<"sheet" | "inventory" | "npcs" | "memories" | "books" | "script" | "gallery">("sheet");
   const [imageFull, setImageFull] = useState(false);
   const [imageBusy, setImageBusy] = useState(false);
   const [sceneImage, setSceneImage] = useState<string | null>(null);
@@ -332,6 +333,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
           {(
             [
               ["sheet", "Ficha"],
+              ["inventory", "Inventário"],
               ["npcs", `NPCs (${npcs.filter((n) => n.active).length})`],
               ["memories", "Marcos"],
               ["books", "Livros"],
@@ -351,6 +353,9 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
             </div>
           )}
           {tab === "sheet" && player && <SheetView char={player} campaign={campaign} />}
+          {tab === "inventory" && player && (
+            <InventoryView char={player} campaignId={campaignId} disabled={busy} onChange={reloadState} />
+          )}
           {tab === "npcs" && (
             <NpcList npcs={npcs} onOpen={setOpenNpc} />
           )}
@@ -487,17 +492,6 @@ export function SheetView({ char, campaign }: { char: Character; campaign: Campa
           })}
         </>
       )}
-      {s.inventory.length > 0 && (
-        <>
-          <h4 style={{ margin: "14px 0 8px" }}>Inventário</h4>
-          {s.inventory.map((i) => (
-            <div key={i.name} className="muted" style={{ marginBottom: 3 }}>
-              {i.qty}x <b style={{ color: "var(--text)" }}>{i.name}</b>
-              {i.description ? ` — ${i.description}` : ""}
-            </div>
-          ))}
-        </>
-      )}
     </div>
   );
 }
@@ -631,11 +625,31 @@ function ScriptView({
     onChange();
   };
   const STATUS: Record<string, string> = { active: "▶ ativo", done: "✓ concluído", pending: "· pendente" };
+  const [show, setShow] = useState(false);
   return (
     <div>
-      {!script && <p className="muted">Sem roteiro. O Roteirista pode montar arcos, eventos canônicos e ganchos baseados no seu personagem.</p>}
-      {script && (
+      <div className="ability-item" style={{ marginBottom: 12 }}>
+        <div className="name">Para que serve o roteiro</div>
+        <div className="sub" style={{ lineHeight: 1.5 }}>
+          É o planejamento interno do Mestre, feito pelo agente Roteirista a partir do seu personagem e do ponto
+          de partida da campanha. Ele divide a história em <b>arcos</b> e, em cenários baseados numa obra, ancora
+          cada arco nos <b>eventos canônicos</b> daquele momento da linha do tempo (⚓), além de plantar ganchos
+          ligados ao seu passado e aos seus objetivos.
+          <br /><br />
+          Durante o jogo o Mestre consulta o roteiro para saber em que ponto da história está e anota o progresso
+          (✎), marcando arcos como ativos ou concluídos. Ele é um guia, não um trilho: suas escolhas podem desviar
+          a história, e o Mestre adapta. Regenerar cria um plano novo e descarta as anotações de progresso.
+        </div>
+      </div>
+      {!script && <p className="muted">Esta campanha ainda não tem roteiro. Gere um para o Mestre ter um plano de arcos.</p>}
+      {script && !show && (
+        <button className="btn ghost small" onClick={() => setShow(true)}>
+          👁 Mostrar o roteiro (contém spoilers do que o Mestre planejou)
+        </button>
+      )}
+      {script && show && (
         <>
+          <button className="btn ghost small" onClick={() => setShow(false)} style={{ marginBottom: 8 }}>Esconder roteiro</button>
           <p style={{ fontSize: 13, fontStyle: "italic" }}>{script.premise}</p>
           {script.arcs.map((a, i) => (
             <div key={i} className="ability-item" style={{ opacity: a.status === "done" ? 0.55 : 1 }}>
