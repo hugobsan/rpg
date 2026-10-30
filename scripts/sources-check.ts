@@ -100,7 +100,7 @@ async function main() {
   assert.equal(maskKey("curta"), "***");
   assert.equal(maskKey(POD.apiKey), "pod-se...0001");
   const view = sourceView(POD);
-  assert.deepEqual(Object.keys(view).sort(), ["apiKeyMasked", "id", "kind", "name", "url"]);
+  assert.deepEqual(Object.keys(view).sort(), ["apiKeyMasked", "auth", "id", "kind", "name", "url"]);
   assert.ok(!JSON.stringify(view).includes(POD.apiKey));
 
   // 4. cada caminho resolve pela fonte do agente: pod

@@ -27,7 +27,10 @@ export async function GET() {
   return NextResponse.json((await getSources()).map(sourceView));
 }
 
-/** POST { name, url, apiKey, kind? } → cria; o id sai do nome e não muda depois (nem o tipo) */
+// Login com ChatGPT: só na fonte do tipo OpenAI; a chave fica de fora (o token vem de src/lib/chatgptAuth.ts)
+const authOf = (kind: string | undefined, auth: unknown) => (kind === "openai" && auth === "chatgpt" ? ("chatgpt" as const) : undefined);
+
+/** POST { name, url, apiKey, kind?, auth? } → cria; o id sai do nome e não muda depois (nem o tipo) */
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const c = clean(body);
@@ -36,13 +39,14 @@ export async function POST(req: NextRequest) {
   const base = c.name.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "fonte";
   let id = base;
   for (let i = 2; id === OPENROUTER || list.some((s) => s.id === id); i++) id = `${base}-${i}`;
-  const src = { id, ...c, apiKey: String(body.apiKey ?? "").trim(), kind: presetOf(body.kind)?.kind };
-  if (src.kind && !src.apiKey) return bad(`Informe a API key da ${c.name}.`);
+  const kind = presetOf(body.kind)?.kind;
+  const src = { id, ...c, apiKey: String(body.apiKey ?? "").trim(), kind, auth: authOf(kind, body.auth) };
+  if (src.kind && !src.apiKey && !src.auth) return bad(`Informe a API key da ${c.name}.`);
   await setSetting("sources", [...list, src]);
   return NextResponse.json(sourceView(src));
 }
 
-/** PUT { id, name, url, apiKey? } → edita; chave vazia mantém a atual */
+/** PUT { id, name, url, apiKey?, auth? } → edita; chave vazia mantém a atual */
 export async function PUT(req: NextRequest) {
   const body = await req.json();
   const c = clean(body);
@@ -52,6 +56,8 @@ export async function PUT(req: NextRequest) {
   if (!src) return bad("Fonte não encontrada.", 404);
   Object.assign(src, c);
   if (String(body.apiKey ?? "").trim()) src.apiKey = String(body.apiKey).trim();
+  src.auth = authOf(src.kind, body.auth);
+  if (src.kind && !src.apiKey && !src.auth) return bad(`Informe a API key da ${c.name}.`);
   await setSetting("sources", list);
   return NextResponse.json(sourceView(src));
 }

@@ -1,6 +1,8 @@
 import { getSetting, q } from "./db";
 import type { SourceView } from "./types";
 import { presetOf } from "./sourcePresets";
+import { chatgptAccessToken } from "./chatgptAuth";
+import { readResponses, responsesHttpError, responsesRequest } from "./responsesApi";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -67,7 +69,11 @@ export async function getOpenRouterKey(): Promise<string> {
  * Fonte OpenAI-compatível: cada chamada monta em {url} o mesmo caminho que usa no OpenRouter
  * (/chat/completions, /models, /embeddings, /audio/speech, ../alpha/decisions). "openrouter" é a embutida.
  */
-export interface Source { id: string; name: string; url: string; apiKey: string; kind?: string } // kind: tipo conhecido (sourcePresets)
+export interface Source {
+  id: string; name: string; url: string; apiKey: string;
+  kind?: string; // tipo conhecido (sourcePresets)
+  auth?: "chatgpt"; // fonte OpenAI no Login com ChatGPT: apiKey vira o access token na hora (getSource) e o chat vai pela Responses API
+}
 export const OPENROUTER = "openrouter";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1";
 
@@ -85,7 +91,10 @@ export function pickSource(id: string, sources: Source[], openrouterKey: string)
 
 /** A fonte pelo id; a embutida usa a chave do OpenRouter das Configurações (obrigatória). */
 export async function getSource(id: string): Promise<Source> {
-  if (id !== OPENROUTER) return pickSource(id, await getSources(), "");
+  if (id !== OPENROUTER) {
+    const s = pickSource(id, await getSources(), "");
+    return s.auth === "chatgpt" ? { ...s, apiKey: await chatgptAccessToken() } : s;
+  }
   const key = await getOpenRouterKey();
   if (!key) throw new Error("Chave do OpenRouter não configurada. Vá em Configurações e informe sua API key.");
   return pickSource(id, [], key);
@@ -107,7 +116,7 @@ export function maskKey(key: string): string {
   return key.length > 8 ? `${key.slice(0, 6)}...${key.slice(-4)}` : "***";
 }
 
-export const sourceView = ({ id, name, url, apiKey, kind }: Source): SourceView => ({ id, name, url, kind, apiKeyMasked: maskKey(apiKey) });
+export const sourceView = ({ id, name, url, apiKey, kind, auth }: Source): SourceView => ({ id, name, url, kind, auth, apiKeyMasked: maskKey(apiKey) });
 
 /** URL, cabeçalhos e corpo da chamada. Fora do OpenRouter vai só o formato OpenAI: sem :online, reasoning e cabeçalhos de app. */
 export function chatRequest(opts: ChatOptions, src: Source) {
@@ -175,14 +184,16 @@ export async function logApiCall(l: ApiLog): Promise<void> {
  */
 export async function chat(opts: ChatOptions): Promise<ChatResult> {
   const src = await agentSource(opts.agentId);
-  const { url, headers, body } = chatRequest(opts, src);
+  const resp = src.auth === "chatgpt"; // Login com ChatGPT: Responses API, sempre em streaming
+  const { url, headers, body } = resp ? responsesRequest(opts, src) : chatRequest(opts, src);
   const model = body.model as string;
   const started = Date.now();
   let responseJson: Record<string, unknown> | null = null;
   let error: string | null = null;
   try {
     const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-    if (opts.onDelta && res.ok && res.body) responseJson = await readStream(res.body, opts.onDelta);
+    if ((opts.onDelta || resp) && res.ok && res.body)
+      responseJson = await (resp ? readResponses : readStream)(res.body, opts.onDelta ?? (() => {}));
     else {
       const text = await res.text();
       try {
@@ -192,7 +203,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       }
       if (!res.ok)
         throw new Error(
-          `${src.name} ${res.status}: ${text.slice(0, 500)}`
+          `${src.name} ${res.status}: ${resp ? responsesHttpError(text) : text.slice(0, 500)}`
         );
     }
     const errObj = (responseJson as { error?: { message?: string } }).error;
@@ -399,7 +410,10 @@ export async function listSourceModels(id: string): Promise<{ id: string; name: 
     throw new Error(`${src.name} não respondeu em ${src.url}/models (${e.cause?.code || e.message})`);
   });
   if (!res.ok) throw new Error(`${src.name} GET /models: ${res.status}`);
-  const data = (await res.json()) as { data?: { id: string; name?: string }[] };
+  const data = (await res.json()) as { data?: { id: string; name?: string }[]; models?: { slug: string; display_name?: string; visibility?: string }[] };
+  // Login com ChatGPT: catálogo da conta em `models`, na ordem do servidor; só os de visibility "list"
+  if (Array.isArray(data.models))
+    return data.models.filter((m) => m.visibility === "list").map((m) => ({ id: m.slug, name: m.display_name || m.slug }));
   if (!Array.isArray(data.data)) throw new Error(`${src.name} GET /models: resposta fora do formato OpenAI`);
   return data.data.map((m) => ({ id: m.id, name: m.name || m.id })).sort((a, b) => a.id.localeCompare(b.id));
 }

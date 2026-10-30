@@ -405,7 +405,16 @@ export interface SourceView {
   name: string;
   url: string;
   kind?: string; // tipo conhecido (src/lib/sourcePresets.ts); sem = personalizada
+  auth?: "chatgpt"; // fonte OpenAI no Login com ChatGPT (sem = API key)
   apiKeyMasked: string;
+}
+
+/** Login com ChatGPT para a tela (src/lib/chatgptAuth.ts): nunca tem token. */
+export interface ChatgptStatus {
+  connected: boolean;
+  email: string | null;
+  expiresAt: string | null; // access token (1 h, renovado sozinho)
+  sessionUntil: string | null; // refresh token: 30 dias desde a última renovação
 }
 
 // ---------- Eventos SSE do turno ----------
