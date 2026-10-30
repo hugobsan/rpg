@@ -404,6 +404,7 @@ export interface SourceView {
   id: string;
   name: string;
   url: string;
+  kind?: string; // tipo conhecido (src/lib/sourcePresets.ts); sem = personalizada
   apiKeyMasked: string;
 }
 

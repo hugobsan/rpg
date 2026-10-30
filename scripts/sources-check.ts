@@ -7,6 +7,7 @@ import { chat, chatRequest, maskKey, pickSource, sourceView, type ChatOptions, t
 import { decide, type DecisionRequest } from "../src/lib/decisions";
 import { synthesize } from "../src/lib/tts";
 import { embed } from "../src/lib/embeddings";
+import { SOURCE_PRESETS } from "../src/lib/sourcePresets";
 
 const OR_URL = "https://openrouter.ai/api/v1";
 const POD: Source = { id: "pod", name: "Pod do Jev", url: "http://pod:8000/v1", apiKey: "pod-secret-key-0001" };
@@ -77,13 +78,29 @@ async function main() {
   assert.ok(!("X-Title" in b.headers) && !("HTTP-Referer" in b.headers));
   assert.deepEqual(Object.keys(b.body).sort(), ["max_tokens", "messages", "modalities", "model", "stream", "stream_options", "temperature", "tools"]);
   assert.ok(!("Authorization" in chatRequest(base, { ...POD, apiKey: "" }).headers), "fonte sem chave (Ollama) vai sem Authorization");
+  assert.equal(chatRequest({ ...base, temperature: 0.3 }, POD).body.temperature, 0.3);
+  // tipo Anthropic: Claude 4.7+ recusa temperature < 1, então ela não vai
+  const anthropic = { id: "anthropic", name: "Anthropic", url: "https://api.anthropic.com/v1", apiKey: "k", kind: "anthropic" };
+  const c = chatRequest({ ...base, temperature: 0.3 }, anthropic);
+  assert.equal(c.url, "https://api.anthropic.com/v1/chat/completions");
+  assert.ok(!("temperature" in c.body) && !("top_p" in c.body));
+  assert.equal(sourceView(anthropic).kind, "anthropic");
+  // Cartógrafo e Pixel artista (raciocínio + ferramentas) na Anthropic: nada que dê 400 (temperature, top_p, reasoning)
+  const cartographer: ChatOptions = { ...full, webSearch: false, modalities: undefined, onDelta: undefined, temperature: 0.5, model: "claude-opus-5-5", agentId: "cartographer" };
+  assert.deepEqual(Object.keys(chatRequest(cartographer, anthropic).body).sort(), ["max_tokens", "messages", "model", "tools"]);
+  // na OpenAI o raciocínio vira reasoning_effort
+  const oa = chatRequest(cartographer, { ...anthropic, id: "openai", kind: "openai", url: "https://api.openai.com/v1" }).body;
+  assert.equal(oa.reasoning_effort, "low");
+  assert.ok(!("reasoning" in oa));
+  assert.ok(!("reasoning_effort" in chatRequest(cartographer, POD).body), "personalizada não recebe reasoning_effort");
+  for (const p of SOURCE_PRESETS) assert.ok(/^https:\/\/[^/]+\/.*[^/]$/.test(p.url), `URL base de ${p.name} sem barra no fim`);
 
   // 3. chave mascarada
   assert.equal(maskKey(""), "");
   assert.equal(maskKey("curta"), "***");
   assert.equal(maskKey(POD.apiKey), "pod-se...0001");
   const view = sourceView(POD);
-  assert.deepEqual(Object.keys(view).sort(), ["apiKeyMasked", "id", "name", "url"]);
+  assert.deepEqual(Object.keys(view).sort(), ["apiKeyMasked", "id", "kind", "name", "url"]);
   assert.ok(!JSON.stringify(view).includes(POD.apiKey));
 
   // 4. cada caminho resolve pela fonte do agente: pod

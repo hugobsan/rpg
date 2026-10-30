@@ -1,5 +1,6 @@
 import { getSetting, q } from "./db";
 import type { SourceView } from "./types";
+import { presetOf } from "./sourcePresets";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -66,7 +67,7 @@ export async function getOpenRouterKey(): Promise<string> {
  * Fonte OpenAI-compatível: cada chamada monta em {url} o mesmo caminho que usa no OpenRouter
  * (/chat/completions, /models, /embeddings, /audio/speech, ../alpha/decisions). "openrouter" é a embutida.
  */
-export interface Source { id: string; name: string; url: string; apiKey: string }
+export interface Source { id: string; name: string; url: string; apiKey: string; kind?: string } // kind: tipo conhecido (sourcePresets)
 export const OPENROUTER = "openrouter";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1";
 
@@ -106,7 +107,7 @@ export function maskKey(key: string): string {
   return key.length > 8 ? `${key.slice(0, 6)}...${key.slice(-4)}` : "***";
 }
 
-export const sourceView = ({ id, name, url, apiKey }: Source): SourceView => ({ id, name, url, apiKeyMasked: maskKey(apiKey) });
+export const sourceView = ({ id, name, url, apiKey, kind }: Source): SourceView => ({ id, name, url, kind, apiKeyMasked: maskKey(apiKey) });
 
 /** URL, cabeçalhos e corpo da chamada. Fora do OpenRouter vai só o formato OpenAI: sem :online, reasoning e cabeçalhos de app. */
 export function chatRequest(opts: ChatOptions, src: Source) {
@@ -114,13 +115,14 @@ export function chatRequest(opts: ChatOptions, src: Source) {
   const body: Record<string, unknown> = {
     model: or && opts.webSearch ? `${opts.model}:online` : opts.model,
     messages: opts.messages,
-    temperature: opts.temperature ?? 0.8,
     max_tokens: opts.max_tokens ?? 2048,
   };
+  if (!presetOf(src.kind)?.noTemperature) body.temperature = opts.temperature ?? 0.8;
   if (opts.tools?.length) body.tools = opts.tools;
   if (opts.modalities) body.modalities = opts.modalities;
-  // ponytail: reasoning é o parâmetro unificado do OpenRouter; nas outras fontes fica de fora (mapear para reasoning_effort se fizer falta)
+  // reasoning é o parâmetro unificado do OpenRouter; na OpenAI vira reasoning_effort; nas outras fica de fora
   if (or && opts.reasoning) body.reasoning = opts.reasoning;
+  if (presetOf(src.kind)?.reasoningEffort && opts.reasoning?.effort) body.reasoning_effort = opts.reasoning.effort;
   if (opts.onDelta) {
     body.stream = true;
     body.stream_options = { include_usage: true }; // usage (tokens e, no OpenRouter, custo) chega no último pedaço
@@ -393,6 +395,8 @@ export async function listSourceModels(id: string): Promise<{ id: string; name: 
   const res = await fetch(`${src.url}/models`, {
     headers: authHeader(src),
     signal: AbortSignal.timeout(15_000),
+  }).catch((e) => {
+    throw new Error(`${src.name} não respondeu em ${src.url}/models (${e.cause?.code || e.message})`);
   });
   if (!res.ok) throw new Error(`${src.name} GET /models: ${res.status}`);
   const data = (await res.json()) as { data?: { id: string; name?: string }[] };

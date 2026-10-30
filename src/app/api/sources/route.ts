@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { q, setSetting } from "@/lib/db";
 import { getEmbeddingConfig } from "@/lib/embeddings";
 import { getSources, OPENROUTER, sourceView } from "@/lib/openrouter";
+import { presetOf } from "@/lib/sourcePresets";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export async function GET() {
   return NextResponse.json((await getSources()).map(sourceView));
 }
 
-/** POST { name, url, apiKey } → cria; o id sai do nome e não muda depois */
+/** POST { name, url, apiKey, kind? } → cria; o id sai do nome e não muda depois (nem o tipo) */
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const c = clean(body);
@@ -35,7 +36,8 @@ export async function POST(req: NextRequest) {
   const base = c.name.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "fonte";
   let id = base;
   for (let i = 2; id === OPENROUTER || list.some((s) => s.id === id); i++) id = `${base}-${i}`;
-  const src = { id, ...c, apiKey: String(body.apiKey ?? "").trim() };
+  const src = { id, ...c, apiKey: String(body.apiKey ?? "").trim(), kind: presetOf(body.kind)?.kind };
+  if (src.kind && !src.apiKey) return bad(`Informe a API key da ${c.name}.`);
   await setSetting("sources", [...list, src]);
   return NextResponse.json(sourceView(src));
 }
