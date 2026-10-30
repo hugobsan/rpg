@@ -237,18 +237,16 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
             <input type="text" value={draft.name} maxLength={60} placeholder="Ollama local"
               onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
           </label>
-          {presetOf(draft.kind) ? (
-            <div className="field">
-              <span>URL base</span>
-              <code className={s.fixedUrl} title="Fonte de tipo conhecido: a URL é fixa">{presetOf(draft.kind)!.url}</code>
-            </div>
-          ) : (
-            <label className="field">
-              <span>URL base</span>
+          <label className="field">
+            <span>URL base</span>
+            {/* tipo conhecido: URL fixa (o servidor também ignora outra) */}
+            {presetOf(draft.kind) ? (
+              <input type="url" className={s.fixedUrl} value={presetOf(draft.kind)!.url} readOnly title="Fonte de tipo conhecido: a URL é fixa" />
+            ) : (
               <input type="url" value={draft.url} spellCheck={false} placeholder="http://localhost:11434/v1"
                 onChange={(e) => setDraft({ ...draft, url: e.target.value })} />
-            </label>
-          )}
+            )}
+          </label>
           {!draft.auth && (
             <label className="field">
               <span>API key</span>
