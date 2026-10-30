@@ -180,13 +180,16 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
         tool_calls: m.tool_calls?.map((t) => t.function.name),
       })),
     };
+    // encurta cada string (imagens base64, raciocínio...) em vez de cortar o JSON no meio,
+    // que gerava "Unterminated string in JSON" e derrubava a chamada que já tinha dado certo
     const logResponse = responseJson
       ? JSON.parse(
           JSON.stringify(responseJson, (k, v) =>
-            typeof v === "string" && v.startsWith("data:image")
-              ? "[imagem]"
-              : v
-          ).slice(0, 20000)
+            typeof v !== "string" ? v
+            : v.startsWith("data:image") ? "[imagem]"
+            : v.length > 4000 ? `${v.slice(0, 4000)}… [cortado, ${v.length} caracteres]`
+            : v
+          )
         )
       : null;
     await logApiCall({
