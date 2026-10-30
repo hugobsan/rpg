@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import ImageViewer from "./ImageViewer";
 
 type Img = { id: number; created_at: string; location: string | null; title: string | null };
@@ -51,7 +52,8 @@ export default function Gallery({
         {images.map((i, n) => (
           <div key={i.id} className="gallery-item">
             <button className="gallery-open" onClick={() => setOpen(n)}>
-              <img src={url(i)} alt={where(i)} loading="lazy" />
+              {/* miniatura redimensionada pelo Next (webp, ~15 KB em vez da imagem inteira); a tela cheia usa o original */}
+              <Image src={url(i)} alt={where(i)} width={384} height={240} sizes="(max-width: 600px) 45vw, 260px" style={{ height: "auto" }} />
               <span className="when">{when(i.created_at)}</span>
               <span className="where">{where(i)}</span>
             </button>
