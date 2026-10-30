@@ -11,10 +11,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR">
       <body>
-        <nav className="topnav">
+        <nav className="topnav" style={{ flexWrap: "wrap", rowGap: 6 }}>
           <Link href="/" className="brand">⚔ Chronicle</Link>
           <Link href="/" className="nav">Campanhas</Link>
           <Link href="/agents" className="nav">Agentes</Link>
+          <Link href="/usage" className="nav">Custos e uso</Link>
           <Link href="/settings" className="nav">Configurações</Link>
         </nav>
         {children}

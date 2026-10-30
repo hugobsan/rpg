@@ -22,7 +22,7 @@ O schema do banco é aplicado automaticamente no primeiro acesso — não há pa
 ```
 ┌─────────────────────────── Next.js (app único) ───────────────────────────┐
 │                                                                            │
-│  Telas: Campanhas · Jogo · NPCs · Agentes (+logs) · Configurações          │
+│  Telas: Campanhas · Jogo · NPCs · Agentes · Custos e uso · Configurações   │
 │                                                                            │
 │  ┌──────────── Motor de turno (SSE) ────────────┐                          │
 │  │ 1. monta contexto: ficha + NPCs ativos +     │     ┌────────────────┐   │
@@ -42,7 +42,7 @@ O schema do banco é aplicado automaticamente no primeiro acesso — não há pa
 
 ### Os agentes
 
-Cada agente é um registro editável (modelo + system prompt + parâmetros) na tela **/agents**, com histórico completo de chamadas ao OpenRouter (tokens, duração, request/response) para você avaliar custo e trocar modelos quando quiser.
+Cada agente é um registro editável (modelo + system prompt + parâmetros) na tela **/agents**. O histórico completo de chamadas ao OpenRouter (custo, tokens, duração, request/response) fica em **/usage** (Custos e uso), para você avaliar o gasto e trocar modelos quando quiser.
 
 | Agente | Modelo default | Papel | Por quê |
 |---|---|---|---|
@@ -66,7 +66,7 @@ O Jev (TypeSafe, via [Decisions API do OpenRouter](https://openrouter.ai/docs/ap
 4. **Filtro de memórias**: das candidatas recuperadas no código (top-k + mais importantes), só entram as relevantes para a ação. Importância 5 entra sempre.
 5. **Importância das memórias** novas (compactação e fim de conversa com NPC): uma nota de 1 a 5 por memória, num lote só.
 
-As decisões 1, 2 e 4 vão numa única chamada antes do turno. Se o Jev falhar (sem chave, erro ou timeout de 7 s), tudo segue o comportamento padrão. Cada chamada aparece no histórico do agente **Jev** em /agents. Ao trocar o modelo do Jev, rode `npx tsx scripts/jev-check.ts` de novo: ele imprime as probabilidades dos casos de probe e confere os casos claros contra os limiares.
+As decisões 1, 2 e 4 vão numa única chamada antes do turno. Se o Jev falhar (sem chave, erro ou timeout de 7 s), tudo segue o comportamento padrão. Cada chamada aparece em /usage, filtrando pelo agente **Jev**. Ao trocar o modelo do Jev, rode `npx tsx scripts/jev-check.ts` de novo: ele imprime as probabilidades dos casos de probe e confere os casos claros contra os limiares.
 
 ### Sistema de memória (o antídoto contra perda de contexto)
 
@@ -104,7 +104,7 @@ Clique em 🔊 numa fala de NPC (no chat do Mestre, linhas `**Nome:** "fala"`, o
 - Modelos baratos nas tarefas frequentes (Cronista) e caros só onde importa (Mestre).
 - Budget de tokens do histórico + compactação evitam requisições monstro.
 - Memórias/livros entram por relevância (top-k), nunca inteiros.
-- Tela de agentes mostra tokens de cada chamada — dá para auditar o gasto por agente e trocar o modelo em dois cliques.
+- Tela **Custos e uso** (`/usage`): custo, chamadas, erros, tempo e tokens somados, por agente, por modelo e por dia, com filtros de agente, período, campanha e modelo (na URL) e o histórico paginado com request/response.
 
 ## Estrutura
 
