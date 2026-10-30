@@ -93,3 +93,6 @@
 }
 .gptBtn:hover:not(:disabled) { opacity: 0.88; }
 .gptBtn:disabled { opacity: 0.5; cursor: wait; }
+
+/* URL de fonte de tipo conhecido: fixa, só leitura */
+.fixedUrl { display: block; padding: 9px 12px; border: 1px dashed var(--border); border-radius: var(--r-sm); color: var(--text-dim); font-size: 13px; overflow-wrap: anywhere; }

@@ -79,7 +79,8 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1";
 
 /** Fontes cadastradas em /agents (a chave fica só no banco, em settings.sources). */
 export async function getSources(): Promise<Source[]> {
-  return getSetting<Source[]>("sources", []);
+  // tipo conhecido usa sempre a URL do preset: não dá para trocar (e uma correção da URL no código vale para quem já cadastrou)
+  return (await getSetting<Source[]>("sources", [])).map((s) => ({ ...s, url: presetOf(s.kind)?.url ?? s.url }));
 }
 
 export function pickSource(id: string, sources: Source[], openrouterKey: string): Source {

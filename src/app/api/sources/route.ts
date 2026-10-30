@@ -33,6 +33,8 @@ const authOf = (kind: string | undefined, auth: unknown) => (kind === "openai" &
 /** POST { name, url, apiKey, kind?, auth? } → cria; o id sai do nome e não muda depois (nem o tipo) */
 export async function POST(req: NextRequest) {
   const body = await req.json();
+  const preset = presetOf(body.kind);
+  if (preset) body.url = preset.url; // tipo conhecido: URL fixa
   const c = clean(body);
   if (typeof c === "string") return bad(c);
   const list = await getSources();
@@ -49,11 +51,12 @@ export async function POST(req: NextRequest) {
 /** PUT { id, name, url, apiKey?, auth? } → edita; chave vazia mantém a atual */
 export async function PUT(req: NextRequest) {
   const body = await req.json();
-  const c = clean(body);
-  if (typeof c === "string") return bad(c);
   const list = await getSources();
   const src = list.find((s) => s.id === body.id);
   if (!src) return bad("Fonte não encontrada.", 404);
+  if (presetOf(src.kind)) body.url = src.url; // tipo conhecido: URL fixa (getSources já trouxe a do preset)
+  const c = clean(body);
+  if (typeof c === "string") return bad(c);
   Object.assign(src, c);
   if (String(body.apiKey ?? "").trim()) src.apiKey = String(body.apiKey).trim();
   src.auth = authOf(src.kind, body.auth);
