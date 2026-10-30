@@ -361,7 +361,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
                         <span dangerouslySetInnerHTML={{ __html: md(line) }} />
                         {npc && m && (
                           <button className="speak" title={`Ouvir ${npc.name}`}
-                            onClick={() => playLine(campaignId, npc.id, m[2])}>🔊</button>
+                            onClick={() => playLine(campaignId, npc, m[2])}>🔊</button>
                         )}
                       </Fragment>
                     );

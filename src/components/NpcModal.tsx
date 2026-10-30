@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { Campaign, Character, VoiceProfile } from "@/lib/types";
+import type { Campaign, Character, VoiceFx, VoiceProfile } from "@/lib/types";
+import { FX_DEFAULT, fxOf, playVoice, stopVoice } from "@/lib/voiceFx";
 import { SheetView } from "./GameClient";
 import AbilitiesView from "./AbilitiesView";
 
@@ -10,20 +11,25 @@ interface ChatMsg {
   refused?: boolean;
 }
 
-let current: HTMLAudioElement | null = null;
-
-/** Toca a fala na voz do NPC (TTS do OpenRouter; o servidor guarda o áudio, repetir não cobra). */
-export async function playLine(campaignId: string, npcId: string, text: string) {
-  current?.pause();
-  const res = await fetch(`/api/campaigns/${campaignId}/npcs/${npcId}/speech`, {
+/**
+ * Toca a fala na voz do NPC (TTS do OpenRouter; o servidor guarda o áudio, repetir não cobra).
+ * Velocidade e tom do personagem (persona.voiceFx) são aplicados só aqui, no navegador; o mp3 é o mesmo.
+ */
+export async function playLine(
+  campaignId: string,
+  npc: Pick<Character, "id" | "persona">,
+  text: string,
+  fx: VoiceFx = fxOf(npc.persona)
+) {
+  stopVoice();
+  const res = await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}/speech`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   });
   const d = await res.json().catch(() => ({}));
   if (!res.ok) return alert(d.error || `Erro ${res.status} ao gerar a voz`);
-  current = new Audio(d.url);
-  current.play().catch(() => {});
+  playVoice(d.url, fx);
   return d as { voice: string; gender: "male" | "female" | null };
 }
 
@@ -55,6 +61,8 @@ export default function NpcModal({
   const [gender, setGender] = useState(npc.persona.gender);
   const [tts, setTts] = useState<TtsInfo | null>(null);
   const [speaking, setSpeaking] = useState(false);
+  const [fx, setFx] = useState<VoiceFx>(() => fxOf(npc.persona));
+  const fxRef = useRef(fx); // valor mais recente, para a prévia e para salvar ao soltar o slider
   const feedRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -70,7 +78,7 @@ export default function NpcModal({
   const speak = async (text: string) => {
     setSpeaking(true);
     await saving.current; // a prévia logo após trocar a voz espera o save
-    const d = await playLine(campaignId, npc.id, text);
+    const d = await playLine(campaignId, npc, text, fxRef.current);
     if (d?.gender && gender === undefined) setGender(d.gender); // o Jev decidiu o sexo agora
     setSpeaking(false);
   };
@@ -110,7 +118,7 @@ export default function NpcModal({
         body: JSON.stringify({ sessionId }),
       }).catch(() => {});
     }
-    current?.pause();
+    stopVoice();
     onClose();
   };
 
@@ -130,6 +138,12 @@ export default function NpcModal({
     const next = g === "male" || g === "female" ? g : null;
     setGender(next);
     saveNpc({ gender: next });
+  };
+  const changeFx = (patch: Partial<VoiceFx>) => setFx((fxRef.current = { ...fxRef.current, ...patch }));
+  const saveFx = () => saveNpc({ voiceFx: fxRef.current });
+  const resetFx = (k: keyof VoiceFx) => {
+    changeFx({ [k]: FX_DEFAULT[k] });
+    saveFx();
   };
   const chosen = tts && voice?.model === tts.model ? voice.voice : "";
   const defaultVoice = tts ? (gender === "female" ? tts.female : tts.male) : "";
@@ -223,6 +237,15 @@ export default function NpcModal({
                   )}
                 </label>
               )}
+              <FxSlider label="Velocidade (mantém o tom)" min={0.5} max={2} step={0.05} value={fx.rate}
+                show={(v) => `${String(+v.toFixed(2)).replace(".", ",")}x`}
+                onChange={(rate) => changeFx({ rate })} onCommit={saveFx} onReset={() => resetFx("rate")} />
+              <FxSlider label="Tom (mantém a velocidade)" min={-12} max={12} step={1} value={fx.pitch}
+                show={(v) => `${v > 0 ? "+" : ""}${v} st`}
+                onChange={(pitch) => changeFx({ pitch })} onCommit={saveFx} onReset={() => resetFx("pitch")} />
+              <p className="muted" style={{ marginTop: 0 }}>
+                Só muda como o áudio toca aqui no navegador; nada vai para a API de voz. Tom muito alto ou baixo pode soar artificial.
+              </p>
               <button className="btn small" disabled={speaking} onClick={() => speak(`Olá. Eu sou ${npc.name}.`)}>
                 {speaking ? "gerando..." : "▶ Ouvir prévia"}
               </button>
@@ -255,5 +278,23 @@ export default function NpcModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function FxSlider({ label, min, max, step, value, show, onChange, onCommit, onReset }: {
+  label: string; min: number; max: number; step: number; value: number;
+  show: (v: number) => string;
+  onChange: (v: number) => void; onCommit: () => void; onReset: () => void;
+}) {
+  return (
+    <label className="field">
+      <span>{label}: <b>{show(value)}</b></span>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input type="range" min={min} max={max} step={step} value={value} style={{ flex: 1 }}
+          onChange={(e) => onChange(Number(e.target.value))}
+          onPointerUp={onCommit} onKeyUp={onCommit} />
+        <button type="button" className="btn ghost small" title="Voltar ao padrão" onClick={onReset}>↺</button>
+      </div>
+    </label>
   );
 }

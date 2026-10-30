@@ -109,6 +109,14 @@ export interface Persona {
   secrets?: string; // só o Mestre vê
   // sexo: define a voz padrão. undefined = ainda não decidido (o Jev decide na 1ª fala); null = desconhecido
   gender?: "male" | "female" | null;
+  // ajuste de reprodução da voz (só no navegador, nunca vai para a API do TTS). undefined = padrão (1x, 0 st)
+  voiceFx?: VoiceFx;
+}
+
+/** Efeitos aplicados ao tocar o mp3 do NPC: rate = velocidade (0,5 a 2, mantém o tom); pitch = semitons (-12 a 12, mantém a velocidade). */
+export interface VoiceFx {
+  rate: number;
+  pitch: number;
 }
 
 /** Voz escolhida à mão; só vale para o modelo em que foi escolhida. null no personagem = padrão pelo sexo. */

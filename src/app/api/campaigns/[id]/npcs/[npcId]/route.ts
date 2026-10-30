@@ -3,7 +3,7 @@ import { q } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-/** PUT: atualiza voz ({ model, voice } ou null = padrão pelo sexo), sexo e/ou atividade do NPC. GET: histórico de conversas. */
+/** PUT: atualiza voz ({ model, voice } ou null = padrão pelo sexo), sexo, voiceFx ({ rate, pitch }: ajuste de reprodução) e/ou atividade do NPC. GET: histórico de conversas. */
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; npcId: string }> }
@@ -21,6 +21,18 @@ export async function PUT(
        WHERE id = $2 AND campaign_id = $3`,
       [body.gender === "male" || body.gender === "female" ? body.gender : null, npcId, id]
     );
+  if (body.voiceFx !== undefined) {
+    // só dentro de persona (jsonb); o padrão (1x, 0 st) é guardado como ausência da chave
+    const rate = Math.min(2, Math.max(0.5, Number(body.voiceFx?.rate) || 1));
+    const pitch = Math.min(12, Math.max(-12, Math.round(Number(body.voiceFx?.pitch) || 0)));
+    const fx = rate === 1 && pitch === 0 ? null : JSON.stringify({ rate, pitch });
+    await q(
+      `UPDATE characters SET persona = CASE WHEN $1::jsonb IS NULL THEN persona - 'voiceFx'
+         ELSE persona || jsonb_build_object('voiceFx', $1::jsonb) END, updated_at = now()
+       WHERE id = $2 AND campaign_id = $3`,
+      [fx, npcId, id]
+    );
+  }
   if (body.active !== undefined)
     await q(
       `UPDATE characters SET active = $1, updated_at = now() WHERE id = $2 AND campaign_id = $3`,
