@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import type { Ability, Character, Ruleset } from "@/lib/types";
 import { abilityCost, costsByRankText, currentMilestone, nextMilestone } from "@/lib/ruleset";
 
@@ -8,6 +9,35 @@ export default function AbilitiesView({ char, ruleset }: { char: Character; rule
   const resLabel = (key: string) => ruleset.resources.find((r) => r.key === key)?.label || key;
   const costs = ruleset.abilityCosts;
   const abilities = char.sheet.abilities;
+  const [rank, setRank] = useState<string | null>(null); // null = todos
+  const [type, setType] = useState<string | null>(null);
+  const NO_RANK = "—";
+  const rankOf = (a: Ability) => a.rank || NO_RANK;
+  // só as opções que existem na ficha, na ordem do ruleset, com a contagem
+  const rankOpts = [...ruleset.abilityRanks, NO_RANK].filter((r) => abilities.some((a) => rankOf(a) === r));
+  const typeOpts = [...new Set(abilities.map((a) => a.type))].sort(
+    (x, y) => ruleset.abilityTypes.findIndex((t) => t.key === x) - ruleset.abilityTypes.findIndex((t) => t.key === y)
+  );
+  const typeLabel = (k: string) => ruleset.abilityTypes.find((t) => t.key === k)?.label || k;
+  const shown = abilities.filter((a) => (!rank || rankOf(a) === rank) && (!type || a.type === type));
+  const filterRow = (
+    title: string,
+    opts: string[],
+    value: string | null,
+    set: (v: string | null) => void,
+    count: (o: string) => number,
+    label: (o: string) => string
+  ) => (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center", marginBottom: 6 }}>
+      <span className="muted" style={{ fontSize: 12, minWidth: 34 }}>{title}</span>
+      {[null, ...opts].map((o) => (
+        <button key={o ?? "*"} className={`pill filter-pill${value === o ? " on" : ""}`} aria-pressed={value === o}
+          onClick={() => set(o)}>
+          {o === null ? "Todos" : `${label(o)} · ${count(o)}`}
+        </button>
+      ))}
+    </div>
+  );
 
   const item = (a: Ability) => {
     const cost = abilityCost(ruleset, a);
@@ -57,7 +87,14 @@ export default function AbilitiesView({ char, ruleset }: { char: Character; rule
           ` Custo por rank (${resLabel(costs.resource)}): ${costsByRankText(ruleset)}.`}
       </p>
       {!abilities.length && <p className="muted">Nenhuma registrada ainda.</p>}
-      {abilities.map(item)}
+      {abilities.length > 1 && (
+        <div style={{ marginBottom: 6 }}>
+          {filterRow("Rank", rankOpts, rank, setRank, (o) => abilities.filter((a) => rankOf(a) === o).length, (o) => o)}
+          {filterRow("Tipo", typeOpts, type, setType, (o) => abilities.filter((a) => a.type === o).length, typeLabel)}
+        </div>
+      )}
+      {abilities.length > 0 && !shown.length && <p className="muted">Nenhum com esses filtros.</p>}
+      {shown.map(item)}
     </div>
   );
 }

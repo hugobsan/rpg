@@ -257,6 +257,9 @@ pre.log-json {
 .pill { display: inline-block; font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim); margin-right: 6px; }
 .pill.on { border-color: var(--ok); color: var(--ok); }
 .pill.err { border-color: var(--danger); color: var(--danger); }
+button.filter-pill { background: none; cursor: pointer; font: inherit; font-size: 11.5px; margin: 0; }
+button.filter-pill:hover { border-color: var(--accent); color: var(--text); }
+button.filter-pill.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 
 .wizard-steps { display: flex; gap: 8px; margin-bottom: 20px; }
 .wizard-steps .st { flex: 1; height: 4px; border-radius: 2px; background: var(--border); }
