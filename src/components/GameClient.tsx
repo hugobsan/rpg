@@ -64,6 +64,8 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   const [tab, setTab] = useState<"sheet" | "npcs" | "memories" | "books" | "script">("sheet");
   const [imageBusy, setImageBusy] = useState(false);
   const [sceneImage, setSceneImage] = useState<string | null>(null);
+  const [regenOpen, setRegenOpen] = useState(false);
+  const [regenReason, setRegenReason] = useState("");
   const [openNpc, setOpenNpc] = useState<Character | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const keyCounter = useRef(0);
@@ -177,11 +179,16 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
     }
   };
 
-  const generateImage = async () => {
+  const generateImage = async (regen?: { feedback: string }) => {
+    setRegenOpen(false);
     setImageBusy(true);
     setError("");
     try {
-      const res = await fetch(`/api/campaigns/${campaignId}/image`, { method: "POST" });
+      const res = await fetch(`/api/campaigns/${campaignId}/image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(regen ? { regenerate: true, feedback: regen.feedback } : {}),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Falha ao gerar imagem");
       setSceneImage(data.dataUrl);
@@ -210,7 +217,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
           <span style={{ fontFamily: "var(--serif)", fontSize: 15 }}>{campaign.name}</span>
           {scene.location && <span className="loc">📍 {scene.location}</span>}
           <span style={{ flex: 1 }} />
-          <button className="btn ghost small" onClick={generateImage} disabled={imageBusy}>
+          <button className="btn ghost small" onClick={() => generateImage()} disabled={imageBusy}>
             {imageBusy ? "pintando..." : "🖼 Ver ambiente"}
           </button>
         </div>
@@ -304,7 +311,13 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
         </div>
         <div className="side-body">
           {sceneImage && tab === "sheet" && (
-            <img src={sceneImage} alt="Cena atual" className="scene-image" style={{ marginBottom: 12 }} />
+            <div style={{ marginBottom: 12 }}>
+              <img src={sceneImage} alt="Cena atual" className="scene-image" />
+              <button className="btn ghost small" style={{ marginTop: 6 }} disabled={imageBusy}
+                onClick={() => { setRegenReason(""); setRegenOpen(true); }}>
+                {imageBusy ? "pintando..." : "↻ Gerar novamente"}
+              </button>
+            </div>
           )}
           {tab === "sheet" && player && <SheetView char={player} campaign={campaign} />}
           {tab === "npcs" && (
@@ -317,6 +330,27 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
           {tab === "script" && <ScriptView script={campaign.script} campaignId={campaignId} onChange={reloadState} />}
         </div>
       </aside>
+
+      {regenOpen && (
+        <div className="modal-backdrop" onClick={() => setRegenOpen(false)}>
+          <div className="modal" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head"><h3 style={{ margin: 0 }}>Gerar a imagem novamente</h3></div>
+            <div className="modal-body">
+              <label className="field" style={{ marginBottom: 0 }}>
+                <span>O que você quer mudar? (opcional)</span>
+                <textarea autoFocus value={regenReason} onChange={(e) => setRegenReason(e.target.value)}
+                  placeholder="Ex: o Iruka está sem a cicatriz no nariz; quero a cena de dia, vista de cima..." />
+              </label>
+            </div>
+            <div className="modal-foot">
+              <button className="btn ghost small" onClick={() => setRegenOpen(false)}>Cancelar</button>
+              <button className="btn ghost small" onClick={() => generateImage({ feedback: "" })}>Gerar sem motivo</button>
+              <button className="btn primary small" disabled={!regenReason.trim()}
+                onClick={() => generateImage({ feedback: regenReason })}>Gerar com esse ajuste</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {openNpc && (
         <NpcModal

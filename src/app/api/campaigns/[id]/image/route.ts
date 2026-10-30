@@ -13,6 +13,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  // "gerar novamente": regenerate = true e, opcionalmente, o motivo/ajuste escrito pelo jogador
+  const body = (await req.json().catch(() => ({}))) as { regenerate?: boolean; feedback?: string };
+  const feedback = String(body.feedback || "").trim().slice(0, 1000);
   try {
     const [campaign, scene, agent, lastMsgs] = await Promise.all([
       getCampaign(id),
@@ -29,7 +32,11 @@ export async function POST(
       .reverse()
       .join("\n")
       .slice(-2500);
-    const prompt = `Ilustração de cena de RPG, estilo anime cinematográfico detalhado. Cenário: ${campaign.ruleset.name}. Local: ${scene.location || "desconhecido"}. Modo da cena: ${scene.mode}.\n\nDescrição do momento atual (ilustre fielmente o ambiente e a atmosfera; sem texto na imagem):\n${context}`;
+    let prompt = `Ilustração de cena de RPG, estilo anime cinematográfico detalhado. Cenário: ${campaign.ruleset.name}. Local: ${scene.location || "desconhecido"}. Modo da cena: ${scene.mode}.\n\nDescrição do momento atual (ilustre fielmente o ambiente e a atmosfera; sem texto na imagem):\n${context}`;
+    if (body.regenerate)
+      prompt += feedback
+        ? `\n\nEsta é uma nova tentativa. O jogador não gostou da imagem anterior e pediu este ajuste, que tem prioridade sobre o resto: ${feedback}`
+        : `\n\nEsta é uma nova tentativa: crie uma versão diferente da anterior (outro enquadramento e composição).`;
 
     const result = await chat({
       model: agent.model,
