@@ -5,7 +5,7 @@ import { startJob } from "./jobs";
 import { findPlace, getStage, loadMap, normName, relation } from "./map";
 import { formatClock, getClock, period } from "./clock";
 import { campaignTheme } from "./theme";
-import { parseSpecText, type LocalMapInfo, type MapSpec } from "./mapSpec";
+import { compactSpec, parseSpecText, type LocalMapInfo, type MapSpec } from "./mapSpec";
 import type { ToolContext } from "./tools";
 import type { Campaign, MapPlace, Scene, WorldMap } from "./types";
 
@@ -148,7 +148,7 @@ async function cartographerInput(c: Campaign, world: WorldMap, place: MapPlace, 
     if (gm.length) lines.push(`Últimas narrações do Mestre:\n${gm.reverse().map((m) => `---\n${m.content.slice(0, 1400)}`).join("\n")}\n---`);
   }
   if (action === "edit" && current)
-    lines.push(`\nMAPA ATUAL:\n${JSON.stringify(current)}`, `\nINSTRUÇÃO DE EDIÇÃO: ${brief}\nDevolva o JSON completo do mapa novo.`);
+    lines.push(`\nMAPA ATUAL:\n${JSON.stringify(compactSpec(current))}`, `\nINSTRUÇÃO DE EDIÇÃO: ${brief}\nDevolva o JSON completo do mapa novo.`);
   else lines.push(`\nPEDIDO: ${brief || "desenhe o local como a história o descreve até aqui."}`);
   return lines.filter(Boolean).join("\n");
 }
@@ -170,6 +170,7 @@ async function drawLocalMap(campaignId: string, placeId: string, action: Action,
     ],
     temperature: agent.temperature,
     max_tokens: agent.max_tokens,
+    reasoning: agent.params.reasoning as Record<string, unknown> | undefined,
     agentId: "cartographer",
     campaignId,
     purpose: action === "edit" ? "map_edit" : "map",

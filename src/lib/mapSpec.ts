@@ -241,6 +241,40 @@ export function parseSpecText(content: string): MapSpec | null {
   }
 }
 
+/** O spec sem os valores que o normalizeSpec preenche sozinho: metade do tamanho para mandar ao modelo numa edição. */
+export function compactSpec(spec: MapSpec): Record<string, unknown> {
+  const on = (v: number[]) => v.some(Boolean);
+  const rot = (r: V3) => (r[0] || r[2] ? r : r[1]);
+  const look = (l: Look) => ({
+    shape: l.shape,
+    ...(l.points ? { points: l.points, height: l.size[1] } : { size: l.size }),
+    color: l.colors ?? l.color,
+    ...(l.glow ? { glow: l.glow } : {}),
+    ...(l.opacity !== 1 ? { opacity: l.opacity } : {}),
+    ...(l.rough !== 0.85 ? { rough: l.rough } : {}),
+    ...(l.metal !== 0.05 ? { metal: l.metal } : {}),
+  });
+  const prim = (p: Prim) => ({ ...look(p), ...(on(p.at) ? { at: p.at } : {}), ...(on(p.rot) ? { rot: rot(p.rot) } : {}) });
+  return {
+    title: spec.title,
+    size: spec.size,
+    ground: { ...spec.ground, ...(spec.ground.hills.length ? {} : { hills: undefined }) },
+    sky: spec.sky,
+    areas: spec.areas.map(({ round, water, glow, ...a }) => ({ ...a, ...(round ? { round } : {}), ...(water ? { water } : {}), ...(glow ? { glow } : {}) })),
+    paths: spec.paths.map(({ height, water, ...p }) => ({ ...p, ...(height ? { height } : {}), ...(water ? { water } : {}) })),
+    parts: Object.fromEntries(Object.entries(spec.parts).map(([k, ps]) => [k, ps.map(prim)])),
+    items: spec.items.map((it) => ({
+      ...(it.part ? { part: it.part.length === 1 ? it.part[0] : it.part } : look(it.look!)),
+      ...(on(it.at) ? { at: it.at } : {}),
+      ...(on(it.rot) ? { rot: rot(it.rot) } : {}),
+      ...(it.scale !== 1 ? { scale: it.scale } : {}),
+      ...(it.row ? { row: it.row } : {}),
+      ...(it.scatter ? { scatter: it.scatter } : {}),
+    })),
+    pois: spec.pois,
+  };
+}
+
 // ---------- relevo ----------
 
 const smooth = (x: number, a: number, b: number) => {

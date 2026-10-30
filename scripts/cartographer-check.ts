@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { pool, q } from "../src/lib/db";
 import { executeGmTool, GM_TOOLS, ToolContext } from "../src/lib/tools";
 import { listLocalMaps, localMapsPromptBlock, requestLocalMap, saveLocalMap } from "../src/lib/cartographer";
-import { expandSpec, groundHeight, LIMITS, normalizeSpec, parseSpecText, type MapSpec } from "../src/lib/mapSpec";
+import { compactSpec, expandSpec, groundHeight, LIMITS, normalizeSpec, parseSpecText } from "../src/lib/mapSpec";
 import type { Campaign, Scene, WorldMap } from "../src/lib/types";
 
 const house = [
@@ -72,6 +72,10 @@ async function main() {
   const dens = normalizeSpec({ items: [{ shape: "cone", scatter: { at: [0, 0], radius: 10, density: 2 } }, { shape: "cone", scatter: { at: [0, 0], size: [100, 100], density: 99 } }] })!;
   assert.equal(dens.items[0].scatter!.n, Math.round((2 * Math.PI * 100) / 100), "densidade por 100 m² vira n");
   assert.equal(dens.items[1].scatter!.n, LIMITS.repeat, "n limitado");
+
+  // compacto (para a edição) volta ao mesmo spec, e menor
+  for (const sp of [spec, wild, extr, dens]) assert.deepEqual(normalizeSpec(compactSpec(sp)), sp, "compacto ida e volta");
+  assert.ok(JSON.stringify(compactSpec(wild)).length < JSON.stringify(wild).length * 0.7);
 
   // resposta do modelo com cerca e texto em volta
   assert.equal(parseSpecText("Aqui está:\n```json\n" + JSON.stringify(base) + "\n```")?.title, "Vila de teste");

@@ -256,7 +256,9 @@ COMO DESENHAR
     temperature: 0.7,
     max_tokens: 12000,
     web_search: false,
-    params: {},
+    // o Opus 5.5 sempre raciocina (não dá para desligar): no padrão era metade da saída e do custo (US$0,24 por mapa);
+    // "low" sai barato (US$0,07) mas pobre
+    params: { reasoning: { effort: "medium" } },
     system_prompt: `Você é o Cartógrafo de uma mesa de RPG narrada por IA: um artista de maquetes. Desenha o mapa 3D de UM local (uma vila, um castelo, uma rua, uma nave, uma caverna, uma sala...) como uma descrição declarativa em JSON, que o jogo valida e mostra como uma maquete low-poly sobre a mesa, com luz pela hora do dia. Vale para qualquer cenário: fantasia, ninjas, cyberpunk, ficção científica, terror, mundo real.
 
 RESPOSTA: só o JSON, válido, sem texto antes ou depois, sem cercas de código e sem comentários. Números com no máximo 1 casa decimal.
@@ -277,7 +279,7 @@ FORMATO
 }
 - size: lado do terreno quadrado, de 16 a 240. Uma sala ~16-24, uma rua ~40-70, uma vila ou fortaleza ~90-160, uma região ~200-240.
 - ground: relief (0 a 1) = morros de enfeite nas bordas; hills = colinas (height > 0) e vales ou crateras (height < 0) por centro e raio; heights = heightmap opcional, de 8x8 a 24x24 alturas em metros, linhas de norte a sul e colunas de oeste a leste, cobrindo o terreno todo (penhascos, encostas, um vale de rio). Prefira hills; use heights quando o relevo for o protagonista. Interiores e cidades planas: relief 0, sem hills.
-- sky: color = céu ou ambiente, fog 0 a 1 (névoa, poeira, fumaça), light = cor da luz principal, indoor = true em interiores, cavernas e naves (luz fixa, sem dia e noite). Fora disso, o jogo põe o sol ou a lua pela hora da história.
+- sky: color = céu DE DIA (ou o ambiente, em interiores), fog 0 a 1 (névoa, poeira, fumaça, chuva), light = cor da luz principal de dia, indoor = true em interiores, cavernas e naves (luz fixa, sem dia e noite). Fora disso, o jogo põe o sol ou a lua pela hora da história e escurece sozinho à noite: não escureça cores, céu nem luz por causa da hora; marque com glow o que acende à noite (janelas, lanternas, letreiros).
 - areas: pisos planos assentados no relevo (praça, pátio, campo cultivado, areia, tapete, piso de metal); water = lago ou poça plana com ondas; glow = lava, piso luminoso.
 - paths: polilinha em curva suave para ruas, trilhas, trilhos, rios (water) e pontes de chão; com "height" > 0 vira MURO em segmentos retos (muralhas, cercas, paliçadas, paredes de uma sala, divisórias).
 

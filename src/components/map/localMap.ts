@@ -30,8 +30,8 @@ const DEG = Math.PI / 180;
 const SUN: Record<string, { dir: [number, number, number]; warm: number; cold: number; power: number }> = {
   manhã: { dir: [0.8, 0.75, 0.45], warm: 0.12, cold: 0, power: 1.6 },
   tarde: { dir: [-0.9, 0.55, 0.35], warm: 0.32, cold: 0, power: 1.5 },
-  noite: { dir: [-0.3, 1, -0.5], warm: 0, cold: 0.6, power: 0.5 },
-  madrugada: { dir: [0.4, 0.9, -0.6], warm: 0, cold: 0.7, power: 0.35 },
+  noite: { dir: [-0.3, 1, -0.5], warm: 0, cold: 0.55, power: 0.8 },
+  madrugada: { dir: [0.4, 0.9, -0.6], warm: 0, cold: 0.65, power: 0.65 },
   dia: { dir: [-0.45, 0.9, 0.55], warm: 0.05, cold: 0, power: 1.8 },
 };
 
@@ -154,7 +154,7 @@ export function createLocalMap(
       const p = curve.getPoint(i / n), t = curve.getTangent(i / n);
       const nx = -t.z * (width / 2), nz = t.x * (width / 2);
       pos.push(p.x + nx, 0, p.z + nz, p.x - nx, 0, p.z - nz);
-      if (i) idx.push(2 * i - 2, 2 * i - 1, 2 * i, 2 * i - 1, 2 * i + 1, 2 * i);
+      if (i) idx.push(2 * i - 2, 2 * i, 2 * i - 1, 2 * i - 1, 2 * i, 2 * i + 1); // face para cima
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
@@ -223,6 +223,7 @@ export function createLocalMap(
     rim.position.copy(slab.position);
     world.add(rim);
 
+    const ls = Math.max(1, size / 60); // folga entre pisos sobrepostos, maior nos mapas grandes
     // pisos: assentados no relevo; água fica plana, no nível da borda mais alta (enche a bacia)
     const level = (a: { at: [number, number]; size: [number, number] }) =>
       Math.max(...Array.from({ length: 9 }, (_, j) => {
@@ -235,7 +236,7 @@ export function createLocalMap(
         ? new THREE.RingGeometry(0.001, 0.5, 40, 6).rotateX(-Math.PI / 2).scale(w, 1, dd)
         : new THREE.PlaneGeometry(w, dd, Math.min(48, Math.ceil(w / 1.5)), Math.min(48, Math.ceil(dd / 1.5))).rotateX(-Math.PI / 2);
       const c = colorOf(a.color);
-      const lift = 0.05 + i * 0.006;
+      const lift = (0.05 + i * 0.006) * ls;
       const m = new THREE.Mesh(drape(geo, a.at[0], a.at[1], lift, a.water ? level(a) : undefined), a.water ? water(c) : std(c, a.glow));
       m.receiveShadow = true;
       world.add(m);
@@ -244,7 +245,7 @@ export function createLocalMap(
     spec.paths.forEach((p, i) => {
       const c = colorOf(p.color);
       if (!p.height) {
-        const m = new THREE.Mesh(ribbon(p.points, p.width, 0.16 + i * 0.006), p.water ? water(c) : std(c));
+        const m = new THREE.Mesh(ribbon(p.points, p.width, (0.16 + i * 0.006) * ls), p.water ? water(c) : std(c));
         m.receiveShadow = true;
         world.add(m);
         return;
@@ -340,9 +341,10 @@ export function createLocalMap(
     // luz: a do spec, pela hora do jogo (fora de interiores), puxada para o quente/frio do tema
     const s = SUN[per] ?? SUN.dia;
     const sky = colorOf(spec.sky.color);
-    hemi.color.copy(sky).lerp(P.text, 0.35).lerp(P.info, s.cold * 0.7);
+    // piso de luz: céu escuro no spec + noite do jogo não podem apagar a maquete
+    hemi.color.copy(sky).lerp(P.text, 0.5).lerp(P.info, s.cold * 0.6);
     hemi.groundColor.copy(base).lerp(P.bg, 0.5);
-    hemi.intensity = night ? 0.5 : spec.sky.indoor ? 1.05 : 0.9;
+    hemi.intensity = night ? 0.8 : spec.sky.indoor ? 1.05 : 0.9;
     sun.color.copy(new THREE.Color(spec.sky.light)).lerp(P.warn, s.warm).lerp(P.info, s.cold);
     sun.intensity = spec.sky.indoor ? 1.1 : s.power;
     sun.position.set(s.dir[0] * size, s.dir[1] * size, s.dir[2] * size);
@@ -353,9 +355,14 @@ export function createLocalMap(
     sc.near = 1;
     sc.far = size * 3.5;
     sc.updateProjectionMatrix();
+    sun.shadow.normalBias = size * 0.0008; // sem listras (acne) nos pisos de mapas grandes
     scene.fog = spec.sky.fog > 0 ? new THREE.FogExp2(sky.clone().lerp(P.bg, night ? 0.75 : 0.55), (spec.sky.fog * 0.45) / size) : null;
     // céu: o fundo do quadro puxa a cor do spec sobre o fundo do tema
     host.style.background = `radial-gradient(ellipse 95% 80% at 50% 25%, color-mix(in srgb, #${sky.getHexString(THREE.SRGBColorSpace)} ${night ? 14 : 34}%, var(--bg-panel)), var(--bg-sunken))`;
+    // planos da câmera pelo tamanho do mapa: com near fixo em 0,1 os pisos serrilhavam (precisão do z) nos mapas grandes
+    camera.near = Math.max(0.3, size * 0.01);
+    camera.far = size * 8;
+    camera.updateProjectionMatrix();
     controls.minDistance = Math.max(4, size * 0.08);
     controls.maxDistance = size * 2.6;
   }
