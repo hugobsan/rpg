@@ -2,6 +2,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Skeleton from "@/components/ui/Skeleton";
+import Loader from "@/components/ui/Loader";
 import type { Agg, DayRow, LogPage, Summary } from "./data";
 import s from "./usage.module.css";
 
@@ -46,6 +47,25 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
   const [expanded, setExpanded] = useState<number | null>(null);
   const [details, setDetails] = useState<Record<number, { request: unknown; response: unknown } | "erro">>({});
   const [metric, setMetric] = useState<"cost" | "calls">("cost");
+  const [refreshing, setRefreshing] = useState(false);
+
+  // botão Atualizar: busca de novo o mesmo recorte (painel e histórico)
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      const [sum, lg] = await Promise.all([
+        fetch(`/api/usage/summary?${filterQs}`).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Erro ${r.status}`)))),
+        fetch(`/api/usage/logs?${qs}`).then((r) => (r.ok ? r.json() : null)),
+      ]);
+      setSummary(sum);
+      if (lg) setLogs(lg);
+      setError("");
+    } catch (e) {
+      setError(String((e as Error).message || e));
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     if (filterQs === shown.current.f) return;
@@ -168,6 +188,14 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
             <input type="checkbox" checked={sp.get("errors") === "1"} onChange={(e) => set({ errors: e.target.checked ? "1" : null })} />
             Só erros
           </label>
+          <button className={`btn ghost small ${s.refresh}`} onClick={refresh} disabled={refreshing} title="Buscar as chamadas mais recentes">
+            {refreshing ? <Loader size={14} label="Atualizando" /> : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4" />
+              </svg>
+            )}
+            Atualizar
+          </button>
         </div>
       </div>
 
