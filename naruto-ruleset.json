@@ -4,14 +4,14 @@
   "canonBased": true,
   "loreNotes": "O mundo segue o cânone de Naruto (e Naruto Shippuden). Respeite a linha do tempo da obra: Exame Chunin, missão ao País das Ondas, invasão de Konoha, a saída de Sasuke, o timeskip, a Akatsuki, a Quarta Guerra Ninja. Personagens canônicos devem agir e ter força coerentes com o ponto atual da linha do tempo — Kakashi não usa Kamui antes de despertá-lo, Naruto não domina o Modo Sábio antes do arco de Pain. Jutsus exigem chakra e, em geral, selos de mão. Elementos: Katon (fogo), Suiton (água), Doton (terra), Fūton (vento), Raiton (raio), além de kekkei genkai (Sharingan, Byakugan, Mokuton...). Missões são ranqueadas D, C, B, A, S. Hierarquia: Estudante da Academia → Genin → Chunin → Jounin Especial → Jounin → Kage. O jogador é um personagem original inserido no mundo: ele pode cruzar com eventos canônicos, mas suas ações não reescrevem o cânone sem muito esforço narrativo.",
   "attributes": [
-    { "key": "taijutsu", "label": "Taijutsu", "min": 1, "max": 10, "default": 3, "description": "Combate corpo a corpo" },
-    { "key": "ninjutsu", "label": "Ninjutsu", "min": 1, "max": 10, "default": 3, "description": "Técnicas de chakra" },
-    { "key": "genjutsu", "label": "Genjutsu", "min": 1, "max": 10, "default": 2, "description": "Ilusões" },
-    { "key": "inteligencia", "label": "Inteligência", "min": 1, "max": 10, "default": 3, "description": "Tática e raciocínio" },
-    { "key": "forca", "label": "Força", "min": 1, "max": 10, "default": 3 },
-    { "key": "velocidade", "label": "Velocidade", "min": 1, "max": 10, "default": 3 },
-    { "key": "vigor", "label": "Vigor", "min": 1, "max": 10, "default": 3, "description": "Resistência física e reserva de chakra" },
-    { "key": "selos", "label": "Selos de Mão", "min": 1, "max": 10, "default": 3, "description": "Velocidade e precisão de selos" }
+    { "key": "taijutsu", "label": "Taijutsu", "min": 1, "max": 10, "default": 3, "description": "Combate corpo a corpo sem chakra: golpes, bloqueios e esquivas em luta física, além de técnicas de taijutsu (Lótus, Portões Internos). Usado nos testes de ataque e defesa desarmados." },
+    { "key": "ninjutsu", "label": "Ninjutsu", "min": 1, "max": 10, "default": 3, "description": "Controle e potência das técnicas de chakra: elementais, clones, invocações, ninjutsu médico. Usado nos testes para executar um jutsu e acertar o alvo; jutsu acima do próprio rank exige teste." },
+    { "key": "genjutsu", "label": "Genjutsu", "min": 1, "max": 10, "default": 2, "description": "Ilusões: lançar genjutsu no inimigo e perceber, resistir ou dissipar os que lançarem em você. Começa em 2 por ser a especialidade mais rara." },
+    { "key": "inteligencia", "label": "Inteligência", "min": 1, "max": 10, "default": 3, "description": "Tática e raciocínio: analisar jutsus e pontos fracos do inimigo, montar armadilhas e estratégias, lembrar conhecimento shinobi e ler intenções numa conversa." },
+    { "key": "forca", "label": "Força", "min": 1, "max": 10, "default": 3, "description": "Potência física: dano de golpes e armas, arremessos, agarrar, empurrar, quebrar obstáculos e carregar peso." },
+    { "key": "velocidade", "label": "Velocidade", "min": 1, "max": 10, "default": 3, "description": "Rapidez: quem age primeiro, deslocamento, perseguição e fuga, esquiva e reação a ataques rápidos." },
+    { "key": "vigor", "label": "Vigor", "min": 1, "max": 10, "default": 3, "description": "Resistência física: aguentar dano, veneno, dor e exaustão. É a referência do Mestre para quanto você aguenta numa luta longa e para a sua reserva de chakra." },
+    { "key": "selos", "label": "Selos de Mão", "min": 1, "max": 10, "default": 3, "description": "Velocidade e precisão dos selos de mão: quão rápido um jutsu sai e se dá para executá-lo sob pressão, ferido ou sem ser interrompido." }
   ],
   "resources": [
     { "key": "hp", "label": "Saúde", "defaultMax": 40, "color": "#e0524d" },

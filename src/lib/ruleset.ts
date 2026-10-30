@@ -95,7 +95,7 @@ export function nextMilestone(a: Ability): AbilityMilestone | null {
 export function rulesetPromptSummary(r: Ruleset): string {
   const lines = [
     `Sistema: ${r.name} — ${r.description}`,
-    `Atributos: ${r.attributes.map((a) => `${a.label} (${a.key}, ${a.min}-${a.max})`).join(", ")}`,
+    `Atributos:\n${r.attributes.map((a) => `- ${a.label} (${a.key}, ${a.min}-${a.max})${a.description ? `: ${a.description}` : ""}`).join("\n")}`,
     `Recursos/barras: ${r.resources.map((x) => `${x.label} (${x.key})`).join(", ")}`,
     `Tipos de habilidade: ${r.abilityTypes.map((t) => `${t.label} (${t.key})`).join(", ")}`,
     `Níveis de habilidade: ${r.abilityRanks.join(" < ")}`,

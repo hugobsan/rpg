@@ -70,6 +70,8 @@ export default function NewCampaign() {
     ? ruleset.attributes.reduce((s, a) => s + Math.max(0, (attrs[a.key] ?? a.default) - a.default), 0)
     : 0;
   const pointsLeft = (ruleset?.creationPoints ?? 0) - pointsUsed;
+  // 1ª frase das notas de rolagem (ex: "Testes: 1d20 + (atributo x 2)..."), mostrada no hover dos atributos
+  const testRule = ruleset?.diceNotes?.split(/\.\s/)[0] || "";
 
   const create = async () => {
     if (!ruleset) return;
@@ -212,21 +214,36 @@ export default function NewCampaign() {
           </label>
           <div className="muted" style={{ marginBottom: 6 }}>
             Atributos — pontos livres: <b style={{ color: pointsLeft < 0 ? "var(--danger)" : "var(--ok)" }}>{pointsLeft}</b> de {ruleset.creationPoints}
+            {" "}· passe o mouse num atributo para ver para que ele serve
           </div>
           <div className="attr-grid">
-            {ruleset.attributes.map((a) => (
-              <div key={a.key} className="attr-cell">
-                <div className="k" title={a.description}>{a.label}</div>
+            {ruleset.attributes.map((a) => {
+              const cur = attrs[a.key] ?? a.default;
+              // na criação, não desce abaixo da base nem gasta além dos pontos livres
+              const max = Math.min(a.max, cur + Math.max(pointsLeft, 0));
+              const tip = [
+                a.description,
+                testRule,
+                `Base ${a.default} · máximo ${a.max}`,
+              ].filter(Boolean).join("\n\n");
+              return (
+              <div key={a.key} className="attr-cell" title={tip} style={{ cursor: "help" }}>
+                <div className="k">{a.label}</div>
                 <input
                   type="number"
-                  min={a.min}
-                  max={a.max}
-                  value={attrs[a.key] ?? a.default}
-                  onChange={(e) => setAttrs({ ...attrs, [a.key]: Number(e.target.value) })}
+                  min={a.default}
+                  max={max}
+                  value={cur}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (!Number.isNaN(v))
+                      setAttrs({ ...attrs, [a.key]: Math.min(Math.max(v, a.default), max) });
+                  }}
                   style={{ textAlign: "center", padding: 4 }}
                 />
               </div>
-            ))}
+              );
+            })}
           </div>
           {ruleset.extraFields.map((f) => (
             <label className="field" key={f.key}>
