@@ -5,7 +5,15 @@ interface Note { id: number; role: "player" | "gm"; content: string }
 interface Directive { id: number; subject: string; content: string }
 
 /** Conversa fora do jogo com o Mestre: o jogador fala como ele mesmo; nada disso entra na história. */
-export default function OocModal({ campaignId, onClose }: { campaignId: string; onClose: () => void }) {
+export default function OocModal({
+  campaignId,
+  onClose,
+  onChanged,
+}: {
+  campaignId: string;
+  onClose: () => void;
+  onChanged?: () => void; // o Mestre mudou o jogo (ficha, missões...): a tela recarrega o estado
+}) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [directives, setDirectives] = useState<Directive[]>([]);
   const [input, setInput] = useState("");
@@ -40,6 +48,7 @@ export default function OocModal({ campaignId, onClose }: { campaignId: string; 
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) setError(d.error || `Erro ${res.status}`);
+      if (d.changed) onChanged?.();
       await load();
     } finally {
       setBusy(false);

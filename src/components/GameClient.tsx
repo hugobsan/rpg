@@ -536,7 +536,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
 
       {rolling && <DiceRoller result={rolling} onDone={releaseDice} />}
 
-      {oocOpen && <OocModal campaignId={campaignId} onClose={() => setOocOpen(false)} />}
+      {oocOpen && <OocModal campaignId={campaignId} onClose={() => setOocOpen(false)} onChanged={reloadState} />}
 
       {openNpc && (
         <NpcModal
