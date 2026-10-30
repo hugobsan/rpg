@@ -17,7 +17,8 @@ import { diceText } from "../DiceRoller";
  *
  * Chat
  *   feed           mensagens salvas (key "m<id>") + eventos ao vivo do turno (key "k<n>"):
- *                  player | gm | chip (ferramenta) | dice (outcome ok/fail quando há CD)
+ *                  player | gm | chip (ferramenta; name = nome dela) | dice (dice = DiceResult;
+ *                  outcome ok/fail quando há CD). name e dice só nos eventos ao vivo, não nas salvas
  *   draft          narração chegando em streaming ("" = nenhuma). Vem de narration_delta, zera em
  *                  narration_reset; o narration final entra no feed e zera o rascunho.
  *                  Renderize o rascunho num componente à parte e os itens do feed com React.memo:
@@ -50,6 +51,9 @@ export interface FeedItem {
   kind: "player" | "gm" | "chip" | "dice";
   content: string;
   outcome?: "ok" | "fail"; // rolagem com CD: passou ou não
+  // só nos eventos ao vivo (mensagens salvas não têm): a rolagem inteira e o nome da ferramenta
+  dice?: DiceResult;
+  name?: string;
 }
 
 // eventos que nunca ficam retidos pela rolagem
@@ -160,7 +164,7 @@ export function useTurn(
   };
 
   const showEvent = (ev: TurnEvent) => {
-    if (ev.type === "tool") setFeed((f) => [...f, { key: nextKey(), kind: "chip", content: ev.summary }]);
+    if (ev.type === "tool") setFeed((f) => [...f, { key: nextKey(), kind: "chip", content: ev.summary, name: ev.name }]);
     else if (ev.type === "dice")
       setFeed((f) => [
         ...f,
@@ -168,6 +172,7 @@ export function useTurn(
           key: nextKey(),
           kind: "dice",
           content: diceText(ev.result),
+          dice: ev.result,
           outcome: ev.result.dc === undefined ? undefined : ev.result.success ? "ok" : "fail",
         },
       ]);

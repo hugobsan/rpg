@@ -60,6 +60,8 @@ export interface TrainingRules {
 export interface Ruleset {
   name: string;
   description: string;
+  /** Tema visual (chave de THEMES em theme.ts). Sem ele, o tema é inferido pelo nome */
+  theme?: string;
   /** Instruções de tom/lore/cânone injetadas no prompt do Mestre */
   loreNotes: string;
   /** true = há uma obra/cânone a respeitar (o Roteirista monta linha do tempo canônica) */
