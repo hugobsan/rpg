@@ -113,6 +113,8 @@ label.field > span { display: block; margin-bottom: 5px; }
   border-radius: 999px; padding: 4px 14px;
 }
 .event-chip.dice { color: var(--accent); border-color: rgba(212,162,78,0.4); }
+.event-chip.dice.ok { color: var(--ok); border-color: var(--ok); background: rgba(77,224,138,0.08); }
+.event-chip.dice.fail { color: var(--danger); border-color: var(--danger); background: rgba(224,82,77,0.08); }
 
 .choices { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .choice-btn {

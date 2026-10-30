@@ -2,7 +2,7 @@ import { randomInt } from "node:crypto";
 import { DiceResult } from "./types";
 
 /** Rola notação padrão: "2d6+3", "1d20", "d8-1", "3d10". */
-export function rollDice(notation: string, reason?: string): DiceResult {
+export function rollDice(notation: string, reason?: string, dc?: number): DiceResult {
   const m = notation
     .toLowerCase()
     .replace(/\s+/g, "")
@@ -14,11 +14,7 @@ export function rollDice(notation: string, reason?: string): DiceResult {
   if (count < 1 || sides < 2) throw new Error(`Notação inválida: "${notation}"`);
   const rolls: number[] = [];
   for (let i = 0; i < count; i++) rolls.push(randomInt(1, sides + 1));
-  return {
-    notation,
-    rolls,
-    modifier,
-    total: rolls.reduce((a, b) => a + b, 0) + modifier,
-    reason,
-  };
+  const total = rolls.reduce((a, b) => a + b, 0) + modifier;
+  const hasDc = typeof dc === "number" && Number.isFinite(dc);
+  return { notation, rolls, modifier, total, reason, ...(hasDc ? { dc, success: total >= dc } : {}) };
 }

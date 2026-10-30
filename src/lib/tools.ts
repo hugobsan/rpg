@@ -37,6 +37,11 @@ export const GM_TOOLS: ToolDef[] = [
         {
           notation: { type: "string", description: "ex: 1d20+4" },
           reason: { type: "string", description: "o que está sendo testado" },
+          dc: {
+            type: "number",
+            description:
+              "dificuldade (CD) do teste, quando houver uma só: o resultado sai como SUCESSO/FALHA e o jogador vê verde/vermelho. Omita em disputas diretas (rolagens opostas).",
+          },
         },
         ["notation"]
       ),
@@ -372,9 +377,10 @@ export async function executeGmTool(
   const cid = ctx.campaign.id;
   switch (name) {
     case "roll_dice": {
-      const result = rollDice(String(args.notation), args.reason as string | undefined);
+      const dc = typeof args.dc === "number" ? args.dc : undefined;
+      const result = rollDice(String(args.notation), args.reason as string | undefined, dc);
       ctx.emit({ type: "dice", result });
-      return `Rolagem ${result.notation}${result.reason ? ` (${result.reason})` : ""}: dados [${result.rolls.join(", ")}] ${result.modifier ? `mod ${result.modifier} ` : ""}= TOTAL ${result.total}`;
+      return `Rolagem ${result.notation}${result.reason ? ` (${result.reason})` : ""}: dados [${result.rolls.join(", ")}] ${result.modifier ? `mod ${result.modifier} ` : ""}= TOTAL ${result.total}${result.dc !== undefined ? ` contra CD ${result.dc}: ${result.success ? "SUCESSO" : "FALHA"}` : ""}`;
     }
     case "update_resource": {
       const c = await getChar(cid, String(args.character));

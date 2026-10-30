@@ -43,6 +43,7 @@ interface FeedItem {
   key: string;
   kind: "player" | "gm" | "chip" | "dice";
   content: string;
+  outcome?: "ok" | "fail"; // rolagem com CD: passou ou não
 }
 
 interface StateShape {
@@ -158,7 +159,8 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
                 {
                   key: nextKey(),
                   kind: "dice",
-                  content: `🎲 ${ev.result.notation}${ev.result.reason ? ` (${ev.result.reason})` : ""} → [${ev.result.rolls.join(", ")}]${ev.result.modifier ? ` ${ev.result.modifier > 0 ? "+" : ""}${ev.result.modifier}` : ""} = ${ev.result.total}`,
+                  content: `🎲 ${ev.result.notation}${ev.result.reason ? ` (${ev.result.reason})` : ""} → [${ev.result.rolls.join(", ")}]${ev.result.modifier ? ` ${ev.result.modifier > 0 ? "+" : ""}${ev.result.modifier}` : ""} = ${ev.result.total}${ev.result.dc !== undefined ? ` vs CD ${ev.result.dc} · ${ev.result.success ? "✓ passou" : "✗ não passou"}` : ""}`,
+                  outcome: ev.result.dc === undefined ? undefined : ev.result.success ? "ok" : "fail",
                 },
               ]);
               break;
@@ -257,7 +259,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
               ) : item.kind === "gm" ? (
                 <div key={item.key} className="msg-gm" dangerouslySetInnerHTML={{ __html: md(item.content) }} />
               ) : (
-                <div key={item.key} className={`event-chip ${item.kind}`}>{item.content}</div>
+                <div key={item.key} className={`event-chip ${item.kind}${item.outcome ? ` ${item.outcome}` : ""}`}>{item.content}</div>
               )
             )}
             {busy && (

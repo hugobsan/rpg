@@ -172,6 +172,8 @@ export interface DiceResult {
   modifier: number;
   total: number;
   reason?: string;
+  dc?: number; // dificuldade do teste; sem ela (ex: disputa direta) não há passou/falhou
+  success?: boolean; // total >= dc
 }
 
 // ---------- Agentes ----------
