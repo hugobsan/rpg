@@ -48,6 +48,9 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
   const [details, setDetails] = useState<Record<number, { request: unknown; response: unknown } | "erro">>({});
   const [metric, setMetric] = useState<"cost" | "calls">("cost");
   const [refreshing, setRefreshing] = useState(false);
+  // hora da última busca (só no cliente: a hora do servidor no HTML não bateria na hidratação)
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  useEffect(() => setUpdatedAt(new Date()), []);
 
   // botão Atualizar: busca de novo o mesmo recorte (painel e histórico)
   const refresh = async () => {
@@ -60,6 +63,7 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
       setSummary(sum);
       if (lg) setLogs(lg);
       setError("");
+      setUpdatedAt(new Date());
     } catch (e) {
       setError(String((e as Error).message || e));
     } finally {
@@ -73,7 +77,7 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
     setLoading(true);
     fetch(`/api/usage/summary?${filterQs}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Erro ${r.status}`))))
-      .then((d) => alive && (setSummary(d), setError(""), (shown.current.f = filterQs)))
+      .then((d) => alive && (setSummary(d), setError(""), setUpdatedAt(new Date()), (shown.current.f = filterQs)))
       .catch((e) => alive && setError(String(e.message || e)))
       .finally(() => alive && setLoading(false));
     return () => { alive = false; };
@@ -133,6 +137,19 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
 
   return (
     <>
+      <div className={s.toolbar}>
+        <span className={s.updated} aria-live="polite">
+          {updatedAt && <>Atualizado às <b className="num">{updatedAt.toLocaleTimeString("pt-BR")}</b></>}
+        </span>
+        <button className="btn ghost small" onClick={refresh} disabled={refreshing} title="Buscar as chamadas mais recentes">
+          {refreshing ? <Loader size={14} label="Atualizando" /> : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4" />
+            </svg>
+          )}
+          Atualizar
+        </button>
+      </div>
       <div className={`card ${s.filters}`}>
         <div className={s.chips}>
           <span className={s.label}>Agentes</span>
@@ -188,14 +205,6 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
             <input type="checkbox" checked={sp.get("errors") === "1"} onChange={(e) => set({ errors: e.target.checked ? "1" : null })} />
             Só erros
           </label>
-          <button className={`btn ghost small ${s.refresh}`} onClick={refresh} disabled={refreshing} title="Buscar as chamadas mais recentes">
-            {refreshing ? <Loader size={14} label="Atualizando" /> : (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4" />
-              </svg>
-            )}
-            Atualizar
-          </button>
         </div>
       </div>
 
