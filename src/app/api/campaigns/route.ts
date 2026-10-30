@@ -4,6 +4,7 @@ import { blankSheet, normalizeRuleset, startingKit } from "@/lib/ruleset";
 import { generateScript, getCampaign } from "@/lib/engine";
 import { EXTRA_MASTERY } from "@/lib/progression";
 import { Ability, Campaign, Persona } from "@/lib/types";
+import { THEMES } from "@/lib/theme";
 import { listCampaigns } from "@/app/(home)/campaignList";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,7 @@ interface CreateBody {
   startingPoint?: string; // onde na história/linha do tempo a campanha começa
   initialNpcs?: string; // texto livre: NPCs que o mestre deve inicializar
   generateScript?: boolean;
+  theme?: string; // tema visual escolhido; sem ele vale o do ruleset
 }
 
 export async function POST(req: NextRequest) {
@@ -49,6 +51,7 @@ export async function POST(req: NextRequest) {
       JSON.stringify({
         startingPoint: body.startingPoint || "",
         initialNpcs: body.initialNpcs || "",
+        ...(THEMES.some((t) => t.key === body.theme) ? { theme: body.theme } : {}),
       }),
     ]
   );

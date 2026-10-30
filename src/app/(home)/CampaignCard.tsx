@@ -44,7 +44,6 @@ export default function CampaignCard({ c, featured, actions, href = `/campaign/$
   return (
     <article className={`${s.card}${featured ? ` ${s.featured}` : ""}`} data-theme={c.theme} data-mode={c.mode ?? undefined}>
       {c.image_id && (
-        // eslint-disable-next-line @next/next/no-img-element -- imagem da rota da campanha, cache imutável
         <img className={s.cover} src={`/api/campaigns/${c.id}/images/${c.image_id}`} alt="" loading={featured ? "eager" : "lazy"} decoding="async" />
       )}
       <div className={s.body}>
