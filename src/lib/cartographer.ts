@@ -194,7 +194,7 @@ export async function localMapsPromptBlock(campaign: Campaign): Promise<string> 
   const [maps, auto] = await Promise.all([listLocalMaps(campaign.id, world), autoMapsOn()]);
   if (!here && !maps.length) return "";
   const mine = here && maps.find((m) => m.placeId === here.id);
-  const lines = [maps.length ? `Locais com mapa 3D: ${maps.map((m) => m.name).join(", ")}.` : "Nenhum local tem mapa 3D ainda."];
+  const lines = maps.length ? [`Locais com mapa 3D: ${maps.map((m) => m.name).join(", ")}.`] : [];
   if (mine) lines.push(`Mapa daqui (${here.name}), pontos: ${mine.pois.join(", ") || "-"}. Em set_stage, use esses nomes como zonas: o jogador vê os peões neles.`);
   else if (here) lines.push(`${here.name} ainda não tem mapa 3D.`);
   lines.push(
