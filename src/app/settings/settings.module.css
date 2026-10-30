@@ -30,19 +30,22 @@
 .switch:has(input:checked) { border-color: var(--accent-line); }
 .switch b { color: var(--text); font-weight: 600; font-size: 14.5px; }
 .switch span { grid-column: 1; color: var(--text-dim); font-size: 13px; line-height: 1.55; }
-.switch input {
+.switch input[role="switch"] {
   grid-column: 2; grid-row: 1 / span 2; appearance: none; margin: 2px 0 0; cursor: pointer;
   position: relative; width: 40px; height: 22px; border-radius: var(--r-pill);
   background: var(--bg-sunken); border: 1px solid var(--border-strong);
   box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.4); transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
 }
-.switch input::after {
+.switch input[role="switch"]::after {
   content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
   background: var(--text-dim); box-shadow: var(--shadow-1); transition: transform var(--dur) var(--ease-spring), background var(--dur) var(--ease-out);
 }
-.switch input:checked { background: var(--accent-fill); border-color: var(--accent-fill); }
-.switch input:checked::after { transform: translateX(18px); background: var(--accent-ink); }
+.switch input[role="switch"]:checked { background: var(--accent-fill); border-color: var(--accent-fill); }
+.switch input[role="switch"]:checked::after { transform: translateX(18px); background: var(--accent-ink); }
 .switchAction { grid-column: 1; justify-self: start; margin-top: var(--s-2); }
+.switch .force { display: flex; align-items: center; gap: var(--s-3); margin-top: var(--s-2); cursor: default; }
+.force input { flex: 1; min-width: 0; max-width: 240px; accent-color: var(--accent-fill); cursor: pointer; }
+.force output { min-width: 4ch; color: var(--text); font-variant-numeric: tabular-nums; }
 
 .warn {
   display: flex; gap: var(--s-3); align-items: flex-start; margin: var(--s-4) 0;

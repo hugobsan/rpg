@@ -403,7 +403,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
         </div>
       )}
 
-      {rolling && <DiceRoller result={rolling} onDone={releaseDice} />}
+      {rolling && <DiceRoller result={rolling} force={state.ui.diceForce} onDone={releaseDice} />}
 
       {oocOpen && <OocModal campaignId={campaignId} onClose={() => setOocOpen(false)} onChanged={reloadState} />}
 

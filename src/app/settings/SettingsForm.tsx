@@ -20,7 +20,7 @@ function testRoll(): DiceResult {
 export interface SettingsShape {
   openrouter: { configured: boolean; apiKeyMasked: string };
   embeddings: { enabled: boolean; model: string };
-  ui: { diceAnimation: boolean; imageGeneration: boolean; autoMaps: boolean };
+  ui: { diceAnimation: boolean; imageGeneration: boolean; autoMaps: boolean; diceForce: number };
 }
 type Result = { ok: boolean; text: string } | null;
 
@@ -35,6 +35,7 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
   const [orKey, setOrKey] = useState("");
   const [emb, setEmb] = useState(initial.embeddings);
   const [diceAnimation, setDiceAnimation] = useState(initial.ui.diceAnimation);
+  const [diceForce, setDiceForce] = useState(initial.ui.diceForce);
   const [imageGeneration, setImageGeneration] = useState(initial.ui.imageGeneration);
   const [autoMaps, setAutoMaps] = useState(initial.ui.autoMaps);
   const [saving, setSaving] = useState(false);
@@ -44,11 +45,11 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
   const [re, setRe] = useState<Result>(null);
 
   const embDirty = emb.enabled !== data.embeddings.enabled || emb.model !== data.embeddings.model;
-  const dirty = !!orKey.trim() || embDirty || diceAnimation !== data.ui.diceAnimation || imageGeneration !== data.ui.imageGeneration || autoMaps !== data.ui.autoMaps;
+  const dirty = !!orKey.trim() || embDirty || diceAnimation !== data.ui.diceAnimation || diceForce !== data.ui.diceForce || imageGeneration !== data.ui.imageGeneration || autoMaps !== data.ui.autoMaps;
 
   const save = async () => {
     setSaving(true);
-    const body: Record<string, unknown> = { embeddings: emb, ui: { diceAnimation, imageGeneration, autoMaps } };
+    const body: Record<string, unknown> = { embeddings: emb, ui: { diceAnimation, diceForce, imageGeneration, autoMaps } };
     if (orKey.trim()) body.openrouterApiKey = orKey.trim();
     const res = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
     if (res?.ok) {
@@ -171,7 +172,13 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
             <b>Animação 3D dos dados</b>
             <span>Quando o Mestre rola, o chat mostra o botão &quot;Rolar dados&quot; e você arremessa os dados numa caixa 3D. O valor é sorteado no servidor; a animação só o mostra. Desligada, o resultado aparece direto no chat.</span>
             <input type="checkbox" role="switch" checked={diceAnimation} onChange={(e) => setDiceAnimation(e.target.checked)} />
-            {/* preventDefault: o clique no botão não liga/desliga o interruptor do label */}
+            {/* preventDefault: clicar no slider, no botão ou no texto deles não liga/desliga o interruptor do label */}
+            <span className={s.force} onClick={(e) => e.preventDefault()}>
+              Força do arremesso
+              <input type="range" min={0.5} max={3} step={0.25} value={diceForce} aria-label="Força do arremesso"
+                onChange={(e) => setDiceForce(Number(e.target.value))} />
+              <output>{diceForce.toLocaleString("pt-BR")}×</output>
+            </span>
             <button type="button" className={`btn small ${s.switchAction}`}
               onClick={(e) => { e.preventDefault(); setDiceTest(testRoll()); }}>
               Ver animação
@@ -197,7 +204,8 @@ export default function SettingsForm({ initial }: { initial: SettingsShape }) {
         </button>
       </div>
 
-      {diceTest && <DiceRoller result={diceTest} onDone={() => setDiceTest(null)} />}
+      {/* usa a força da tela, mesmo sem salvar, para testar antes */}
+      {diceTest && <DiceRoller result={diceTest} force={diceForce} onDone={() => setDiceTest(null)} />}
     </>
   );
 }

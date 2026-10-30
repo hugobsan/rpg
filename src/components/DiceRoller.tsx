@@ -32,7 +32,7 @@ function themeLook(el: HTMLElement): Partial<DiceLook> {
 type Scene = { throwRandom(): void; dispose(): void };
 
 /** Modal da caixa 3D: o jogador segura, arrasta e solta; os dados param nos valores de `result.rolls`. */
-export default function DiceRoller({ result, onDone }: { result: DiceResult; onDone: () => void }) {
+export default function DiceRoller({ result, force, onDone }: { result: DiceResult; force?: number; onDone: () => void }) {
   const box = useRef<HTMLDivElement>(null);
   const scene = useRef<Scene | null>(null);
   const [phase, setPhase] = useState<"loading" | "ready" | "rolling" | "done">("loading");
@@ -58,7 +58,7 @@ export default function DiceRoller({ result, onDone }: { result: DiceResult; onD
         scene.current = createDiceScene(box.current, dice, {
           onThrow: () => setPhase("rolling"),
           onSettled: () => setPhase("done"),
-        }, themeLook(box.current));
+        }, themeLook(box.current), force);
         setPhase("ready");
       })
       .catch(() => alive && setPhase("done")); // sem WebGL: mostra só o resultado
@@ -66,7 +66,7 @@ export default function DiceRoller({ result, onDone }: { result: DiceResult; onD
       alive = false;
       scene.current?.dispose();
     };
-  }, [result]);
+  }, [result, force]);
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === "Escape" && close();

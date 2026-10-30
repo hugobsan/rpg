@@ -211,8 +211,9 @@ function simulate(specs: DieSpec[], init: Init[], half: { x: number; z: number }
   const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -60, 0) });
   world.allowSleep = true;
   const diceMat = new CANNON.Material(), floorMat = new CANNON.Material(), wallMat = new CANNON.Material();
-  world.addContactMaterial(new CANNON.ContactMaterial(diceMat, floorMat, { friction: 0.35, restitution: 0.35 }));
-  world.addContactMaterial(new CANNON.ContactMaterial(diceMat, wallMat, { friction: 0.05, restitution: 0.6 }));
+  // mesa e paredes que devolvem bem: o dado quica e rola várias faces antes de parar
+  world.addContactMaterial(new CANNON.ContactMaterial(diceMat, floorMat, { friction: 0.3, restitution: 0.65 }));
+  world.addContactMaterial(new CANNON.ContactMaterial(diceMat, wallMat, { friction: 0.05, restitution: 0.85 }));
   world.addContactMaterial(new CANNON.ContactMaterial(diceMat, diceMat, { friction: 0.2, restitution: 0.45 }));
   const plane = (mat: CANNON.Material, pos: [number, number, number], euler: [number, number, number]) => {
     const b = new CANNON.Body({ mass: 0, material: mat, shape: new CANNON.Plane() });
@@ -221,7 +222,7 @@ function simulate(specs: DieSpec[], init: Init[], half: { x: number; z: number }
     world.addBody(b);
   };
   plane(floorMat, [0, 0, 0], [-Math.PI / 2, 0, 0]);
-  plane(wallMat, [0, 12, 0], [Math.PI / 2, 0, 0]);
+  plane(wallMat, [0, 8, 0], [Math.PI / 2, 0, 0]); // tampa baixa: o dado não sobe até sair do quadro
   plane(wallMat, [-half.x, 0, 0], [0, Math.PI / 2, 0]);
   plane(wallMat, [half.x, 0, 0], [0, -Math.PI / 2, 0]);
   plane(wallMat, [0, 0, -half.z], [0, 0, 0]);
@@ -232,10 +233,10 @@ function simulate(specs: DieSpec[], init: Init[], half: { x: number; z: number }
       mass: 1,
       material: diceMat,
       shape: new CANNON.ConvexPolyhedron({ vertices: g.verts.map((p) => new CANNON.Vec3(p.x, p.y, p.z)), faces: g.faces }),
-      sleepSpeedLimit: 0.25,
+      sleepSpeedLimit: 0.5, // com pouco amortecimento o d20 fica tremendo e não dormia antes de 8 s
       sleepTimeLimit: 0.35,
-      angularDamping: 0.15,
-      linearDamping: 0.3,
+      angularDamping: 0.1,
+      linearDamping: 0.1,
     });
     const it = init[i];
     b.position.set(it.p.x, it.p.y, it.p.z);
@@ -272,6 +273,7 @@ export function createDiceScene(
   specs: DieSpec[],
   cb: { onThrow: () => void; onSettled: () => void },
   colors?: Partial<DiceLook>,
+  force = 1, // "Força do arremesso" das Configurações (0,5× a 3×)
 ) {
   const look = { ...LOOK, ...colors };
   const w = host.clientWidth, h = host.clientHeight;
@@ -365,6 +367,8 @@ export function createDiceScene(
   };
 
   const launch = (vel: THREE.Vector3) => {
+    vel.multiplyScalar(force).clampLength(0, 80); // mais rápido que isso o dado entra na parede
+    const roll = new THREE.Vector3(0, 1, 0).cross(vel); // giro de quem rola para a frente
     const init: Init[] = meshes.map((m) => ({
       p: m.position.clone(),
       q: m.quaternion.clone(),
@@ -374,7 +378,8 @@ export function createDiceScene(
     // ponytail: até 6 tentativas para nenhum dado ficar inclinado/empilhado; depois usa a última
     let sim!: ReturnType<typeof simulate>;
     for (let attempt = 0; attempt < 6; attempt++) {
-      init.forEach((it) => it.w.set((Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50));
+      init.forEach((it) => it.w.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
+        .multiplyScalar(50 * force).add(roll).clampLength(0, 70)); // girando mais que isso ele quica até a tampa
       sim = simulate(specs, init, half);
       if (sim.final.every((q, i) => topOf(specs[i].shape, q).flat)) break;
     }
@@ -418,9 +423,9 @@ export function createDiceScene(
     const dt = Math.max((b.t - a.t) / 1000, 0.016);
     const v = new THREE.Vector3((b.x - a.x) / dt, 0, (b.z - a.z) / dt);
     const speed = v.length();
-    if (speed < 2) v.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().multiplyScalar(14); // só um clique
-    else v.multiplyScalar(THREE.MathUtils.clamp(speed, 7, 24) / speed);
-    v.y = 3;
+    if (speed < 2) v.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().multiplyScalar(20); // só um clique
+    else v.multiplyScalar(THREE.MathUtils.clamp(speed, 12, 60) / speed); // arraste forte = arremesso forte
+    v.y = 4;
     launch(v);
   };
   const el = renderer.domElement;
@@ -455,7 +460,7 @@ export function createDiceScene(
     throwRandom() {
       if (state !== "idle") return;
       gather((Math.random() - 0.5) * half.x, half.z - 1.5, 2.6);
-      launch(new THREE.Vector3((Math.random() - 0.5) * 10, 3, -22));
+      launch(new THREE.Vector3((Math.random() - 0.5) * 12, 4, -36));
     },
     dispose() {
       cancelAnimationFrame(raf);

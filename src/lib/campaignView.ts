@@ -26,7 +26,7 @@ export interface CampaignView {
   hasMore: boolean; // há mensagens anteriores às carregadas
   memories: { id: number; kind: string; subject: string | null; content: string; importance: number }[];
   lastImage: { id: number; url: string } | null;
-  ui: { diceAnimation: boolean; imageGeneration: boolean }; // Configurações, ligadas por padrão
+  ui: { diceAnimation: boolean; imageGeneration: boolean; diceForce: number }; // Configurações, ligadas por padrão
   inbox: InboxItem[]; // mensagens particulares de NPC não lidas (npc_message)
   jobs: Job[]; // tarefas em segundo plano rodando ou recém-terminadas (lib/jobs.ts)
   maps: LocalMapInfo[]; // mapas 3D dos locais (Cartógrafo), sem o spec (vem por /maps?map=id)
@@ -48,7 +48,7 @@ export async function campaignView(id: string): Promise<CampaignView> {
     ),
     // só o id: a imagem vai por URL (binário com cache longo), nunca em base64 no JSON
     q<{ id: string }>(`SELECT id FROM scene_images WHERE campaign_id = $1 ORDER BY id DESC LIMIT 1`, [id]),
-    getSetting<{ diceAnimation?: boolean; imageGeneration?: boolean }>("ui", {}),
+    getSetting<{ diceAnimation?: boolean; imageGeneration?: boolean; diceForce?: number }>("ui", {}),
     listInbox(id),
     listJobs(id),
   ]);
@@ -77,7 +77,7 @@ export async function campaignView(id: string): Promise<CampaignView> {
       images[0] && Number(images[0].id) !== Number(campaign.state?.hiddenSheetImageId)
         ? { id: Number(images[0].id), url: `/api/campaigns/${id}/images/${images[0].id}` }
         : null,
-    ui: { diceAnimation: ui.diceAnimation !== false, imageGeneration: ui.imageGeneration !== false },
+    ui: { diceAnimation: ui.diceAnimation !== false, imageGeneration: ui.imageGeneration !== false, diceForce: ui.diceForce ?? 1 },
     inbox,
     jobs,
     maps: await listLocalMaps(id, campaign.state.map as WorldMap),
