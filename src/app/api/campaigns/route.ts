@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
 import { blankSheet, normalizeRuleset, startingKit } from "@/lib/ruleset";
 import { generateScript, getCampaign } from "@/lib/engine";
+import { EXTRA_MASTERY } from "@/lib/progression";
 import { Ability, Campaign, Persona } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +65,11 @@ export async function POST(req: NextRequest) {
   // kit do rank inicial + extras da tela (extra com mesmo nome substitui o do kit)
   const abilities = new Map(startingKit(ruleset, sheet.rank).map((a) => [a.name.toLowerCase(), a]));
   for (const a of body.character.abilities || [])
-    if (a?.name?.trim() && a.type) abilities.set(a.name.trim().toLowerCase(), { ...a, name: a.name.trim() });
+    if (a?.name?.trim() && a.type) abilities.set(a.name.trim().toLowerCase(), {
+        ...a,
+        name: a.name.trim(),
+        progress: typeof a.progress === "number" && Number.isFinite(a.progress) ? Math.max(0, Math.min(100, a.progress)) : EXTRA_MASTERY,
+      });
   sheet.abilities = [...abilities.values()];
   const persona: Persona = {
     appearance: body.character.appearance,

@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import type { Ability, Character, Ruleset } from "@/lib/types";
-import { abilityCost, costsByRankText, currentMilestone, nextMilestone } from "@/lib/ruleset";
+import { costsByRankText, currentMilestone, nextMilestone } from "@/lib/ruleset";
+import { costAdjustText, DEFAULT_MASTERY_BONUS, effectiveCost, mastery, masteryBonus } from "@/lib/progression";
 
 /** Aba de habilidades (Jutsus em Naruto): visível mesmo vazia, com o que cada uma custa e faz. */
 export default function AbilitiesView({ char, ruleset }: { char: Character; ruleset: Ruleset }) {
@@ -40,27 +41,34 @@ export default function AbilitiesView({ char, ruleset }: { char: Character; rule
   );
 
   const item = (a: Ability) => {
-    const cost = abilityCost(ruleset, a);
-    const progress = a.progress ?? null;
+    const cost = effectiveCost(ruleset, a);
+    const progress = mastery(a);
+    const bonus = masteryBonus(ruleset, a);
+    const adj = cost?.base ? costAdjustText(cost.mult) : "";
     const cur = currentMilestone(a);
     const next = nextMilestone(a);
     return (
       <div key={a.name} className="ability-item">
         <div className="name">
           {a.name} {a.rank && <span className="pill">{a.rank}</span>}
-          {cost && <span className="pill">{cost.amount ? `${cost.amount} ${resLabel(cost.resource)}` : "sem custo"}</span>}
+          {cost && (
+            <span className="pill" title={adj ? `Custo base ${cost.base}; ${adj}` : "Custo por uso"}>
+              {cost.amount || cost.base ? `${cost.amount} ${resLabel(cost.resource)}${adj ? ` (${adj.split(" ")[0]})` : ""}` : "sem custo"}
+            </span>
+          )}
           {a.damage && <span className="pill">dano {a.damage}</span>}
-          {progress !== null && <span className="pill">{progress}%</span>}
+          <span className="pill" title="Bônus do domínio no teste (somado a 1d20 + atributo)">+{bonus} no teste</span>
         </div>
         <div className="sub">{ruleset.abilityTypes.find((t) => t.key === a.type)?.label || a.type}</div>
         {a.effect && <div className="sub" style={{ marginTop: 4 }}><b>Efeito:</b> {a.effect}</div>}
         {a.requirements && <div className="sub"><b>Requisitos:</b> {a.requirements}</div>}
         {a.description && <div className="sub" style={{ marginTop: 4, opacity: 0.8 }}>{a.description}</div>}
-        {progress !== null && (
-          <div className="bar-outer" style={{ height: 7, marginTop: 6 }}>
-            <div className="bar-inner" style={{ width: `${progress}%`, background: "var(--accent)" }} />
-          </div>
-        )}
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 12 }}>
+          <span className="muted">Domínio{a.progress === undefined ? " (estimado)" : ""}</span><span>{progress}%</span>
+        </div>
+        <div className="bar-outer" style={{ height: 7 }}>
+          <div className="bar-inner" style={{ width: `${progress}%`, background: "var(--accent)" }} />
+        </div>
         {cur && <div className="sub" style={{ marginTop: 5 }}>▸ {cur.description}</div>}
         {next && (
           <div className="sub" style={{ opacity: 0.7 }}>
@@ -85,6 +93,9 @@ export default function AbilitiesView({ char, ruleset }: { char: Character; rule
         {label} que {char.name} sabe usar. O Mestre registra aqui o que você usa ou aprende na história, com o custo e o efeito.
         {costs &&
           ` Custo por rank (${resLabel(costs.resource)}): ${costsByRankText(ruleset)}.`}
+        {` O domínio sobe com o uso e o treino e dá bônus no teste (${(ruleset.masteryBonus ?? DEFAULT_MASTERY_BONUS)
+          .map((b) => `${b.min}%: +${b.value}`)
+          .join(", ")}); domínio baixo encarece o custo e domínio total o barateia.`}
       </p>
       {!abilities.length && <p className="muted">Nenhuma registrada ainda.</p>}
       {abilities.length > 1 && (

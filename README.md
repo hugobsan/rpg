@@ -97,6 +97,20 @@ A mecânica (atributos, barras de recurso, tipos de habilidade, ranks/progressã
 
 Para criar outro cenário (Star Wars, D&D, cyberpunk...), copie o JSON, ajuste os campos e importe no assistente de nova campanha. Exportação: aba **Roteiro** da campanha (mecânica ou campanha completa).
 
+### Regras e progressão
+
+As contas ficam no servidor (`src/lib/progression.ts`); o Mestre só escolhe a CD e as horas. Os parâmetros ficam no ruleset, com padrão no código para rulesets antigos.
+
+- **Domínio do jutsu (0–100%)**: todo jutsu tem o seu, mostrado na aba Jutsus com o custo efetivo e o bônus. Kit do rank: 60%; registrado na hora do uso: 10–25% (padrão 15); extras da criação: 30%; sem valor (fichas antigas, NPCs): tratado como 50%.
+  - Bônus no teste (`masteryBonus`): até 24% +0, 25–49% +1, 50–74% +2, 75–99% +3, 100% +4.
+  - Custo (`masteryCost`): abaixo de 25% +50% (arredonda para cima); com 100% −25% (arredonda para baixo); no meio, o custo normal.
+- **`use_ability`**: o Mestre resolve técnica da ficha com ela. Desconta o custo ajustado (sem recurso, falha sem rolar), rola 1d20 + atributo × `attributeMultiplier` + bônus do domínio contra a CD (mesmo evento de dados do `roll_dice`: chip verde/vermelho e animação 3D) e sobe o domínio pelo uso (+5/+4/+3/+2 conforme a faixa). O atributo padrão vem do tipo (`abilityAttributes`, ou o atributo de mesma key).
+- **Cargo × nível de poder**: o cargo (`ranks`: Estudante da Academia, Genin…) é posição na história e só muda com `set_rank`. O nível de poder (`powerLevels`) vem só da XP, sobe sozinho e dá o teto dos atributos (Estudante 5, Genin 6, Chunin 7, Jounin Especial 8, Jounin 9, Kage 10). Sem `powerLevels`, os `ranks` servem de níveis, sem teto.
+- **Pontos livres**: 1 a cada `xpPerAttributePoint` (50) XP. O jogador gasta na **Ficha** (botão + por atributo; a rota `POST /api/campaigns/[id]/attributes` valida saldo e teto e grava uma memória para o Mestre). Atributo que veio da criação acima do teto fica como está e só sobe quando o nível permitir. `update_attribute` do Mestre também recusa aumento acima do teto; reduções são livres.
+- **Treino (`train`)**: avança o relógio pelas horas (pela `saveClock`, então prazos de missão vencem no treino) e só então aplica o ganho. Jutsu: +3 por hora até 49%, +2 até 74%, +1 a partir de 75%. Atributo: +1 a cada 20 h × valor atual, até o teto (no teto, as horas não acumulam). Limites (`training`): 10 h de treino por dia do jogo e +25% de domínio por jutsu por dia, somando treino e uso. Acima disso, o treino é recusado (exausto) e o relógio não anda.
+
+Verificação sem IA: `npx tsx scripts/progression-check.ts`.
+
 ## Voz dos NPCs
 
 Clique em 🔊 numa fala de NPC (no chat do Mestre, linhas `**Nome:** "fala"`, ou na conversa particular) para ouvi-la. A voz vem de um modelo de fala (TTS) do OpenRouter, escolhido no agente **Voz** em /agents junto com a voz masculina e a feminina padrão. O padrão é `heygen/heygen-voice-1-turbo:free` (grátis, fala português), com `lucian` (masculina) e `nadine` (feminina).
@@ -117,6 +131,7 @@ Clique em 🔊 numa fala de NPC (no chat do Mestre, linhas `**Nome:** "fala"`, o
 ```
 naruto-ruleset.json        # preset de mecânica de Naruto (importável)
 scripts/jev-check.ts       # probe do Jev (rodar ao trocar o modelo de decisão)
+scripts/progression-check.ts # checagem da progressão (domínio, nível, teto, treino) sem IA
 docker-compose.yml         # Postgres + pgvector (porta 5433)
 src/lib/
   schema.sql               # schema idempotente (aplicado no boot)
@@ -130,5 +145,6 @@ src/lib/
   retrieval.ts             # busca vetorial com fallback FTS
   books.ts                 # ingestão/paginação/chunking de livros
   ruleset.ts               # mecânica agnóstica + normalização
+  progression.ts           # domínio, nível de poder, pontos livres, teto e treino
 src/app/                   # telas + rotas de API (Next.js App Router)
 ```

@@ -39,6 +39,26 @@
     { "key": "jounin", "label": "Jounin", "xpRequired": 3000 },
     { "key": "kage", "label": "Nível Kage", "xpRequired": 8000 }
   ],
+  "powerLevels": [
+    { "key": "estudante", "label": "Estudante", "xpRequired": 0, "attributeCap": 5 },
+    { "key": "genin", "label": "Genin", "xpRequired": 100, "attributeCap": 6 },
+    { "key": "chunin", "label": "Chunin", "xpRequired": 600, "attributeCap": 7 },
+    { "key": "jounin_especial", "label": "Jounin Especial", "xpRequired": 1500, "attributeCap": 8 },
+    { "key": "jounin", "label": "Jounin", "xpRequired": 3000, "attributeCap": 9 },
+    { "key": "kage", "label": "Kage", "xpRequired": 8000, "attributeCap": 10 }
+  ],
+  "xpPerAttributePoint": 50,
+  "attributeMultiplier": 2,
+  "masteryBonus": [{ "min": 0, "value": 0 }, { "min": 25, "value": 1 }, { "min": 50, "value": 2 }, { "min": 75, "value": 3 }, { "min": 100, "value": 4 }],
+  "masteryCost": [{ "min": 0, "value": 1.5 }, { "min": 25, "value": 1 }, { "min": 100, "value": 0.75 }],
+  "abilityAttributes": { "fuinjutsu": "selos", "senjutsu": "ninjutsu", "kekkei_genkai": "ninjutsu", "medico": "ninjutsu", "arma": "velocidade" },
+  "training": {
+    "maxHoursPerDay": 10,
+    "masteryPerHour": [{ "min": 0, "value": 3 }, { "min": 50, "value": 2 }, { "min": 75, "value": 1 }],
+    "masteryPerUse": [{ "min": 0, "value": 5 }, { "min": 25, "value": 4 }, { "min": 50, "value": 3 }, { "min": 75, "value": 2 }],
+    "maxMasteryPerDay": 25,
+    "hoursPerAttributePoint": 20
+  },
   "startingAbilities": {
     "estudante": [
       {"name": "Henge no Jutsu", "type": "ninjutsu", "rank": "D", "cost": {"resource": "chakra", "amount": 3}, "description": "Jutsu da Transformação (rank E no cânone). Técnica básica ensinada na Academia: o usuário assume a aparência de outra pessoa, animal ou objeto.", "effect": "Transforma a aparência até ser desfeito ou atingido. Quem observar com atenção testa Inteligência contra o teste de Ninjutsu de quem transformou; detalhes errados, cheiro ou comportamento entregam o disfarce. Alunos da Academia costumam deixar falhas visíveis.", "requirements": "Selos: Cão, Javali, Carneiro"},

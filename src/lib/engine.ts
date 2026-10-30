@@ -4,6 +4,7 @@ import { chat, ChatMessage, estimateTokens } from "./openrouter";
 import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
 import { addMemory, MemoryHit, recentMemories, searchMemories } from "./retrieval";
 import { decideElapsed, decideTurn, scoreImportance } from "./decisions";
+import { attributeCap, attributePoints, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
 import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { takeSnapshot } from "./turnSnapshot";
@@ -56,10 +57,19 @@ function sheetSummary(c: Character, full: boolean, rs: Ruleset): string {
   const attrs = Object.entries(s.attributes)
     .map(([k, v]) => `${k}=${v}`)
     .join(" ");
+  const cargo = rs.ranks.find((r) => r.key === s.rank)?.label || s.rank || "-";
+  const { level, next } = powerLevel(rs, s.xp);
   const lines = [
-    `${c.name} (${c.kind}${c.canon ? ", canônico" : ""}${c.active ? "" : ", FORA DE CENA"}) — rank: ${s.rank || "-"}, xp: ${s.xp}`,
+    `${c.name} (${c.kind}${c.canon ? ", canônico" : ""}${c.active ? "" : ", FORA DE CENA"}) — cargo: ${cargo} | nível de poder: ${level?.label ?? "-"} (pela XP, não é cargo), xp: ${s.xp}${next ? ` (próximo nível aos ${next.xpRequired})` : ""}`,
     `  recursos: ${res} | atributos: ${attrs}`,
   ];
+  if (c.kind === "player") {
+    const capped = rs.attributes.filter((a) => (s.attributes[a.key] ?? 0) >= attributeCap(rs, s.xp, a.key)).map((a) => a.key);
+    const pts = attributePoints(rs, s);
+    lines.push(
+      `  teto de atributo do nível: ${level?.attributeCap ?? "-"}${capped.length ? ` (no teto ou acima: ${capped.join(", ")})` : ""} | pontos livres: ${pts.free} (o jogador distribui)`
+    );
+  }
   const extra = Object.entries(s.extra || {})
     .filter(([, v]) => v)
     .map(([k, v]) => `${k}: ${v}`)
@@ -71,10 +81,8 @@ function sheetSummary(c: Character, full: boolean, rs: Ruleset): string {
         s.abilities
           .map((a) => {
             let line = `    - ${abilityPromptLine(rs, a)}`;
-            if (a.progress === undefined) return line;
             const cur = currentMilestone(a);
             const next = nextMilestone(a);
-            line += ` | ${a.progress}% de domínio`;
             if (cur) line += ` — atual: ${cur.description}`;
             if (next) line += ` | próximo marco aos ${next.threshold}%: ${next.description}`;
             return line;
@@ -104,7 +112,7 @@ const MODE_HINTS: Record<string, string> = {
   exploration: "Cena de EXPLORAÇÃO: descrições sensoriais ricas, ritmo médio, semeie ganchos.",
   dialogue: "Cena de DIÁLOGO: respostas curtas, foco nas falas e linguagem corporal dos NPCs. Não resuma conversas — interprete-as.",
   battle: "Cena de BATALHA: turno a turno, tático e tenso. Descreva posições e aberturas, peça a ação do jogador, resolva com rolagens e atualize recursos. Inimigos agem com inteligência coerente.",
-  training: "Cena de TREINAMENTO: progresso incremental com testes; falhas ensinam. Recompense marcos reais com habilidades/XP.",
+  training: "Cena de TREINAMENTO: resolva com train informando horas realistas (ele avança o relógio e aplica o ganho de domínio ou atributo); respeite a recusa por exaustão. Recompense marcos reais com XP.",
   downtime: "Cena de DESCANSO: leve e breve; avance o tempo com resumos e cenas curtas de personagem.",
 };
 
@@ -314,7 +322,7 @@ export async function runTurn(
   const toolCtx: ToolContext = { campaign, scene, emit };
   const maxRounds = params.maxToolRounds ?? 8;
   let finalText = "";
-  let timeMoved = false; // o Mestre chamou advance_time/set_time neste turno
+  let timeMoved = false; // o Mestre chamou advance_time/set_time/train neste turno
 
   for (let round = 0; round <= maxRounds; round++) {
     // :online só na 1ª rodada: o plugin cobra por requisição e repetiria a mesma busca a cada rodada
@@ -352,7 +360,7 @@ export async function runTurn(
             summary: toolSummary(call.function.name, args),
           });
         }
-        if (/^(advance|set)_time$/.test(call.function.name)) timeMoved = true;
+        if (/^((advance|set)_time|train)$/.test(call.function.name)) timeMoved = true;
         output = await executeGmTool(call.function.name, args, toolCtx);
         scene = toolCtx.scene; // set_scene pode ter trocado a cena
       } catch (e) {

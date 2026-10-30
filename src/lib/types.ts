@@ -29,6 +29,34 @@ export interface RankDef {
   xpRequired: number; // xp acumulado para alcançar
 }
 
+/** Nível de poder: vem só da XP e sobe sozinho. Não é cargo (rank), que é posição na história. */
+export interface PowerLevelDef {
+  key: string;
+  label: string;
+  xpRequired: number;
+  /** teto dos atributos neste nível (sem ele, vale o max do atributo) */
+  attributeCap?: number;
+}
+
+/** Faixa por domínio (0-100): vale a de maior min <= domínio. */
+export interface MasteryBand {
+  min: number;
+  value: number;
+}
+
+export interface TrainingRules {
+  /** horas de treino por dia do jogo, somando todos os alvos */
+  maxHoursPerDay: number;
+  /** domínio ganho por hora de treino, por faixa de domínio */
+  masteryPerHour: MasteryBand[];
+  /** domínio ganho por uso real (use_ability), por faixa de domínio */
+  masteryPerUse: MasteryBand[];
+  /** teto de domínio ganho por habilidade por dia (treino + uso) */
+  maxMasteryPerDay: number;
+  /** horas para +1 num atributo = isto x valor atual */
+  hoursPerAttributePoint: number;
+}
+
 export interface Ruleset {
   name: string;
   description: string;
@@ -41,7 +69,21 @@ export interface Ruleset {
   abilityTypes: AbilityTypeDef[];
   /** Níveis de maestria de habilidades (ex: D, C, B, A, S) */
   abilityRanks: string[];
+  /** Cargos (posição na história); só mudam por set_rank */
   ranks: RankDef[];
+  /** Níveis de poder pela XP, com teto de atributo. Sem eles, os ranks servem de fallback (sem teto) */
+  powerLevels?: PowerLevelDef[];
+  /** Bônus no teste por faixa de domínio da habilidade */
+  masteryBonus?: MasteryBand[];
+  /** Multiplicador do custo por faixa de domínio */
+  masteryCost?: MasteryBand[];
+  /** 1 ponto livre de atributo a cada N XP acumulados */
+  xpPerAttributePoint?: number;
+  /** Teste de habilidade: 1d20 + atributo x isto + bônus do domínio (Naruto: 2) */
+  attributeMultiplier?: number;
+  /** Atributo padrão do teste por tipo de habilidade (sem ele, o atributo de mesma key) */
+  abilityAttributes?: Record<string, string>;
+  training?: TrainingRules;
   /** Pontos para distribuir entre atributos na criação */
   creationPoints: number;
   /** Campos extras livres da ficha (ex: elemento, kekkei genkai) */
@@ -99,6 +141,12 @@ export interface Sheet {
   rank?: string;
   xp: number;
   extra: Record<string, string>;
+  /** pontos livres de atributo já gastos (os ganhos vêm da XP) */
+  attrPointsSpent?: number;
+  /** horas de treino acumuladas por atributo, rumo ao próximo +1 */
+  trainingHours?: Record<string, number>;
+  /** treino e ganho de domínio do dia do jogo atual (zera quando o dia muda) */
+  trainingLog?: { day: number; hours: number; mastery: Record<string, number> };
 }
 
 export interface Persona {

@@ -1,4 +1,5 @@
 import { Ability, AbilityMilestone, Ruleset, Sheet } from "./types";
+import { costAdjustText, effectiveCost, KIT_MASTERY, mastery, masteryBonus, progressionPromptLines } from "./progression";
 
 /** Ruleset padrão, agnóstico de cenário. Presets (ex: Naruto) são importados por JSON. */
 export const DEFAULT_RULESET: Ruleset = {
@@ -96,23 +97,28 @@ export function costsByRankText(r: Ruleset): string {
   return keys.map((k) => `${k}=${by[k]}`).join(", ");
 }
 
-/** Kit de habilidades de um rank, somando os ranks anteriores (o de cima vence em nome repetido). */
+/** Kit de habilidades de um rank, somando os ranks anteriores (o de cima vence em nome repetido). Já treinado: domínio KIT_MASTERY. */
 export function startingKit(r: Ruleset, rankKey?: string): Ability[] {
   const kit = new Map<string, Ability>();
   for (const rank of r.ranks) {
-    for (const a of r.startingAbilities?.[rank.key] || []) kit.set(a.name.toLowerCase(), a);
+    for (const a of r.startingAbilities?.[rank.key] || []) kit.set(a.name.toLowerCase(), { ...a, progress: a.progress ?? KIT_MASTERY });
     if (rank.key === rankKey) break;
   }
   return [...kit.values()];
 }
 
-/** Linha compacta de uma habilidade para o prompt: tipo, rank, custo, dano, efeito, requisitos. */
+/** Linha compacta de uma habilidade para o prompt: tipo, rank, domínio (bônus), custo efetivo, dano, efeito, requisitos. */
 export function abilityPromptLine(r: Ruleset, a: Ability): string {
-  const cost = abilityCost(r, a);
+  const cost = effectiveCost(r, a);
+  const adj = cost ? costAdjustText(cost.mult) : "";
   const bits = [
     a.type,
     a.rank && `rank ${a.rank}`,
-    cost && (cost.amount ? `custo ${cost.amount} ${cost.resource}${a.cost ? "" : " (padrão do rank)"}` : "sem custo"),
+    `domínio ${mastery(a)}% (+${masteryBonus(r, a)} no teste)`,
+    cost &&
+      (cost.amount || cost.base
+        ? `custo ${cost.amount} ${cost.resource}${adj ? ` (base ${cost.base}${a.cost ? "" : " do rank"}, ${adj})` : a.cost ? "" : " (padrão do rank)"}`
+        : "sem custo"),
     a.damage && `dano ${a.damage}`,
   ].filter(Boolean);
   let line = `${a.name} [${bits.join(", ")}]`;
@@ -147,7 +153,8 @@ export function rulesetPromptSummary(r: Ruleset): string {
     `Recursos/barras: ${r.resources.map((x) => `${x.label} (${x.key})`).join(", ")}`,
     `Tipos de habilidade: ${r.abilityTypes.map((t) => `${t.label} (${t.key})`).join(", ")}`,
     `Níveis de habilidade: ${r.abilityRanks.join(" < ")}`,
-    `Progressão (rank: xp acumulado): ${r.ranks.map((k) => `${k.label}=${k.xpRequired}`).join(", ")}`,
+    `Cargos (posição na história; só mudam por set_rank, nunca sozinhos pela XP): ${r.ranks.map((k) => k.label).join(", ")}`,
+    ...progressionPromptLines(r),
   ];
   if (r.extraFields.length)
     lines.push(

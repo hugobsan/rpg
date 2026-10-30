@@ -5,6 +5,20 @@ import { addMemory, searchMemories, searchBookChunks } from "./retrieval";
 import { listBooks, readPages } from "./books";
 import { Ability, Campaign, Character, Scene, Sheet, TurnEvent } from "./types";
 import { abilityPromptLine, blankSheet, currentMilestone, nextMilestone } from "./ruleset";
+import {
+  abilityAttribute,
+  attributePoints,
+  costAdjustText,
+  effectiveCost,
+  findAbility,
+  gainMastery,
+  masteryBonus,
+  NEW_ABILITY_MASTERY,
+  powerLevel,
+  raiseBlocked,
+  train,
+  useGain,
+} from "./progression";
 import { clockParts, formatClock, formatDuration, getClock, period, toMinutes } from "./clock";
 import { expireObjectives, formatRemaining, getObjectives, Objective, OBJECTIVE_KIND_LABEL, ObjectiveKind } from "./objectives";
 
@@ -71,7 +85,8 @@ export const GM_TOOLS: ToolDef[] = [
     type: "function",
     function: {
       name: "update_attribute",
-      description: "Define o valor de um atributo básico de um personagem.",
+      description:
+        "Define o valor de um atributo básico de um personagem. Aumentos respeitam o teto do nível de poder (o servidor recusa e explica); reduções (lesão, maldição) são livres. Pontos livres de XP são do JOGADOR, que distribui na ficha: não os gaste por ele.",
       parameters: S(
         {
           character: { type: "string" },
@@ -95,7 +110,10 @@ export const GM_TOOLS: ToolDef[] = [
           abilityType: { type: "string", description: "key do tipo (ex: ninjutsu)" },
           rank: { type: "string", description: "nível amplo de maestria (ex: C) — para habilidades sem marcos" },
           description: { type: "string" },
-          progress: { type: "number", description: "0-100: domínio inicial desta habilidade (default 0)" },
+          progress: {
+            type: "number",
+            description: `0-100: domínio inicial (default ${NEW_ABILITY_MASTERY}). Registrada na hora do uso: 10-25; aprendida com treino longo: mais. O domínio dá bônus no teste e muda o custo.`,
+          },
           milestones: MILESTONE_SCHEMA,
           cost: {
             type: "object",
@@ -135,6 +153,42 @@ export const GM_TOOLS: ToolDef[] = [
   {
     type: "function",
     function: {
+      name: "use_ability",
+      description:
+        "Resolve o uso de uma técnica DA FICHA do personagem (jutsu, golpe especial...). O servidor faz a conta: desconta o custo já ajustado pelo domínio (falha sem rolar se não houver recurso), rola 1d20 + atributo x multiplicador + bônus do domínio contra a CD (o jogador vê a rolagem) e sobe o domínio pelo uso. Use no lugar de roll_dice + update_resource para técnicas da ficha. O dano, se houver, role à parte com roll_dice.",
+      parameters: S(
+        {
+          character: { type: "string" },
+          ability: { type: "string", description: "nome exato da técnica na ficha" },
+          attribute: { type: "string", description: "key do atributo do teste, só para trocar o padrão do tipo" },
+          dc: { type: "number", description: "dificuldade (CD). Omita só em disputa direta (rolagem oposta)" },
+          target: { type: "string", description: "alvo, se houver" },
+          note: { type: "string", description: "contexto curto do uso" },
+        },
+        ["character", "ability"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "train",
+      description:
+        "Treino: avança o relógio pelas horas treinadas e só então aplica o ganho. Jutsu: o domínio sobe por hora (menos nos domínios altos). Atributo: as horas acumulam até o próximo +1, até o teto do nível de poder. Há limite de horas de treino por dia e de domínio ganho por jutsu por dia; acima disso o treino é recusado (exausto). Não chame advance_time para as mesmas horas.",
+      parameters: S(
+        {
+          character: { type: "string" },
+          target: { type: "string", description: "nome do jutsu da ficha ou key do atributo" },
+          hours: { type: "number", description: "horas realistas de treino (inteiras, ex: 2, 4)" },
+          note: { type: "string", description: "como treinou" },
+        },
+        ["character", "target", "hours"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "add_item",
       description: "Adiciona item ao inventário (soma quantidade se já existir).",
       parameters: S(
@@ -164,7 +218,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "grant_xp",
       description:
-        "Concede XP ao personagem. O retorno informa se o XP cruzou o limiar de um novo rank (a promoção em si é decisão narrativa sua, via set_rank).",
+        "Concede XP ao personagem. O nível de poder (teto de atributo) sobe sozinho com a XP e o retorno avisa; a XP também dá pontos livres que o jogador distribui. Cargo (rank) é outra coisa: só muda por decisão narrativa sua, via set_rank.",
       parameters: S(
         { character: { type: "string" }, amount: { type: "number" }, reason: { type: "string" } },
         ["character", "amount"]
@@ -175,7 +229,7 @@ export const GM_TOOLS: ToolDef[] = [
     type: "function",
     function: {
       name: "set_rank",
-      description: "Define o rank/nível do personagem (key do ruleset, ex: chunin).",
+      description: "Define o cargo (rank) do personagem: posição na história (key do ruleset, ex: chunin). Não muda o nível de poder, que vem da XP.",
       parameters: S({ character: { type: "string" }, rank: { type: "string" } }, [
         "character",
         "rank",
@@ -556,7 +610,11 @@ export async function executeGmTool(
     }
     case "update_attribute": {
       const c = await getChar(cid, String(args.character));
-      c.sheet.attributes[String(args.attribute)] = Number(args.value);
+      const value = Math.round(Number(args.value));
+      if (!Number.isFinite(value)) return "value precisa ser um número.";
+      const blocked = raiseBlocked(ctx.campaign.ruleset, c.sheet, String(args.attribute), value);
+      if (blocked) return `Aumento recusado: ${blocked}. Nada mudou.`;
+      c.sheet.attributes[String(args.attribute)] = value;
       await saveSheet(c.id, c.sheet);
       ctx.emit({ type: "state" });
       ctx.emit({ type: "tool", name, summary: `${c.name}: ${args.attribute} = ${args.value}` });
@@ -575,7 +633,7 @@ export async function executeGmTool(
         type: String(args.abilityType),
         rank: args.rank ? String(args.rank) : undefined,
         description: args.description ? String(args.description) : undefined,
-        progress: milestones ? Number(args.progress ?? 0) : (typeof args.progress === "number" ? args.progress : undefined),
+        progress: Math.max(0, Math.min(100, typeof args.progress === "number" ? args.progress : NEW_ABILITY_MASTERY)),
         milestones,
         cost: cost && typeof cost.resource === "string" && Number.isFinite(Number(cost.amount))
           ? { resource: cost.resource, amount: Number(cost.amount) }
@@ -589,6 +647,8 @@ export async function executeGmTool(
       const idx = c.sheet.abilities.findIndex(
         (a) => a.name.toLowerCase() === ability.name.toLowerCase()
       );
+      // redefinir sem informar o domínio mantém o que ele já tinha
+      if (idx >= 0 && typeof args.progress !== "number") ability.progress = c.sheet.abilities[idx].progress;
       if (idx >= 0) c.sheet.abilities[idx] = ability;
       else c.sheet.abilities.push(ability);
       await saveSheet(c.id, c.sheet);
@@ -629,6 +689,88 @@ export async function executeGmTool(
       if (upcoming) msg += ` Próximo marco aos ${upcoming.threshold}%: ${upcoming.description}.`;
       return msg;
     }
+    case "use_ability": {
+      const rs = ctx.campaign.ruleset;
+      const c = await getChar(cid, String(args.character));
+      const ability = findAbility(c.sheet, String(args.ability || ""));
+      if (!ability)
+        return `Erro: ${c.name} não tem "${args.ability}" na ficha. Se for plausível que ele saiba, registre antes com add_ability (domínio 10-25) e chame use_ability de novo; se não, a tentativa falha na narrativa. Técnicas da ficha: ${c.sheet.abilities.map((a) => a.name).join(", ") || "nenhuma"}.`;
+      const attrKey = abilityAttribute(rs, ability, args.attribute ? String(args.attribute) : undefined);
+      if (!attrKey) return `Erro: atributo "${args.attribute}" não existe (${rs.attributes.map((a) => a.key).join(", ")}).`;
+      const cost = effectiveCost(rs, ability);
+      const pool = cost && cost.amount > 0 ? c.sheet.resources[cost.resource] : undefined;
+      if (cost && cost.amount > 0) {
+        if (!pool) return `Erro: recurso "${cost.resource}" não existe na ficha de ${c.name}.`;
+        if (pool.current < cost.amount)
+          return `FALHOU sem rolar: ${ability.name} custa ${cost.amount} ${cost.resource}${cost.mult !== 1 ? ` (base ${cost.base}, ${costAdjustText(cost.mult)})` : ""} e ${c.name} tem ${pool.current}. Nada foi gasto. Narre a falta de ${cost.resource}.`;
+        pool.current -= cost.amount;
+      }
+      const attr = c.sheet.attributes[attrKey] ?? 0;
+      const mult = rs.attributeMultiplier ?? 1;
+      const bonus = masteryBonus(rs, ability);
+      const mod = attr * mult + bonus;
+      const dc = typeof args.dc === "number" && Number.isFinite(args.dc) ? args.dc : undefined;
+      const attrLabel = rs.attributes.find((a) => a.key === attrKey)?.label || attrKey;
+      const result = rollDice(
+        `1d20${mod >= 0 ? "+" : ""}${mod}`,
+        `${ability.name}${args.target ? ` em ${args.target}` : ""} (${attrLabel} ${attr}${mult !== 1 ? `×${mult}` : ""} + domínio +${bonus})`,
+        dc
+      );
+      const clock = getClock(ctx.campaign.state);
+      const g = gainMastery(rs, c.sheet, ability, useGain(rs, ability), clock ? clockParts(clock.minutes).day : 0);
+      await saveSheet(c.id, c.sheet);
+      ctx.emit({ type: "state" });
+      if (pool) ctx.emit({ type: "tool", name, summary: `${c.name} usou ${ability.name}: −${cost!.amount} ${cost!.resource} (${pool.current}/${pool.max})` });
+      ctx.emit({ type: "dice", result });
+      // depois do dado: com a animação, só aparece quando o jogador rolar
+      if (g.after > g.before || g.milestone)
+        ctx.emit({
+          type: "tool",
+          name,
+          summary: `${ability.name}: domínio ${g.before}% → ${g.after}%${g.milestone ? ` — novo marco: ${g.milestone.description}` : ""}`,
+        });
+      let msg = `${ability.name} (${c.name}${args.target ? ` → ${args.target}` : ""}): dados [${result.rolls.join(", ")}] + ${attrLabel} ${attr}${mult !== 1 ? `×${mult}` : ""} + domínio ${bonus} = TOTAL ${result.total}`;
+      msg += dc !== undefined ? ` contra CD ${dc}: ${result.success ? "SUCESSO" : "FALHA"}.` : " (disputa: compare com a rolagem oposta).";
+      msg += pool ? ` Custo pago: ${cost!.amount} ${cost!.resource}${cost!.mult !== 1 ? ` (base ${cost!.base}, ${costAdjustText(cost!.mult)})` : ""}; resta ${pool.current}/${pool.max}.` : " Sem custo.";
+      msg += g.after > g.before ? ` Domínio ${g.before}% → ${g.after}%.` : g.capped ? ` Domínio ${g.after}% (já rendeu o máximo hoje).` : ` Domínio ${g.after}%.`;
+      if (g.milestone) msg += ` NOVO MARCO ALCANÇADO: ${g.milestone.description} — narre esse avanço.`;
+      if (ability.damage) msg += ` Dano registrado: ${ability.damage} (role com roll_dice se acertou).`;
+      return msg;
+    }
+    case "train": {
+      const rs = ctx.campaign.ruleset;
+      const c = await getChar(cid, String(args.character));
+      const before = getClock(ctx.campaign.state)?.minutes;
+      if (before === undefined) return "O relógio ainda não foi definido: chame set_time primeiro.";
+      const r = train(rs, c.sheet, String(args.target || ""), Number(args.hours), clockParts(before).day);
+      if ("error" in r) return r.error;
+      const minutes = before + r.hours * 60;
+      ctx.campaign.state = { ...ctx.campaign.state, clock: { minutes } };
+      ctx.emit({ type: "time", minutes });
+      ctx.emit({ type: "tool", name, summary: `🕐 ${formatClock(minutes)} (+${formatDuration(r.hours * 60)}) — treino` });
+      const lost = await saveClock(cid, minutes, ctx.emit);
+      await saveSheet(c.id, c.sheet);
+      ctx.emit({ type: "state" });
+      const gain =
+        r.kind === "ability"
+          ? `${r.label} ${r.before}% → ${r.after}%${r.milestone ? ` — novo marco: ${r.milestone.description}` : ""}`
+          : r.after > r.before
+            ? `${r.label} ${r.before} → ${r.after}`
+            : `${r.label}: ${r.atCap ? "no teto" : `${r.banked}/${r.need} h para +1`}`;
+      ctx.emit({ type: "tool", name, summary: `🏋️ ${c.name} treinou ${r.hours} h: ${gain}` });
+      let msg = `Treino de ${r.hours} h. Relógio: ${formatClock(minutes)} (${period(minutes)}). Hoje: ${r.hoursToday} h de treino.`;
+      if (r.kind === "ability") {
+        msg += ` Domínio de ${r.label}: ${r.before}% → ${r.after}%.`;
+        if (r.capped) msg += " Rendimento cortado: chegou ao máximo de domínio por dia neste jutsu.";
+        if (r.milestone) msg += ` NOVO MARCO ALCANÇADO: ${r.milestone.description} — narre esse avanço.`;
+      } else {
+        msg += r.after > r.before ? ` ${r.label} subiu de ${r.before} para ${r.after}!` : ` ${r.label} continua ${r.after}.`;
+        msg += r.atCap
+          ? ` Chegou ao teto do nível de poder: as horas não acumulam mais até o próximo nível.`
+          : ` Horas acumuladas: ${r.banked}/${r.need} para o próximo +1.`;
+      }
+      return msg + lost;
+    }
     case "add_item": {
       const c = await getChar(cid, String(args.character));
       const qty = Number(args.qty ?? 1);
@@ -663,17 +805,26 @@ export async function executeGmTool(
       return `Item removido.`;
     }
     case "grant_xp": {
+      const rs = ctx.campaign.ruleset;
       const c = await getChar(cid, String(args.character));
-      c.sheet.xp += Number(args.amount);
+      const amount = Math.round(Number(args.amount));
+      if (!Number.isFinite(amount)) return "amount precisa ser um número.";
+      const lvlBefore = powerLevel(rs, c.sheet.xp).level;
+      const ptsBefore = attributePoints(rs, c.sheet).earned;
+      c.sheet.xp += amount;
       await saveSheet(c.id, c.sheet);
-      const ranks = ctx.campaign.ruleset.ranks;
-      const eligible = [...ranks].reverse().find((r) => c.sheet.xp >= r.xpRequired);
-      const current = ranks.find((r) => r.key === c.sheet.rank);
+      const { level, next } = powerLevel(rs, c.sheet.xp);
+      const pts = attributePoints(rs, c.sheet);
+      const up = level && level.key !== lvlBefore?.key && level.xpRequired > (lvlBefore?.xpRequired ?? -1);
       ctx.emit({ type: "state" });
-      ctx.emit({ type: "tool", name, summary: `${c.name} +${args.amount} XP (total ${c.sheet.xp})` });
-      let msg = `${c.name} agora tem ${c.sheet.xp} XP.`;
-      if (eligible && current && eligible.xpRequired > current.xpRequired)
-        msg += ` ATENÇÃO: XP suficiente para ${eligible.label} — promova via set_rank se/quando fizer sentido narrativo (exame, cerimônia...).`;
+      ctx.emit({ type: "tool", name, summary: `${c.name} +${amount} XP (total ${c.sheet.xp})` });
+      if (up) ctx.emit({ type: "tool", name, summary: `⬆ Nível de poder: ${level!.label}` });
+      if (pts.earned > ptsBefore) ctx.emit({ type: "tool", name, summary: `+${pts.earned - ptsBefore} ponto(s) livre(s) de atributo` });
+      let msg = `${c.name} agora tem ${c.sheet.xp} XP (nível de poder ${level?.label ?? "-"}${next ? `; próximo, ${next.label}, aos ${next.xpRequired}` : ""}).`;
+      if (up)
+        msg += ` NÍVEL DE PODER SUBIU para ${level!.label}${level!.attributeCap !== undefined ? ` (teto de atributo ${level!.attributeCap})` : ""}. Isso NÃO é promoção de cargo: o cargo só muda por set_rank, se e quando a história levar a isso (exame, cerimônia...).`;
+      if (pts.earned > ptsBefore)
+        msg += ` +${pts.earned - ptsBefore} ponto(s) livre(s) de atributo (${pts.free} livres): o jogador distribui na ficha; não aplique por ele.`;
       return msg;
     }
     case "set_rank": {
