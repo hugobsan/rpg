@@ -92,12 +92,12 @@ export default function Composer({ ref, onSend, busy, placeholder, quick, onOoc 
         />
         <div className={s.bar}>
           {quick.length > 0 && (
-            <button className={`${s.tool} ${tray ? s.on : ""}`} onClick={() => setTray((v) => !v)} aria-expanded={tray}
+            <button className={`${s.tool} ${tray ? s.on : ""}`} onClick={() => setTray((v) => !v)} aria-expanded={tray} aria-label="Ações rápidas"
               title={`Usar ${quick.map((g) => g.label.toLowerCase()).join(" ou ")} da ficha`}>
               <Icon name="bolt" size={16} /><span>Ações rápidas</span>
             </button>
           )}
-          <button className={`${s.tool} ${s.ooc}`} onClick={onOoc} title="Converse com o Mestre como jogador: nada disso entra na história">
+          <button className={`${s.tool} ${s.ooc}`} onClick={onOoc} aria-label="Fora do jogo" title="Converse com o Mestre como jogador: nada disso entra na história">
             <Icon name="chat" size={16} /><span>Fora do jogo</span>
           </button>
           <span className={s.hint}>Enter envia · Shift+Enter quebra a linha</span>
