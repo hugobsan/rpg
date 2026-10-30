@@ -4,8 +4,9 @@ import { ToolDef } from "./openrouter";
 import { rollDice } from "./dice";
 import { addMemory, searchMemories, searchBookChunks } from "./retrieval";
 import { listBooks, readPages } from "./books";
-import { Ability, Campaign, Character, Scene, Sheet, TableRules, TurnEvent } from "./types";
+import { Ability, Campaign, Character, LibraryAbility, LibraryItem, Scene, Sheet, TableRules, TurnEvent } from "./types";
 import { abilityPromptLine, blankSheet, currentMilestone, nextMilestone } from "./ruleset";
+import { ensureAbility, fallbackAbility, findLibrary, itemText, libraryLine, listLibrary } from "./library";
 import {
   abilityAttribute,
   attributePoints,
@@ -25,6 +26,14 @@ import { expireObjectives, formatRemaining, getObjectives, Objective, OBJECTIVE_
 import { executeMapTool, MAP_TOOLS, recordScenePlace } from "./map";
 import { dcResultText, getTable, tableDc } from "./table";
 import { queueProfile } from "./characters";
+
+// add_ability espera o Criador de habilidades até isto; depois registra com o que o Mestre passou
+// (o Criador segue em segundo plano e a técnica fica na biblioteca para a próxima vez)
+const CREATOR_TIMEOUT_MS = 90_000;
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([p, new Promise<null>((r) => (t = setTimeout(() => r(null), ms)))]).finally(() => clearTimeout(t));
+}
 
 const MILESTONE_SCHEMA = {
   type: "array",
@@ -107,33 +116,20 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "add_ability",
       description:
-        "Adiciona (ou redefine, se mesmo nome) uma habilidade/jutsu ao personagem. Use quando ele aprende algo E quando ele usa uma técnica plausível que ainda não está na ficha: registre NA HORA DO USO, antes de resolver (rolagem, custo), com custo, efeito, dano e requisitos — nada de resolver uma técnica que não está na ficha. Para habilidades com evolução em estágios (dōjutsu, técnicas assinatura), defina milestones — o progresso é próprio dessa habilidade, não uma barra genérica do personagem. Para habilidades simples, basta rank.",
+        "Registra (ou redefine, se mesmo nome) uma técnica na ficha: quando o personagem aprende E quando usa uma técnica plausível que ainda não está na ficha (registre antes de resolver). Passe só o nome e um brief: a técnica vem da biblioteca do mundo ou o Criador de habilidades a cria agora, completa (tipo, rank, custo, efeito, dano, marcos de domínio).",
       parameters: S(
         {
           character: { type: "string" },
-          name: { type: "string" },
-          abilityType: { type: "string", description: "key do tipo (ex: ninjutsu)" },
-          rank: { type: "string", description: "nível amplo de maestria (ex: C) — para habilidades sem marcos" },
-          description: { type: "string" },
+          name: { type: "string", description: "nome da técnica como é conhecida no mundo" },
+          brief: { type: "string", description: "o que é e faz, em uma frase, para o Criador (se não estiver na biblioteca)" },
+          abilityType: { type: "string", description: "opcional: key do tipo, só como dica" },
+          rank: { type: "string", description: "opcional: nível, só como dica" },
           progress: {
             type: "number",
-            description: `0-100: domínio inicial (default ${NEW_ABILITY_MASTERY}). Registrada na hora do uso: 10-25; aprendida com treino longo: mais. O domínio dá bônus no teste e muda o custo.`,
+            description: `0-100: domínio inicial (default ${NEW_ABILITY_MASTERY}). Registrada na hora do uso: 10-25; aprendida com treino longo: mais.`,
           },
-          milestones: MILESTONE_SCHEMA,
-          cost: {
-            type: "object",
-            description: "custo por uso. Omita para usar o padrão do rank no ruleset; amount 0 = sem custo",
-            properties: {
-              resource: { type: "string", description: "key do recurso (ex: chakra)" },
-              amount: { type: "number" },
-            },
-            required: ["resource", "amount"],
-          },
-          effect: { type: "string", description: "o que faz em jogo: alcance, duração, teste usado" },
-          damage: { type: "string", description: "dano em notação de dado (ex: 2d6), se causar dano" },
-          requirements: { type: "string", description: "selos, elemento, kekkei genkai, outra habilidade" },
         },
-        ["character", "name", "abilityType"]
+        ["character", "name"]
       ),
     },
   },
@@ -196,7 +192,7 @@ export const GM_TOOLS: ToolDef[] = [
     type: "function",
     function: {
       name: "add_item",
-      description: "Adiciona item ao inventário (soma quantidade se já existir).",
+      description: "Adiciona item ao inventário (soma quantidade se já existir). Item da biblioteca do mundo: a descrição vem dela.",
       parameters: S(
         {
           character: { type: "string" },
@@ -205,6 +201,21 @@ export const GM_TOOLS: ToolDef[] = [
           description: { type: "string" },
         },
         ["character", "name"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_library",
+      description:
+        "Consulta a biblioteca do mundo (técnicas e itens já criados, do cânone ou não) antes de inventar uma técnica ou um item. Sem query, lista os nomes.",
+      parameters: S(
+        {
+          kind: { type: "string", enum: ["ability", "item"] },
+          query: { type: "string", description: "parte do nome ou do texto (ex: fogo, cura)" },
+        },
+        ["kind"]
       ),
     },
   },
@@ -666,28 +677,25 @@ export async function executeGmTool(
     }
     case "add_ability": {
       const c = await getChar(cid, String(args.character));
-      const milestones = Array.isArray(args.milestones)
-        ? (args.milestones as { threshold: number; description: string }[])
-            .map((m) => ({ threshold: Number(m.threshold), description: String(m.description) }))
-            .sort((a, b) => a.threshold - b.threshold)
-        : undefined;
-      const cost = args.cost as { resource?: unknown; amount?: unknown } | undefined;
+      const abilityName = String(args.name || "").trim();
+      if (!abilityName) return "Erro: informe name.";
+      // biblioteca > Criador de habilidades (agora, com prazo) > o que o Mestre passou: o turno nunca quebra
+      let def = (await findLibrary(cid, "ability", abilityName))?.data as LibraryAbility | undefined;
+      let from = "da biblioteca";
+      if (!def) {
+        ctx.emit({ type: "status", text: `Criador de habilidades: ${abilityName}` });
+        const hint = [args.brief, args.abilityType && `tipo sugerido: ${args.abilityType}`, args.rank && `nível sugerido: ${args.rank}`]
+          .filter(Boolean)
+          .join("; ");
+        def = (await withTimeout(ensureAbility(ctx.campaign, abilityName, hint), CREATOR_TIMEOUT_MS)) ?? undefined;
+        from = def ? "criada pelo Criador de habilidades e guardada na biblioteca" : "o Criador não respondeu: registrada só com o que você passou (custo padrão do rank)";
+      }
+      const { users: _users, ...base } = def ?? fallbackAbility(ctx.campaign.ruleset, abilityName, args);
+      void _users;
       const ability: Ability = {
-        name: String(args.name),
-        type: String(args.abilityType),
-        rank: args.rank ? String(args.rank) : undefined,
-        description: args.description ? String(args.description) : undefined,
+        ...base,
         progress: Math.max(0, Math.min(100, typeof args.progress === "number" ? args.progress : NEW_ABILITY_MASTERY)),
-        milestones,
-        cost: cost && typeof cost.resource === "string" && Number.isFinite(Number(cost.amount))
-          ? { resource: cost.resource, amount: Number(cost.amount) }
-          : undefined,
-        effect: args.effect ? String(args.effect) : undefined,
-        damage: args.damage ? String(args.damage) : undefined,
-        requirements: args.requirements ? String(args.requirements) : undefined,
       };
-      if (ability.cost && !c.sheet.resources[ability.cost.resource])
-        return `Erro: recurso "${ability.cost.resource}" não existe na ficha de ${c.name}.`;
       const idx = c.sheet.abilities.findIndex(
         (a) => a.name.toLowerCase() === ability.name.toLowerCase()
       );
@@ -703,7 +711,7 @@ export async function executeGmTool(
         name,
         summary: `${c.name} ${idx >= 0 ? "aprimorou" : "aprendeu"}: ${ability.name}${ability.rank ? ` (${ability.rank})` : ""}${cur ? ` — ${cur.description}` : ""}`,
       });
-      return `Habilidade ${idx >= 0 ? "atualizada" : "adicionada"}: ${abilityPromptLine(ctx.campaign.ruleset, ability)}.${cur ? ` Marco atual: ${cur.description}` : ""}`;
+      return `Habilidade ${idx >= 0 ? "atualizada" : "adicionada"} (${from}): ${abilityPromptLine(ctx.campaign.ruleset, ability)}.${cur ? ` Marco atual: ${cur.description}` : ""}`;
     }
     case "update_ability_progress": {
       const c = await getChar(cid, String(args.character));
@@ -826,17 +834,26 @@ export async function executeGmTool(
       const existing = c.sheet.inventory.find(
         (i) => i.name.toLowerCase() === String(args.name).toLowerCase()
       );
+      const lib = existing ? null : await findLibrary(cid, "item", String(args.name));
       if (existing) existing.qty += qty;
       else
         c.sheet.inventory.push({
-          name: String(args.name),
+          name: lib?.name ?? String(args.name),
           qty,
-          description: args.description ? String(args.description) : undefined,
+          description: args.description ? String(args.description) : lib ? itemText(lib.data as LibraryItem) : undefined,
         });
       await saveSheet(c.id, c.sheet);
       ctx.emit({ type: "state" });
-      ctx.emit({ type: "tool", name, summary: `${c.name} +${qty}x ${args.name}` });
-      return `Item adicionado.`;
+      ctx.emit({ type: "tool", name, summary: `${c.name} +${qty}x ${lib?.name ?? args.name}` });
+      return lib ? `Item adicionado (da biblioteca): ${itemText(lib.data as LibraryItem)}` : `Item adicionado.`;
+    }
+    case "search_library": {
+      const kind = args.kind === "item" ? "item" : "ability";
+      const query = args.query ? String(args.query).trim() : "";
+      const list = await listLibrary(cid, kind, { query, limit: query ? 15 : 300 });
+      if (!list.length) return query ? `Nada na biblioteca com "${query}".` : "A biblioteca ainda não tem nada desse tipo.";
+      if (!query) return `${list.length} na biblioteca: ${list.map((e) => e.name).join(", ")}`;
+      return list.map((e) => `- ${libraryLine(ctx.campaign.ruleset, e)}`).join("\n");
     }
     case "remove_item": {
       const c = await getChar(cid, String(args.character));

@@ -146,6 +146,7 @@ async function buildGmSystem(
     `\n====== CAMPANHA: ${campaign.name} ======`,
     STYLE_INSTRUCTIONS[campaign.style] || STYLE_INSTRUCTIONS.hybrid,
     `\n--- MECÂNICA ---\n${rulesetPromptSummary(campaign.ruleset)}`,
+    "Biblioteca do mundo: técnicas e itens já criados (search_library). add_ability só precisa de personagem, nome e brief: a técnica vem da biblioteca ou o Criador de habilidades a cria completa (tipo, rank, custo, efeito, dano, marcos); não invente esses números.",
     tablePromptBlock(getTable(campaign.state)),
     `\n--- CENA ATUAL (nº ${scene.seq}) ---\nModo: ${scene.mode} | Local: ${scene.location || "?"} | Título: ${scene.title || "-"}\n${
       clock

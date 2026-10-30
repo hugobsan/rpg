@@ -6,6 +6,7 @@ import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { activeDirectives, addMemory } from "./retrieval";
 import { getCampaign, getCharacters, getCurrentScene, sheetSummary } from "./engine";
 import { executeGmTool, GM_TOOLS, saveTable } from "./tools";
+import { generateLibrary } from "./library";
 import { DIFFICULTIES, getTable, mergeCategories, normalizeTable, tablePromptBlock, tableSummary } from "./table";
 
 // as ferramentas do turno, menos as que leem o roteiro e os segredos dos NPCs (spoiler) e a mensagem de NPC
@@ -22,6 +23,24 @@ const OOC_GAME_TOOLS: ToolDef[] = [
         type: "object",
         properties: { character: { type: "string" }, name: { type: "string", description: "nome exato da habilidade" } },
         required: ["character", "name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_library",
+      description:
+        "A pedido do jogador, põe o Criador de habilidades ou o de itens para criar em segundo plano N entradas da biblioteca do mundo com um foco (ex.: técnicas canônicas de um lugar ou período). Não espera terminar; o resultado aparece na aba Biblioteca.",
+      parameters: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["ability", "item"] },
+          count: { type: "number", description: "quantas (1 a 60)" },
+          focus: { type: "string", description: "o foco do pedido, nas palavras do jogador" },
+          canon: { type: "boolean", description: "só o que existe na obra (padrão: o da campanha)" },
+        },
+        required: ["kind", "count"],
       },
     },
   },
@@ -158,6 +177,11 @@ async function runTool(
       await saveTable(ctx.campaign.id, table);
       ctx.campaign.state = { ...ctx.campaign.state, table };
       return `✓ Regras da mesa: ${tableSummary(table)}`;
+    }
+    if (name === "generate_library") {
+      const canon = typeof args.canon === "boolean" ? args.canon : ctx.campaign.ruleset.canonBased;
+      const job = await generateLibrary(ctx.campaign, args.kind === "item" ? "item" : "ability", Number(args.count) || 10, String(args.focus || ""), canon);
+      return job.started ? `✓ ${job.label}: começou em segundo plano; o resultado aparece na aba Biblioteca.` : `Já está rodando: ${job.label}.`;
     }
     if (name === "remove_ability") {
       const target = chars.find((c) => c.name.toLowerCase() === String(args.character || "").toLowerCase());
