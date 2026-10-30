@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type {
   Campaign,
   CampaignScript,
@@ -59,12 +59,16 @@ interface StateShape {
   characters: Character[];
   books: { id: string; title: string; pages: number }[];
   messages: { id: number; role: string; content: string; meta: { choices?: string[] } }[];
+  hasMore: boolean; // há mensagens anteriores às carregadas
   memories: { id: number; kind: string; subject: string | null; content: string; importance: number }[];
   lastImage: { id: number; data_url: string } | null;
 }
 
 const toFeed = (messages: StateShape["messages"]): FeedItem[] =>
   messages.map((m) => ({ key: `m${m.id}`, kind: m.role === "player" ? "player" : "gm", content: m.content }));
+
+// o feed guarda mensagens salvas com chave "m<id>"; os eventos ao vivo do turno usam "k<n>"
+const savedId = (i: FeedItem) => (i.key[0] === "m" ? Number(i.key.slice(1)) : null);
 
 const SIDE_KEY = "chronicle.sideWidth";
 const SIDE_DEFAULT = 340;
@@ -116,6 +120,11 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
   const [openNpc, setOpenNpc] = useState<Character | null>(null);
   const [oocOpen, setOocOpen] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
+  const [hasMore, setHasMore] = useState(false); // há mensagens anteriores ainda não carregadas
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadingOlderRef = useRef(false); // evita pedido duplicado enquanto um lote carrega
+  const anchor = useRef<{ h: number; top: number } | null>(null); // posição do scroll antes de prepender
+  const firstScroll = useRef(true);
   const keyCounter = useRef(0);
 
   const nextKey = () => `k${++keyCounter.current}`;
@@ -195,14 +204,47 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
     reloadState().then((data) => {
       if (!data) return;
       setFeed(toFeed(data.messages));
+      setHasMore(data.hasMore);
       const last = data.messages[data.messages.length - 1];
       if (last?.meta?.choices?.length) setChoices(last.meta.choices);
     });
   }, [reloadState]);
 
-  useEffect(() => {
-    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
+  // Rola até o fim quando chega mensagem nova; ao prepender anteriores, só compensa a altura
+  // acrescentada (scroll instantâneo: o .feed tem scroll-behavior: smooth).
+  useLayoutEffect(() => {
+    const el = feedRef.current;
+    if (!el) return;
+    if (anchor.current) {
+      el.scrollTo({ top: anchor.current.top + el.scrollHeight - anchor.current.h, behavior: "instant" });
+      anchor.current = null;
+      return;
+    }
+    // na primeira carga vai direto ao fim (rolar suave desde o topo dispararia o carregamento das anteriores)
+    el.scrollTo({ top: el.scrollHeight, behavior: firstScroll.current ? "instant" : "smooth" });
+    if (feed.length) firstScroll.current = false;
   }, [feed, statusText]);
+
+  const loadOlder = async () => {
+    const el = feedRef.current;
+    const oldest = feed.map(savedId).find((id) => id !== null);
+    if (loadingOlderRef.current || !hasMore || !el || !oldest) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/messages?before=${oldest}`);
+      if (!res.ok) throw new Error(`Erro ${res.status}`);
+      const page = (await res.json()) as { messages: StateShape["messages"]; hasMore: boolean };
+      anchor.current = { h: el.scrollHeight, top: el.scrollTop };
+      setFeed((f) => [...toFeed(page.messages), ...f]);
+      setHasMore(page.hasMore);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  };
 
   // ---------- turno ----------
 
@@ -291,7 +333,11 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
       drainHeld(true);
       const data = await reloadState();
       // se o "gerar novamente" falhou, o chat volta a refletir o que está salvo
-      if (regen && failed && data) setFeed(toFeed(data.messages));
+      // (mantém as anteriores já carregadas, antes da janela recente)
+      if (regen && failed && data) {
+        const first = data.messages[0]?.id ?? 0;
+        setFeed((f) => [...f.filter((i) => (savedId(i) ?? Infinity) < first), ...toFeed(data.messages)]);
+      }
     }
   };
 
@@ -344,8 +390,15 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
           )}
         </div>
 
-        <div className="feed" ref={feedRef}>
+        <div className="feed" ref={feedRef} onScroll={(e) => e.currentTarget.scrollTop < 200 && loadOlder()}>
           <div className="feed-inner">
+            {hasMore ? (
+              <button className="btn ghost small" style={{ alignSelf: "center" }} onClick={loadOlder} disabled={loadingOlder}>
+                {loadingOlder ? "carregando…" : "Carregar anteriores"}
+              </button>
+            ) : (
+              feed.length > 0 && <div className="muted" style={{ textAlign: "center", fontSize: 12 }}>início da campanha</div>
+            )}
             {feed.length === 0 && !busy && (
               <div style={{ textAlign: "center", padding: "60px 20px" }}>
                 <h2>A aventura aguarda</h2>

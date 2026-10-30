@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
 import { getCampaign, getCharacters, getCurrentScene } from "@/lib/engine";
 import { listBooks } from "@/lib/books";
+import { messagePage } from "@/lib/messages";
 
 export const dynamic = "force-dynamic";
 
@@ -13,15 +14,11 @@ export async function GET(
   const { id } = await params;
   try {
     const campaign = await getCampaign(id);
-    const [scene, characters, books, messages, milestones, images] = await Promise.all([
+    const [scene, characters, books, page, milestones, images] = await Promise.all([
       getCurrentScene(id),
       getCharacters(id),
       listBooks(id),
-      q(
-        `SELECT id, role, speaker, content, meta, created_at::text FROM messages
-         WHERE campaign_id = $1 AND role IN ('player','gm') ORDER BY id DESC LIMIT 80`,
-        [id]
-      ),
+      messagePage(id),
       q(
         `SELECT id, kind, subject, content, importance, created_at::text FROM memories
          WHERE campaign_id = $1 ORDER BY id DESC LIMIT 100`,
@@ -38,7 +35,8 @@ export async function GET(
       scene,
       characters,
       books,
-      messages: (messages as { id: number }[]).reverse(),
+      messages: page.messages, // só o lote mais recente; as anteriores vêm de /messages?before=
+      hasMore: page.hasMore,
       memories: milestones,
       // a ficha mostra a última imagem, a menos que o jogador a tenha tirado de lá (✕); ela segue na galeria
       lastImage:
