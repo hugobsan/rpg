@@ -102,6 +102,8 @@ Outros globais: `.msg-gm`, `.msg-player`, `table.plain`, `pre.log-json`, `.error
 
 Componentes com estilo próprio (CSS Module ao lado do `.tsx`): estilo específico de um componente vai no `.module.css` dele, só com tokens; o `globals.css` fica para o que é genérico. Referências: abas e trilho em `src/components/game/SidePanel`, feed (falas, rolagens, escolhas) em `game/Feed`, barras de recurso e atributos em `SheetView`, conversa em `NpcModal`, cartões de campanha em `src/app/(home)`, passos do assistente em `src/app/campaigns/new`.
 
+Retrato de personagem: `<Portrait char={c} size={38} />` (`src/components/Portrait`, client) mostra a pixel art na moldura do tema, as iniciais quando ainda não há retrato e a grade de pixels acendendo enquanto `c.portrait.busy`; tamanho ≥ 56 ganha a moldura dupla. `<PortraitButton char={c} onChange={reload} />` é o Gerar/Regerar. Não use `<img>` solto para retrato: a URL leva a versão (`portraitUrl(c)`).
+
 Utilitários: `.sr-only`, `.muted`, `.faint`, `.num`, `.overline`, `.display`, `.divider` (`<div class="divider"><span></span></div>`: linha com o glifo do tema no meio).
 
 Tooltip (CSS puro, sem componente): `<span data-tip="Gasta 1 ponto livre">+</span>`. Põe `position: relative` no elemento; não funciona dentro de `overflow: hidden` (use `title` ali, ou um balão controlado por estado como o dos atributos em `SheetView`).
