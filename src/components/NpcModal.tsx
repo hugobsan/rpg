@@ -4,6 +4,10 @@ import type { Campaign, Character, VoiceFx, VoiceProfile } from "@/lib/types";
 import { FX_DEFAULT, fxOf, playVoice, stopVoice } from "@/lib/voiceFx";
 import SheetView from "./SheetView";
 import AbilitiesView from "./AbilitiesView";
+import { NpcAvatar } from "./NpcList";
+import Loader from "./ui/Loader";
+import { toast } from "./ui/Toast";
+import s from "./NpcModal.module.css";
 
 interface ChatMsg {
   role: "player" | "npc";
@@ -36,7 +40,7 @@ export async function playLine(
       body: JSON.stringify({ text }),
     });
     const d = await res.json().catch(() => ({}));
-    if (!res.ok) return alert(d.error || `Erro ${res.status} ao gerar a voz`);
+    if (!res.ok) return void toast(d.error || `Erro ${res.status} ao gerar a voz`, { kind: "alerta" });
     if (me !== lineSeq) return; // outra fala foi pedida depois: a mais recente vence
     playVoice(d.url, fx); // já tocando? playVoice para o anterior e recomeça, sem sobrepor
     return d as { voice: string; gender: "male" | "female" | null };
@@ -52,6 +56,14 @@ interface TtsInfo {
   voices: string[] | null; // null = o catálogo não lista: campo livre
 }
 
+const Svg = ({ d, size = 18 }: { d: string; size?: number }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d={d} />
+  </svg>
+);
+const SPEAKER = "M4 9h4l5-4v14l-5-4H4zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12";
+const TABS = [["chat", "Conversa"], ["sheet", "Ficha"], ["voice", "Voz"]] as const;
+
 export default function NpcModal({
   campaignId,
   npc,
@@ -66,16 +78,18 @@ export default function NpcModal({
   const [view, setView] = useState<"chat" | "sheet" | "voice">("chat");
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [calledBy, setCalledBy] = useState(false); // a conversa foi aberta pelo NPC (npc_message)
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [ending, setEnding] = useState(false);
   const [voice, setVoice] = useState<VoiceProfile | null>(npc.voice);
   const [gender, setGender] = useState(npc.persona.gender);
   const [tts, setTts] = useState<TtsInfo | null>(null);
-  const [speaking, setSpeaking] = useState(false);
+  const [speaking, setSpeaking] = useState<number | null>(null); // índice da fala gerando voz (-1 = prévia)
   const [fx, setFx] = useState<VoiceFx>(() => fxOf(npc.persona));
   const fxRef = useRef(fx); // valor mais recente, para a prévia e para salvar ao soltar o slider
   const feedRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (view === "voice" && !tts)
@@ -83,8 +97,8 @@ export default function NpcModal({
   }, [view, tts, campaignId, npc.id]);
 
   useEffect(() => {
-    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
-  }, [msgs]);
+    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
+  }, [msgs, busy]);
 
   // o NPC mandou mensagem (npc_message): abre nessa conversa; o servidor marca como lida
   useEffect(() => {
@@ -93,18 +107,26 @@ export default function NpcModal({
       .then((d: { sessionId: string | null; messages: ChatMsg[] }) => {
         if (!d.sessionId) return;
         setSessionId(d.sessionId);
+        setCalledBy(true);
         setMsgs(d.messages.map((m) => ({ role: m.role, content: m.content })));
       })
       .catch(() => {});
   }, [campaignId, npc.id]);
 
+  // Esc fecha (encerrando a conversa, como o clique fora)
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === "Escape" && endChat();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  });
+
   const saving = useRef<Promise<unknown>>(Promise.resolve());
-  const speak = async (text: string) => {
-    setSpeaking(true);
+  const speak = async (text: string, idx: number) => {
+    setSpeaking(idx);
     await saving.current; // a prévia logo após trocar a voz espera o save
     const d = await playLine(campaignId, npc, text, fxRef.current);
     if (d?.gender && gender === undefined) setGender(d.gender); // o Jev decidiu o sexo agora
-    setSpeaking(false);
+    setSpeaking(null);
   };
 
   const send = async () => {
@@ -130,10 +152,12 @@ export default function NpcModal({
       ]);
     } finally {
       setBusy(false);
+      inputRef.current?.focus();
     }
   };
 
   const endChat = async () => {
+    if (ending) return;
     if (sessionId && msgs.length >= 2) {
       setEnding(true);
       await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}/end`, {
@@ -178,52 +202,70 @@ export default function NpcModal({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ active: !npc.active }),
     });
+    toast(npc.active ? `${npc.name} saiu de cena.` : `${npc.name} entrou na cena.`);
     onClose();
   };
 
   return (
     <div className="modal-backdrop" onClick={endChat}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3 style={{ margin: 0, flex: 1 }}>
-            {npc.name}{" "}
-            {npc.canon && <span className="pill">cânone</span>}
-            <span className={`pill ${npc.active ? "on" : ""}`}>{npc.active ? "em cena" : "fora de cena"}</span>
-          </h3>
-          {(["chat", "sheet", "voice"] as const).map((v) => (
-            <button
-              key={v}
-              className={`btn small ${view === v ? "" : "ghost"}`}
-              onClick={() => setView(v)}
-            >
-              {v === "chat" ? "💬" : v === "sheet" ? "📋" : "🔊"}
-            </button>
-          ))}
-          <button className="btn ghost small" onClick={endChat}>✕</button>
+      <div className={`modal ${s.modal}`} role="dialog" aria-modal="true" aria-label={`Conversa com ${npc.name}`} onClick={(e) => e.stopPropagation()}>
+        <div className={s.head}>
+          <NpcAvatar npc={npc} size={44} />
+          <div className={s.who}>
+            <h3 className={s.name}>{npc.name}</h3>
+            <div className={s.status}>
+              <span className={`${s.dot}${npc.active ? ` ${s.on}` : ""}`} aria-hidden="true" />
+              {npc.active ? "em cena" : "fora de cena"}
+              {npc.canon && <> · cânone</>}
+            </div>
+          </div>
+          <button className={s.icon} onClick={toggleActive} title={npc.active ? "Tirar de cena" : "Trazer para a cena"}
+            aria-label={npc.active ? `Tirar ${npc.name} de cena` : `Trazer ${npc.name} para a cena`}>
+            <Svg d={npc.active ? "M14 4h5v16h-5M10 8l-4 4 4 4M6 12h9" : "M14 4h5v16h-5M9 8l4 4-4 4M13 12H4"} />
+          </button>
+          <button className={s.icon} onClick={endChat} disabled={ending} aria-label="Fechar">
+            {ending ? <Loader size={18} label="Salvando a conversa" /> : <Svg d="M6 6l12 12M18 6 6 18" />}
+          </button>
         </div>
 
-        <div className="modal-body">
+        <div className={s.tabs} role="tablist">
+          {TABS.map(([v, label]) => (
+            <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}>{label}</button>
+          ))}
+        </div>
+
+        <div className={s.body} ref={view === "chat" ? feedRef : undefined}>
           {view === "chat" && (
-            <div className="npc-chat-feed" ref={feedRef} style={{ maxHeight: "50vh", overflowY: "auto" }}>
+            <div className={s.feed} aria-live="polite">
+              {calledBy && (
+                <div className={s.called}>
+                  <Svg d="M4 6h16v12H4zM4 7l8 6 8-6" />
+                  <span><b>{npc.name}</b> procurou você em particular. O Mestre não narra esta conversa; o que for importante entra na história quando você encerrar.</span>
+                </div>
+              )}
               {msgs.length === 0 && (
-                <p className="muted">
-                  Conversa particular com {npc.name}, fora da narração do Mestre. Dependendo da cena,
-                  o personagem pode recusar parar para conversar. Ao fechar, o Cronista salva só os
-                  pontos importantes para o Mestre — o NPC lembra de tudo.
+                <p className={s.intro}>
+                  <b>Conversa particular com {npc.name}</b>
+                  Fora da narração do Mestre. Dependendo da cena, o personagem pode recusar parar para conversar.
+                  Ao encerrar, o Cronista guarda os pontos importantes para o Mestre, e {npc.name} lembra de tudo.
                 </p>
               )}
               {msgs.map((m, i) => (
-                <div key={i} className={`npc-bubble ${m.role}`}>
-                  {m.content}
+                <div key={i} className={`${s.line} ${s[m.role]}${m.refused ? ` ${s.refused}` : ""}`}>
+                  <div className={s.bubble}>{m.content}</div>
                   {m.role === "npc" && !m.refused && (
-                    <button className="speak" title="Ouvir" disabled={speaking} onClick={() => speak(m.content)}>🔊</button>
+                    <button className={`${s.speak}${speaking === i ? ` ${s.busy}` : ""}`} title="Ouvir" aria-label={`Ouvir ${npc.name}`}
+                      disabled={speaking !== null} onClick={() => speak(m.content, i)}>
+                      {speaking === i ? <Loader size={16} label="Gerando a voz" /> : <Svg d={SPEAKER} size={15} />}
+                    </button>
                   )}
                 </div>
               ))}
               {busy && (
-                <div className="thinking">
-                  <span className="dot" /><span className="dot" /><span className="dot" />
-                  {npc.name} está respondendo...
+                <div className={`${s.line} ${s.npc}`}>
+                  <div className={`${s.bubble} ${s.typing}`} role="status" aria-label={`${npc.name} está respondendo`}>
+                    <i /><i /><i />
+                  </div>
                 </div>
               )}
             </div>
@@ -235,7 +277,7 @@ export default function NpcModal({
             </>
           )}
           {view === "voice" && (
-            <div>
+            <div className={s.voice}>
               <label className="field">
                 <span>Sexo (define a voz padrão)</span>
                 <select value={gender ?? ""} onChange={(e) => saveGender(e.target.value)}>
@@ -246,8 +288,9 @@ export default function NpcModal({
                   <option value="female">feminino</option>
                 </select>
               </label>
-              {!tts && <p className="muted">Carregando vozes...</p>}
-              {tts && (
+              {!tts ? (
+                <Loader size={22} label="Carregando as vozes" showLabel />
+              ) : (
                 <label className="field">
                   <span>Voz ({tts.model}, escolhido no agente Voz)</span>
                   {tts.voices ? (
@@ -267,39 +310,44 @@ export default function NpcModal({
               <FxSlider label="Tom (mantém a velocidade)" min={-12} max={12} step={1} value={fx.pitch}
                 show={(v) => `${v > 0 ? "+" : ""}${v} st`}
                 onChange={(pitch) => changeFx({ pitch })} onCommit={saveFx} onReset={() => resetFx("pitch")} />
-              <p className="muted" style={{ marginTop: 0 }}>
-                Só muda como o áudio toca aqui no navegador; nada vai para a API de voz. Tom muito alto ou baixo pode soar artificial.
-              </p>
-              <button className="btn small" disabled={speaking} onClick={() => speak(`Olá. Eu sou ${npc.name}.`)}>
-                {speaking ? "gerando..." : "▶ Ouvir prévia"}
+              <p>Só muda como o áudio toca aqui no navegador; nada vai para a API de voz. Tom muito alto ou baixo pode soar artificial.</p>
+              <button className="btn small" style={{ alignSelf: "flex-start" }} disabled={speaking !== null}
+                onClick={() => speak(`Olá. Eu sou ${npc.name}.`, -1)}>
+                {speaking === -1 ? <Loader size={16} label="Gerando a voz" /> : <Svg d={SPEAKER} size={15} />} Ouvir prévia
               </button>
             </div>
           )}
         </div>
 
-        <div className="modal-foot">
-          <button className="btn ghost small" onClick={toggleActive}>
-            {npc.active ? "Tirar de cena" : "Trazer para a cena"}
-          </button>
-          <span style={{ flex: 1 }} />
-          {view === "chat" && (
-            <>
-              <input
-                type="text"
+        {view === "chat" && (
+          <>
+            <div className={s.composer}>
+              <textarea
+                ref={inputRef}
+                rows={1}
                 value={input}
                 placeholder={`Falar com ${npc.name}...`}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && send()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
                 disabled={busy}
-                style={{ flex: 3 }}
               />
-              <button className="btn primary small" onClick={send} disabled={busy || !input.trim()}>➤</button>
-              <button className="btn ghost small" onClick={endChat} disabled={ending}>
-                {ending ? "salvando..." : "Encerrar conversa"}
+              <button className={`btn primary ${s.send}`} onClick={send} disabled={busy || !input.trim()} aria-label="Enviar">
+                <Svg d="M5 12h13M13 6l6 6-6 6" />
               </button>
-            </>
-          )}
-        </div>
+            </div>
+            <div className={s.foot}>
+              <span className={s.hint}>Enter envia · Shift+Enter quebra a linha</span>
+              <button className="btn ghost small" onClick={endChat} disabled={ending}>
+                {ending ? "Salvando..." : "Encerrar conversa"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -312,12 +360,14 @@ function FxSlider({ label, min, max, step, value, show, onChange, onCommit, onRe
 }) {
   return (
     <label className="field">
-      <span>{label}: <b>{show(value)}</b></span>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <input type="range" min={min} max={max} step={step} value={value} style={{ flex: 1 }}
+      <span>{label}: <b className={s.val}>{show(value)}</b></span>
+      <div className={s.slider}>
+        <input type="range" min={min} max={max} step={step} value={value}
           onChange={(e) => onChange(Number(e.target.value))}
           onPointerUp={onCommit} onKeyUp={onCommit} />
-        <button type="button" className="btn ghost small" title="Voltar ao padrão" onClick={onReset}>↺</button>
+        <button type="button" className="btn ghost small" title="Voltar ao padrão" aria-label="Voltar ao padrão" onClick={onReset}>
+          <Svg d="M4 12a8 8 0 1 0 3-6.3M4 4v4h4" size={15} />
+        </button>
       </div>
     </label>
   );

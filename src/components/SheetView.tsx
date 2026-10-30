@@ -95,28 +95,35 @@ export default function SheetView({ char, campaign, onChange }: { char: Characte
   const base = level?.xpRequired ?? 0;
   const xpPct = next ? Math.max(0, Math.min(1, (sh.xp - base) / Math.max(1, next.xpRequired - base))) : 1;
   const openAttr = rs.attributes.find((a) => a.key === open);
+  const npc = char.kind === "npc";
+  const known = rs.attributes.some((a) => sh.attributes[a.key] !== undefined);
 
   return (
     <div className={s.sheet}>
-      <header className={s.head}>
-        <span className={s.crest} aria-hidden="true">{initials(char.name)}</span>
-        <div className={s.who}>
-          <h3 className={s.name}>{char.name}</h3>
-          <div className={s.rank}>{rank?.label || sh.rank || "sem cargo"}</div>
-        </div>
-      </header>
+      {/* no modal do NPC o nome já está no cabeçalho */}
+      {!npc ? (
+        <header className={s.head}>
+          <span className={s.crest} aria-hidden="true">{initials(char.name)}</span>
+          <div className={s.who}>
+            <h3 className={s.name}>{char.name}</h3>
+            <div className={s.rank}>{rank?.label || sh.rank || "sem cargo"}</div>
+          </div>
+        </header>
+      ) : (
+        (rank || sh.rank) && <div className={s.rank}>Cargo: {rank?.label || sh.rank}</div>
+      )}
 
-      <div className={s.level} title="O nível de poder vem só da XP e define o teto dos atributos. Não é cargo: o cargo só muda pela história.">
+      {(!npc || sh.xp > 0) && <div className={s.level} title="O nível de poder vem só da XP e define o teto dos atributos. Não é cargo: o cargo só muda pela história.">
         <div className={s.levelHead}>
           <span><span className={s.levelLabel}>Nível de poder</span> <b>{level?.label || "inicial"}</b></span>
           <span className="num">{sh.xp} XP</span>
         </div>
         <div className={s.xpTrack}><span style={{ transform: `scaleX(${xpPct})` }} /></div>
-        <div className={s.levelFoot}>
+        {!npc && <div className={s.levelFoot}>
           {next ? <>faltam <b className="num">{next.xpRequired - sh.xp}</b> XP para {next.label}</> : "nível máximo"}
           {level?.attributeCap !== undefined && <> · teto de atributo <b className="num">{level.attributeCap}</b></>}
-        </div>
-      </div>
+        </div>}
+      </div>}
 
       {onChange && (
         pts.free > 0 ? (
@@ -138,7 +145,8 @@ export default function SheetView({ char, campaign, onChange }: { char: Characte
         })}
       </div>
 
-      <div className={s.attrs} onPointerLeave={() => setHover(null)}>
+      {npc && !known && <p className={s.blank}>Ficha ainda em branco: o Mestre preenche conforme a história revela quem é {char.name}.</p>}
+      {(!npc || known) && <div className={s.attrs} onPointerLeave={() => setHover(null)}>
         {rs.attributes.map((a) => {
           const v = sh.attributes[a.key] ?? a.default;
           const cap = attributeCap(rs, sh.xp, a.key);
@@ -184,7 +192,7 @@ export default function SheetView({ char, campaign, onChange }: { char: Characte
             </div>
           );
         })()}
-      </div>
+      </div>}
 
       {Object.entries(sh.extra || {}).some(([, v]) => v) && (
         <dl className={s.extra}>

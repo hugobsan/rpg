@@ -14,6 +14,7 @@
 .who { min-width: 0; }
 .name { margin: 0; font-size: calc(21px * var(--display-scale)); line-height: 1.1; overflow-wrap: anywhere; }
 .rank { margin-top: 3px; font-size: 12.5px; color: var(--text-dim); }
+.blank { margin: 0; font-size: 12.5px; color: var(--text-dim); padding: var(--s-3); border: 1px dashed var(--border-strong); border-radius: var(--r-md); }
 
 /* nível de poder com a XP até o próximo */
 .level { display: flex; flex-direction: column; gap: 6px; }
