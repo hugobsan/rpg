@@ -6,7 +6,7 @@ import { db, q } from "./db";
  * NPCs criados, cena, memórias). Só o último turno pode ser refeito.
  *
  * ponytail: volta o estado inteiro da campanha; uma conversa particular com NPC
- * feita depois do turno também é desfeita (memórias novas e mudanças nas fichas).
+ * feita depois do turno também é desfeita (falas, memórias novas e mudanças nas fichas).
  * Diretrizes da conversa fora do jogo ficam (não são estado da história).
  */
 interface Snapshot {
@@ -15,6 +15,7 @@ interface Snapshot {
   campaign: { script: unknown; state: unknown };
   maxMessageId: number;
   maxMemoryId: number;
+  maxNpcChatId?: number; // ausente em fotos antigas: não apaga conversa nenhuma
   openMessageIds: number[]; // mensagens não compactadas (a compactação pós-turno as marca)
 }
 
@@ -23,9 +24,10 @@ export async function takeSnapshot(campaignId: string, playerInput: string): Pro
     q(`SELECT * FROM characters WHERE campaign_id = $1`, [campaignId]),
     q(`SELECT * FROM scenes WHERE campaign_id = $1`, [campaignId]),
     q<{ script: unknown; state: unknown }>(`SELECT script, state FROM campaigns WHERE id = $1`, [campaignId]),
-    q<{ msg: string | null; mem: string | null }>(
+    q<{ msg: string | null; mem: string | null; npc: string | null }>(
       `SELECT (SELECT MAX(id) FROM messages WHERE campaign_id = $1) AS msg,
-              (SELECT MAX(id) FROM memories WHERE campaign_id = $1) AS mem`,
+              (SELECT MAX(id) FROM memories WHERE campaign_id = $1) AS mem,
+              (SELECT MAX(id) FROM npc_chats WHERE campaign_id = $1) AS npc`,
       [campaignId]
     ),
     q<{ id: string }>(`SELECT id FROM messages WHERE campaign_id = $1 AND NOT compacted`, [campaignId]),
@@ -36,6 +38,7 @@ export async function takeSnapshot(campaignId: string, playerInput: string): Pro
     campaign,
     maxMessageId: Number(ids.msg ?? 0),
     maxMemoryId: Number(ids.mem ?? 0),
+    maxNpcChatId: Number(ids.npc ?? 0),
     openMessageIds: open.map((m) => Number(m.id)),
   };
   await q(
@@ -78,6 +81,8 @@ export async function restoreSnapshot(campaignId: string): Promise<string> {
     ]);
     await client.query(`DELETE FROM messages WHERE campaign_id = $1 AND id > $2`, [campaignId, s.maxMessageId]);
     await client.query(`DELETE FROM memories WHERE campaign_id = $1 AND id > $2 AND kind <> 'directive'`, [campaignId, s.maxMemoryId]);
+    // mensagens de NPC (npc_message) e falas de conversa particular depois da foto
+    await client.query(`DELETE FROM npc_chats WHERE campaign_id = $1 AND id > $2`, [campaignId, s.maxNpcChatId ?? null]);
     await client.query(`UPDATE messages SET compacted = FALSE WHERE id = ANY($1::bigint[])`, [s.openMessageIds]);
     await client.query("COMMIT");
   } catch (e) {

@@ -2,7 +2,8 @@ import { getSetting, q } from "./db";
 import { getCampaign, getCharacters, getCurrentScene } from "./engine";
 import { listBooks } from "./books";
 import { messagePage } from "./messages";
-import type { Campaign, Character, Scene } from "./types";
+import { listInbox } from "./npc";
+import type { Campaign, Character, InboxItem, Scene } from "./types";
 
 export interface ChatLine {
   id: number;
@@ -22,12 +23,13 @@ export interface CampaignView {
   memories: { id: number; kind: string; subject: string | null; content: string; importance: number }[];
   lastImage: { id: number; url: string } | null;
   ui: { diceAnimation: boolean; imageGeneration: boolean }; // Configurações, ligadas por padrão
+  inbox: InboxItem[]; // mensagens particulares de NPC não lidas (npc_message)
 }
 
 /** Lança "Campanha não encontrada" se o id não existe. */
 export async function campaignView(id: string): Promise<CampaignView> {
   const campaign = await getCampaign(id);
-  const [scene, characters, books, page, memories, images, ui] = await Promise.all([
+  const [scene, characters, books, page, memories, images, ui, inbox] = await Promise.all([
     getCurrentScene(id),
     getCharacters(id),
     listBooks(id),
@@ -40,6 +42,7 @@ export async function campaignView(id: string): Promise<CampaignView> {
     // só o id: a imagem vai por URL (binário com cache longo), nunca em base64 no JSON
     q<{ id: string }>(`SELECT id FROM scene_images WHERE campaign_id = $1 ORDER BY id DESC LIMIT 1`, [id]),
     getSetting<{ diceAnimation?: boolean; imageGeneration?: boolean }>("ui", {}),
+    listInbox(id),
   ]);
   return {
     campaign,
@@ -55,5 +58,6 @@ export async function campaignView(id: string): Promise<CampaignView> {
         ? { id: Number(images[0].id), url: `/api/campaigns/${id}/images/${images[0].id}` }
         : null,
     ui: { diceAnimation: ui.diceAnimation !== false, imageGeneration: ui.imageGeneration !== false },
+    inbox,
   };
 }

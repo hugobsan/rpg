@@ -102,6 +102,9 @@ CREATE TABLE IF NOT EXISTS npc_chats (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS npc_chats_idx ON npc_chats (npc_id, session_id, id);
+-- mensagem que o NPC mandou por iniciativa própria (npc_message) e o jogador ainda não leu; intent = motivo oculto
+ALTER TABLE npc_chats ADD COLUMN IF NOT EXISTS unread BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE npc_chats ADD COLUMN IF NOT EXISTS intent TEXT;
 
 CREATE TABLE IF NOT EXISTS memories (
   id BIGSERIAL PRIMARY KEY,

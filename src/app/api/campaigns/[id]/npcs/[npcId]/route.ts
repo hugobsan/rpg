@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
+import { openPending } from "@/lib/npc";
 
 export const dynamic = "force-dynamic";
 
@@ -41,11 +42,13 @@ export async function PUT(
   return NextResponse.json({ ok: true });
 }
 
+/** GET ?pending=1 → { sessionId, messages } da mensagem do NPC não lida (sessionId null se não há), já marcada como lida. */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; npcId: string }> }
 ) {
-  const { npcId } = await params;
+  const { id, npcId } = await params;
+  if (req.nextUrl.searchParams.get("pending")) return NextResponse.json(await openPending(id, npcId));
   const sessionId = new URL(req.url).searchParams.get("session");
   if (!sessionId) return NextResponse.json([]);
   const rows = await q(

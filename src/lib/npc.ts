@@ -4,7 +4,7 @@ import { getAgent } from "./agents";
 import { chat, ChatMessage } from "./openrouter";
 import { addMemory, searchMemories } from "./retrieval";
 import { getCampaign, getCurrentScene } from "./engine";
-import { Character } from "./types";
+import { Character, InboxItem } from "./types";
 import { decideNpcWilling, scoreImportance } from "./decisions";
 
 async function getNpc(campaignId: string, npcId: string): Promise<Character> {
@@ -65,18 +65,29 @@ export async function npcTalk(
   ]);
   const player = playerRows[0];
 
-  const history = await q<{ role: string; content: string }>(
-    `SELECT role, content FROM npc_chats
-     WHERE npc_id = $1 AND session_id = $2 ORDER BY id DESC LIMIT 30`,
-    [npcId, sid]
-  );
+  const [history, [first]] = await Promise.all([
+    q<{ role: string; content: string }>(
+      `SELECT role, content FROM npc_chats
+       WHERE npc_id = $1 AND session_id = $2 ORDER BY id DESC LIMIT 30`,
+      [npcId, sid]
+    ),
+    q<{ role: string; intent: string | null }>(
+      `SELECT role, intent FROM npc_chats WHERE npc_id = $1 AND session_id = $2 ORDER BY id LIMIT 1`,
+      [npcId, sid]
+    ),
+  ]);
   history.reverse();
+  // sessão aberta pelo NPC (npc_message): ele quer conversar e sabe por quê
+  const initiated = first?.role === "npc";
 
   const system = [
     agent.system_prompt,
     `\n--- CENÁRIO ---\n${campaign.ruleset.name}. ${campaign.ruleset.loreNotes.slice(0, 1200)}`,
     `\n--- ${npcContext(npc)}`,
-    `\n--- CENA ATUAL (para julgar se a conversa é plausível agora) ---\nModo: ${scene.mode} | Local: ${scene.location || "?"}\n${scene.summary ? `Contexto: ${scene.summary.slice(-800)}` : ""}${npc.active ? "" : "\nATENÇÃO: você NÃO está presente na cena atual — a conversa só é plausível se houver como o jogador te alcançar."}`,
+    `\n--- CENA ATUAL (para julgar se a conversa é plausível agora) ---\nModo: ${scene.mode} | Local: ${scene.location || "?"}\n${scene.summary ? `Contexto: ${scene.summary.slice(-800)}` : ""}${npc.active || initiated ? "" : "\nATENÇÃO: você NÃO está presente na cena atual — a conversa só é plausível se houver como o jogador te alcançar."}`,
+    initiated
+      ? `\n--- POR QUE VOCÊ PROCUROU O JOGADOR (só você sabe; não recite, conduza a conversa para isso) ---\n${first.intent || "(motivo não registrado: siga pela sua mensagem)"}\nFoi você quem chamou o jogador; se foi à distância (recado, mensageiro...), a conversa segue por esse meio.`
+      : "",
     player ? `\n--- QUEM FALA COM VOCÊ ---\n${player.name}` : "",
     relationMemories.length
       ? `\n--- O QUE VOCÊ LEMBRA SOBRE ESSA RELAÇÃO ---\n${relationMemories.map((m) => `- ${m.content}`).join("\n")}`
@@ -85,7 +96,8 @@ export async function npcTalk(
     .filter(Boolean)
     .join("\n");
 
-  // só no início da sessão (histórico vazio): no meio da conversa o NPC corta em personagem
+  // só no início da sessão (histórico vazio): no meio da conversa o NPC corta em personagem.
+  // Sessão aberta pelo NPC já tem a mensagem dele, então não passa pela recusa
   const willing =
     history.length > 0 ||
     (await decideNpcWilling(
@@ -142,6 +154,8 @@ export async function npcTalk(
      VALUES ($1,$2,$3,'player',$4), ($1,$2,$3,'npc',$5)`,
     [campaignId, npcId, sid, playerText, reply]
   );
+  // respondeu = leu (vale também se a UI abriu a sessão sem passar por openPending)
+  if (initiated) await q(`UPDATE npc_chats SET unread = FALSE WHERE session_id = $1 AND unread`, [sid]);
 
   return { sessionId: sid, reply, refused };
 }
@@ -203,4 +217,35 @@ export async function endNpcChat(
     /* sem memórias extraíveis */
   }
   return { saved };
+}
+
+/** Mensagens de NPC não lidas, uma linha por sessão (GET da campanha). */
+export async function listInbox(campaignId: string): Promise<InboxItem[]> {
+  return q<InboxItem>(
+    `SELECT npc_id AS "npcId", session_id AS "sessionId", COUNT(*)::int AS unread,
+            (array_agg(left(content, 140) ORDER BY id DESC))[1] AS preview, MAX(created_at)::text AS at
+     FROM npc_chats WHERE campaign_id = $1 AND unread
+     GROUP BY npc_id, session_id ORDER BY MAX(id) DESC`,
+    [campaignId]
+  );
+}
+
+/** Ao abrir o NPC: a sessão com mensagem dele não lida (para continuar nela), já marcada como lida. */
+export async function openPending(
+  campaignId: string,
+  npcId: string
+): Promise<{ sessionId: string | null; messages: { role: string; content: string; created_at: string }[] }> {
+  const [row] = await q<{ session_id: string }>(
+    `SELECT session_id FROM npc_chats WHERE campaign_id = $1 AND npc_id = $2 AND unread ORDER BY id DESC LIMIT 1`,
+    [campaignId, npcId]
+  );
+  if (!row) return { sessionId: null, messages: [] };
+  const [messages] = await Promise.all([
+    q<{ role: string; content: string; created_at: string }>(
+      `SELECT role, content, created_at::text FROM npc_chats WHERE npc_id = $1 AND session_id = $2 ORDER BY id`,
+      [npcId, row.session_id]
+    ),
+    q(`UPDATE npc_chats SET unread = FALSE WHERE campaign_id = $1 AND npc_id = $2 AND unread`, [campaignId, npcId]),
+  ]);
+  return { sessionId: row.session_id, messages };
 }

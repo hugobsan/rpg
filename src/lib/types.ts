@@ -247,6 +247,15 @@ export interface DiceResult {
   success?: boolean; // total >= dc
 }
 
+/** Mensagem particular de NPC não lida (sessão aberta pelo NPC com npc_message). */
+export interface InboxItem {
+  npcId: string;
+  sessionId: string;
+  unread: number; // mensagens do NPC ainda não lidas na sessão
+  preview: string; // começo da última não lida
+  at: string; // quando chegou a última não lida
+}
+
 // ---------- Agentes ----------
 
 export interface AgentConfig {
@@ -284,5 +293,6 @@ export type TurnEvent =
   | { type: "scene"; scene: Partial<Scene> }
   | { type: "state" } // fichas mudaram; cliente deve recarregar
   | { type: "time"; minutes: number } // relógio da história mudou (minutos desde o Dia 1, 00:00)
+  | { type: "npc_message"; npcId: string; name: string; preview: string } // NPC chamou o jogador em particular
   | { type: "done" }
   | { type: "error"; message: string };

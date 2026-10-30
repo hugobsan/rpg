@@ -86,6 +86,18 @@ export default function NpcModal({
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight });
   }, [msgs]);
 
+  // o NPC mandou mensagem (npc_message): abre nessa conversa; o servidor marca como lida
+  useEffect(() => {
+    fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}?pending=1`)
+      .then((r) => r.json())
+      .then((d: { sessionId: string | null; messages: ChatMsg[] }) => {
+        if (!d.sessionId) return;
+        setSessionId(d.sessionId);
+        setMsgs(d.messages.map((m) => ({ role: m.role, content: m.content })));
+      })
+      .catch(() => {});
+  }, [campaignId, npc.id]);
+
   const saving = useRef<Promise<unknown>>(Promise.resolve());
   const speak = async (text: string) => {
     setSpeaking(true);

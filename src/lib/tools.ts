@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { q } from "./db";
 import { ToolDef } from "./openrouter";
 import { rollDice } from "./dice";
@@ -331,6 +332,28 @@ export const GM_TOOLS: ToolDef[] = [
       parameters: S(
         { name: { type: "string" }, active: { type: "boolean" }, note: { type: "string" } },
         ["name", "active"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "npc_message",
+      description:
+        "O NPC chama o jogador para conversar em particular: a mensagem chega à caixa de entrada do jogador, que decide se abre e responde (a conversa segue com o agente do NPC). Com parcimônia, só quando o NPC tem um motivo real: algo a contar, um pedido, um aviso, um segredo, aprofundar a relação. Coerente com a cena e o relógio: NPC por perto chama de lado ou fala baixo; NPC longe manda recado, mensageiro, pássaro, rádio, holo... conforme o cenário. Nunca para despejar exposição nem empurrar a trama. Na narração, no máximo sinalize a chegada, sem repetir o conteúdo.",
+      parameters: S(
+        {
+          npc: { type: "string", description: "nome exato do NPC registrado" },
+          message: {
+            type: "string",
+            description: "o que o jogador lê: a mensagem em personagem, curta (1 a 3 frases), com o meio de entrega se for à distância",
+          },
+          intent: {
+            type: "string",
+            description: "o motivo real, oculto do jogador: o que o NPC quer com a conversa. Vai para o agente do NPC quando o jogador responder",
+          },
+        },
+        ["npc", "message", "intent"]
       ),
     },
   },
@@ -962,6 +985,24 @@ export async function executeGmTool(
         summary: `${c.name} ${args.active ? "entrou em cena" : "saiu de cena"}`,
       });
       return `OK.`;
+    }
+    case "npc_message": {
+      const c = await getChar(cid, String(args.npc));
+      if (c.kind !== "npc") return `Erro: ${c.name} não é NPC.`;
+      const message = String(args.message || "").trim().slice(0, 1500);
+      if (!message) return "Erro: message vazia.";
+      const [pending] = await q(`SELECT 1 FROM npc_chats WHERE npc_id = $1 AND unread LIMIT 1`, [c.id]);
+      if (pending) return `${c.name} já tem uma mensagem que o jogador ainda não leu. Nada foi enviado.`;
+      // sessão nova cujo 1º registro é do NPC; o intent só o agente do NPC vê
+      await q(
+        `INSERT INTO npc_chats (campaign_id, npc_id, session_id, role, content, unread, intent)
+         VALUES ($1, $2, $3, 'npc', $4, TRUE, $5)`,
+        [cid, c.id, randomUUID(), message, String(args.intent || "").trim().slice(0, 1000) || null]
+      );
+      await addMemory(cid, "npc", `${c.name} chamou o jogador para conversar em particular: "${message}"`, c.name, 3);
+      ctx.emit({ type: "npc_message", npcId: c.id, name: c.name, preview: message.slice(0, 140) });
+      ctx.emit({ type: "tool", name, summary: `✉️ ${c.name} quer falar com você em particular` });
+      return `Mensagem de ${c.name} entregue ao jogador em particular. Ele decide se responde; a conversa é com o agente do NPC. Não repita o conteúdo na narração.`;
     }
     case "set_scene": {
       const moved = !!args.newScene || (args.location !== undefined && String(args.location) !== ctx.scene.location);
