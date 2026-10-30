@@ -308,8 +308,8 @@ const NODES: (FlowNode | LaneNode)[] = [
     fallback: "Se o servidor reinicia no meio, a tarefa vira erro depois de 15 min sem sinal.",
   }),
 
-  n("m_gm", X[0], 1000, "gm", "Mestre: mapas", "gerar, editar, remover", {
-    oque: "O Mestre pede o mapa quando o jogador chega a um lugar relevante sem mapa ou a cena pede, e edita quando a história muda o lugar (ex.: a ponte foi destruída). Pode ser desligado nas Configurações; os botões continuam.",
+  n("m_gm", X[0], 1000, "gm", "Mestre: local_map", "gerar, editar, remover", {
+    oque: "Uma ferramenta com três ações. O Mestre pede o mapa quando o jogador chega a um lugar relevante sem mapa ou a cena pede, e edita quando a história muda o lugar (ex.: a ponte foi destruída). Não regera um mapa que já existe. Os pontos de interesse do mapa viram as zonas do palco da cena. A iniciativa do Mestre pode ser desligada nas Configurações; os botões continuam."
   }),
   n("m_btn", X[1], 1000, "player", "Botões da aba Mapa", "gerar, regerar, editar, remover", {
     oque: "O jogador pode pedir o mapa de qualquer lugar por onde passou, regerar, editar com uma instrução ou remover.",
@@ -317,8 +317,8 @@ const NODES: (FlowNode | LaneNode)[] = [
   n("m_carto", X[2], 1000, "carto", "Cartógrafo", "mapa 3D de um lugar", {
     oque: "Compõe a maquete 3D de um lugar a partir da obra, da narração e da cena: relevo, contornos extrudados, caminhos e rios, espalhamento de árvores e casas, materiais, luz do horário e pontos de interesse. Devolve uma descrição declarativa, nunca código.",
     quando: "Quando o Mestre ou o jogador pede gerar ou editar o mapa de um lugar.",
-    freq: "1 chamada por geração ou edição.",
-    custo: "Opus 5.5: o mais caro dos criadores, cerca de US$ 0,10 a 0,20 por mapa.",
+    freq: "1 chamada por geração ou edição; um mapa desenhado por vez.",
+    custo: "Opus 5.5 com raciocínio médio: o mais caro dos criadores. Cerca de US$ 0,14 e 1 min por mapa novo; US$ 0,18 por edição (recebe o mapa atual compacto).",
     fallback: "A tarefa vira erro com aviso; o mapa anterior (se houver) continua.",
   }),
   n("m_spec", X[3], 1000, "code", "Mapa validado", "limites, cores, contagens", {
