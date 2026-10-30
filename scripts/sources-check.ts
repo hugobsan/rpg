@@ -11,7 +11,7 @@ import { SOURCE_PRESETS } from "../src/lib/sourcePresets";
 
 const OR_URL = "https://openrouter.ai/api/v1";
 const POD: Source = { id: "pod", name: "Pod do Jev", url: "http://pod:8000/v1", apiKey: "pod-secret-key-0001" };
-const state = { source: "pod", orKey: "sk-or-v1-secret-key-9999" };
+const state = { source: "pod", orKey: "sk-or-v1-secret-key-9999", sources: [POD] as Source[] };
 delete process.env.OPENROUTER_API_KEY; // a chave só vem do banco falso
 
 // ---------- banco falso ----------
@@ -21,12 +21,13 @@ g.__schemaReady = Promise.resolve(false);
 g.__pgPool = {
   async query(text: string, params: unknown[] = []) {
     if (/FROM settings/.test(text)) {
-      const v = { sources: [POD], openrouter: { apiKey: state.orKey }, embeddings: { enabled: true, model: "emb-1", source: state.source } }[params[0] as string];
+      const v = { sources: state.sources, openrouter: { apiKey: state.orKey }, embeddings: { enabled: true, model: "emb-1", source: state.source } }[params[0] as string];
       return { rows: v ? [{ value: v }] : [] };
     }
     if (/SELECT source FROM agents/.test(text)) return { rows: [{ source: state.source }] };
     if (/SELECT \* FROM agents/.test(text)) return { rows: [{ id: params[0], model: "m-1", params: {}, source: state.source }] };
     if (/INSERT INTO api_logs/.test(text)) logs.push(params);
+    if (/INSERT INTO settings/.test(text) && params[0] === "sources") state.sources = JSON.parse(String(params[1]));
     return { rows: [] }; // agentes padrão, tts_cache...
   },
 };
@@ -162,6 +163,26 @@ async function main() {
   await tick();
   const logged = JSON.stringify(logs);
   assert.ok(!logged.includes(POD.apiKey) && !logged.includes("sk-or-v1-secret"));
+
+  // rota /api/sources: tipo conhecido fica com a URL do preset; só uma fonte com Login com ChatGPT
+  const { POST, PUT } = await import("../src/app/api/sources/route");
+  const { NextRequest } = await import("next/server");
+  const call = async (fn: typeof POST, body: object) => {
+    const res = await fn(new NextRequest("http://x/api/sources", { method: "POST", body: JSON.stringify(body) }));
+    return { status: res.status, d: await res.json() };
+  };
+  const OPENAI_URL = SOURCE_PRESETS.find((p) => p.kind === "openai")!.url;
+  let res = await call(POST, { kind: "openai", name: "OpenAI", url: "http://evil", auth: "chatgpt" });
+  assert.equal(res.status, 200);
+  assert.equal(res.d.url, OPENAI_URL, "tipo conhecido ignora a URL que chega");
+  assert.equal((await call(POST, { kind: "openai", name: "OpenAI", auth: "chatgpt" })).status, 409, "2ª fonte ChatGPT recusada");
+  res = await call(POST, { kind: "openai", name: "OpenAI chave", apiKey: "k-1" });
+  assert.equal(res.status, 200, "OpenAI com API key continua podendo repetir");
+  assert.equal((await call(PUT, { id: res.d.id, name: "OpenAI chave", auth: "chatgpt" })).status, 409, "trocar outra para ChatGPT também");
+  res = await call(PUT, { id: "openai", name: "OpenAI", url: "http://evil", auth: "chatgpt" });
+  assert.equal(res.status, 200, "editar a própria fonte ChatGPT pode");
+  assert.equal(res.d.url, OPENAI_URL);
+  assert.equal(state.sources.filter((x) => x.auth).length, 1);
 
   console.log(`sources-check ok (${calls.length} chamadas simuladas, ${logs.length} logs)`);
 }

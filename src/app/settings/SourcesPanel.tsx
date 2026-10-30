@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChatgptStatus, SourceView } from "@/lib/types";
 import { presetOf, SOURCE_PRESETS } from "@/lib/sourcePresets";
 import Loader from "@/components/ui/Loader";
@@ -34,6 +34,11 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
   const [tests, setTests] = useState<Record<string, Test>>({});
   const [orKey, setOrKey] = useState("");
   const [gpt, setGpt] = useState(initialChatgpt);
+  // fontes além do OpenRouter: recolhidas, e abertas viram um carrossel (abre sozinho na volta do Login com ChatGPT)
+  const [showAll, setShowAll] = useState(!!notice);
+  const track = useRef<HTMLDivElement>(null);
+  const slide = (dir: 1 | -1) => track.current?.scrollBy({ left: dir * track.current.clientWidth, behavior: "smooth" });
+  const gptTaken = (id?: string) => sources.find((x) => x.auth && x.id !== id);
 
   // volta do /auth/callback: confirma uma vez e tira o ?chatgpt da URL
   useEffect(() => {
@@ -78,6 +83,8 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
     if (!res?.ok) return setError(d?.error || `Erro ${res?.status ?? "de rede"} ao salvar a fonte`);
     setSources((list) => (draft.id ? list.map((x) => (x.id === d.id ? d : x)) : [...list, d]));
     setDraft(null);
+    setShowAll(true);
+    if (!draft.id) requestAnimationFrame(() => track.current?.scrollTo({ left: track.current.scrollWidth, behavior: "smooth" })); // mostra a nova
     toast(`Fonte ${d.name} salva.`, { kind: "sucesso" });
     if (!d.auth || gpt.connected) test(d.id); // confere a conexão já com a URL e a chave novas
   };
@@ -132,7 +139,7 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
   );
 
   return (
-    <div>
+    <div className={s.srcPanel}>
       <div className={s.srcRow}>
         <div className={s.srcInfo}>
           <span><b>OpenRouter</b><span className="pill">embutida</span></span>
@@ -150,15 +157,36 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
         {testLine("openrouter")}
       </div>
 
+      {sources.length > 0 && (
+        <div className={s.srcMore}>
+          <button type="button" className="btn small ghost" aria-expanded={showAll} aria-controls="src-others" onClick={() => setShowAll((v) => !v)}>
+            {showAll ? "Ocultar outras fontes" : sources.length === 1 ? "Ver outra fonte" : `Ver outras ${sources.length} fontes`}
+          </button>
+          {showAll && sources.length > 1 && (
+            <span className={s.srcNav}>
+              <button type="button" className="btn small ghost" aria-label="Fonte anterior" onClick={() => slide(-1)}>‹</button>
+              <button type="button" className="btn small ghost" aria-label="Próxima fonte" onClick={() => slide(1)}>›</button>
+            </span>
+          )}
+        </div>
+      )}
+
+      {showAll && (
+      <div id="src-others" ref={track} className={s.carousel} role="region" aria-roledescription="carrossel" aria-label="Outras fontes de modelos" tabIndex={0}>
       {sources.map((x) => (
-        <div key={x.id} className={s.srcRow}>
+        <div key={x.id} className={s.srcCard}>
           <div className={s.srcInfo}>
             <span><b>{x.name}</b><span className="pill">{x.id}</span></span>
             <span className={s.srcMeta}>
               <code>{x.url}</code> · {x.auth ? "Login com ChatGPT" : x.apiKeyMasked ? <>chave <code>{x.apiKeyMasked}</code></> : "sem chave"}
             </span>
             {usedLine(x.id)}
-            {x.auth ? <span className={s.srcMeta}>{CHATGPT_NOTE}</span> : presetOf(x.kind) && <span className={s.srcMeta}>{presetOf(x.kind)!.note}</span>}
+            {(x.auth || presetOf(x.kind)) && (
+              <details className={s.srcMeta}>
+                <summary>Limitações</summary>
+                {x.auth ? CHATGPT_NOTE : presetOf(x.kind)!.note}
+              </details>
+            )}
           </div>
           <div className={s.srcActions}>
             {confirmDel === x.id ? (
@@ -198,6 +226,8 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
           {testLine(x.id)}
         </div>
       ))}
+      </div>
+      )}
 
       {draft ? (
         <form className={s.srcAdd} onSubmit={(e) => { e.preventDefault(); save(); }}>
@@ -219,7 +249,9 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
               <span>Autenticação</span>
               <select value={draft.auth ?? ""} onChange={(e) => setDraft({ ...draft, auth: e.target.value ? "chatgpt" : undefined })}>
                 <option value="">API key</option>
-                <option value="chatgpt">Login com ChatGPT</option>
+                <option value="chatgpt" disabled={!!gptTaken(draft.id)}>
+                  {gptTaken(draft.id) ? `Login com ChatGPT (já usado na fonte ${gptTaken(draft.id)!.name})` : "Login com ChatGPT"}
+                </option>
               </select>
             </label>
           )}

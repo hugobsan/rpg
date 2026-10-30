@@ -83,6 +83,23 @@
 .srcKey { flex-basis: 100%; display: flex; gap: var(--s-2); }
 .srcKey input { flex: 1; min-width: 0; }
 .srcAdd { padding-top: var(--s-4); border-top: 1px solid var(--border); }
+
+/* outras fontes: recolhidas atrás de "Ver outras N fontes"; abertas, um carrossel na horizontal (scroll-snap) */
+.srcPanel { min-width: 0; } /* item do grid da seção: sem isso o carrossel alarga a página */
+.srcMore { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); padding: var(--s-3) 0; border-top: 1px solid var(--border); }
+.srcNav { display: flex; gap: 6px; }
+.srcNav .btn { min-width: 34px; padding: 0; font-size: 18px; line-height: 1; }
+.carousel {
+  display: flex; align-items: flex-start; gap: var(--s-3); overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain;
+  padding-bottom: var(--s-3); margin-bottom: var(--s-3); scrollbar-width: thin;
+}
+.srcCard {
+  flex: 0 0 min(100%, 400px); scroll-snap-align: start;
+  display: flex; flex-wrap: wrap; align-items: center; align-content: flex-start; gap: var(--s-2) var(--s-3);
+  padding: var(--s-3) var(--s-4); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-sunken);
+}
+.srcCard summary { cursor: pointer; width: fit-content; }
+.srcCard details[open] summary { margin-bottom: 4px; }
 .srcAdd .warn { margin-top: 0; }
 
 /* Login com ChatGPT: botão no formato das guidelines (preto no tema claro, branco no escuro) e o status da conta */

@@ -29,6 +29,8 @@ export async function GET() {
 
 // Login com ChatGPT: só na fonte do tipo OpenAI; a chave fica de fora (o token vem de src/lib/chatgptAuth.ts)
 const authOf = (kind: string | undefined, auth: unknown) => (kind === "openai" && auth === "chatgpt" ? ("chatgpt" as const) : undefined);
+// o login é de uma conta só por instalação: uma segunda fonte ChatGPT seria a mesma coisa duplicada
+const GPT_TAKEN = "Já existe uma fonte com Login com ChatGPT. O login vale para uma conta por instalação: use a fonte que já existe.";
 
 /** POST { name, url, apiKey, kind?, auth? } → cria; o id sai do nome e não muda depois (nem o tipo) */
 export async function POST(req: NextRequest) {
@@ -43,6 +45,7 @@ export async function POST(req: NextRequest) {
   for (let i = 2; id === OPENROUTER || list.some((s) => s.id === id); i++) id = `${base}-${i}`;
   const kind = presetOf(body.kind)?.kind;
   const src = { id, ...c, apiKey: String(body.apiKey ?? "").trim(), kind, auth: authOf(kind, body.auth) };
+  if (src.auth && list.some((s) => s.auth)) return bad(GPT_TAKEN, 409);
   if (src.kind && !src.apiKey && !src.auth) return bad(`Informe a API key da ${c.name}.`);
   await setSetting("sources", [...list, src]);
   return NextResponse.json(sourceView(src));
@@ -60,6 +63,7 @@ export async function PUT(req: NextRequest) {
   Object.assign(src, c);
   if (String(body.apiKey ?? "").trim()) src.apiKey = String(body.apiKey).trim();
   src.auth = authOf(src.kind, body.auth);
+  if (src.auth && list.some((s) => s.auth && s.id !== src.id)) return bad(GPT_TAKEN, 409);
   if (src.kind && !src.apiKey && !src.auth) return bad(`Informe a API key da ${c.name}.`);
   await setSetting("sources", list);
   return NextResponse.json(sourceView(src));
