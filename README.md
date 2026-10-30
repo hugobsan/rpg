@@ -87,7 +87,9 @@ A cena atual tem um modo — `exploration`, `dialogue`, `battle`, `training`, `d
 
 ### Elenco da cena
 
-Só os NPCs em cena entram inteiros no prompt do Mestre. Ao abrir cena nova ou mudar de local, o Mestre informa em `set_scene` a lista `present` (todos os NPCs que estão no novo lugar): quem fica de fora sai de cena e quem é listado volta. Se ele esquecer, depois da narração o Jev julga, para cada NPC em cena que não falou, se ele continua ali (foi embora, ficou para trás, morreu); quem não continua sai. Isso roda todo turno com NPC calado em cena (custa ~US$0,00005 e corre junto do relógio, depois da narração) e, se o Jev falhar, ninguém sai. NPC registrado fora de cena que fala na narração (`**Nome:**`) volta sozinho, sem IA. Verificação: `npx tsx scripts/cast-check.ts`.
+Só os NPCs em cena entram inteiros no prompt do Mestre. Ao abrir cena nova ou mudar de local, o Mestre informa em `set_scene` a lista `present` (todos os NPCs que estão no novo lugar): quem fica de fora sai de cena e quem é listado volta. Se ele esquecer, depois da narração o Jev julga, para cada NPC em cena que não falou, se ele continua ali (foi embora, ficou para trás, morreu); quem não continua sai. Isso roda todo turno com NPC calado em cena (custa ~US$0,00005 e corre junto do relógio, depois da narração) e, se o Jev falhar, ninguém sai. NPC registrado fora de cena que fala na narração (`**Nome:**`) volta sozinho, sem IA.
+
+O local também tem rede de segurança: se o Mestre não trocou o local no turno, o Jev julga se a narração levou o jogador a outro lugar; se levou, o Cronista dá o nome ("Casa do Ren, Konoha", reaproveitando os nomes do mapa) e o código aplica pelo mesmo `set_scene`, então o mapa e o cabeçalho acompanham. Isso roda antes do elenco, que já julga quem ficou para trás no lugar novo (inclusive quem falou antes de o jogador sair). Falha em qualquer passo = nada muda. Verificação: `npx tsx scripts/cast-check.ts`.
 
 ### Relógio do jogo
 

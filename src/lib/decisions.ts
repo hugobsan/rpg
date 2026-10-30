@@ -454,3 +454,45 @@ export async function decideCast(t: CastInput, campaignId: string): Promise<stri
   if (!answers) return null;
   return t.npcs.filter((_, i) => (noulOf(answers, `n${i}`) ?? 1) < PRESENT_MIN);
 }
+
+// ---------- 9: o jogador mudou de lugar (quando o Mestre não trocou o local com set_scene) ----------
+
+// Mudou de lugar se P >= limiar. Probe (2026-10-30, jev-1.14): foi para casa / pegou a estrada 0.98-0.99, entrou
+// na loja ao lado 0.82-0.87, sem local registrado e a narração diz onde 0.68-0.69; ficou conversando, outro canto
+// da mesma sala, só planeja ir, narração vaga 0.02-0.04. Meio do vão: erro para cima põe lugar falso no mapa,
+// para baixo só deixa o local parado (como sem a checagem).
+export const MOVED_MIN = 0.5;
+
+export interface PlaceInput {
+  scene: { mode: string; location: string | null };
+  playerAction: string;
+  gmNarration: string;
+}
+
+export function buildPlaceRequest(t: PlaceInput): DecisionRequest {
+  return {
+    state: {
+      cena: { modo: t.scene.mode, local_registrado: t.scene.location || null },
+      acao_do_jogador: t.playerAction,
+      narracao_do_mestre: t.gmNarration.slice(-3000),
+    },
+    questions: {
+      moved: {
+        type: "noul",
+        instructions:
+          "No fim da `narracao_do_mestre`, o personagem do jogador está num lugar diferente de `cena.local_registrado` (ou, sem local registrado, num lugar que a narração identifica)?",
+        criteria: {
+          true: "Sim: ele saiu de lá e está em outro lugar (outro prédio, casa, rua, bairro, cidade, região) ou já na estrada para outro.",
+          false: "Não: continua no mesmo lugar ou numa parte dele (outro canto da sala, o pátio do mesmo prédio), só planeja ir, ou a narração não diz onde ele está.",
+        },
+      },
+    },
+  };
+}
+
+/** true = mudou de lugar; null se o Jev falhar (aí nada muda). */
+export async function decideMoved(t: PlaceInput, campaignId: string): Promise<boolean | null> {
+  const answers = await decide(buildPlaceRequest(t), { campaignId, purpose: "jogador mudou de lugar? (Mestre não trocou)" });
+  const p = answers ? noulOf(answers, "moved") : undefined;
+  return p === undefined ? null : p >= MOVED_MIN;
+}

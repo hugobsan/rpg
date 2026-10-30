@@ -6,8 +6,8 @@
  *   npx tsx scripts/jev-check.ts [--model typesafe/jev-1.14-20261014]
  */
 import {
-  buildCastRequest, buildElapsedRequest, buildImportanceRequest, buildNpcRequest, ELAPSED_MINUTES, buildTurnRequest, decide, gateTurn, importanceLevel,
-  COMPLEX_MIN, MEMORY_MIN, NPC_WILLING_MIN, PRESENT_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
+  buildCastRequest, buildElapsedRequest, buildPlaceRequest, buildImportanceRequest, buildNpcRequest, ELAPSED_MINUTES, buildTurnRequest, decide, gateTurn, importanceLevel,
+  COMPLEX_MIN, MEMORY_MIN, MOVED_MIN, NPC_WILLING_MIN, PRESENT_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
 } from "../src/lib/decisions";
 import { pool } from "../src/lib/db";
 
@@ -170,6 +170,23 @@ const importanceCases: [string, number | null][] = [
     const a = await ask(label, buildCastRequest({ scene: { mode: "exploration", location: "Konoha", title: null }, sceneChanged: moved, playerAction: action, gmNarration: narration, npcs: [npc] }));
     const v = a.n0.type === "noul" ? a.n0.noul : NaN;
     check(`${label} (${npc})`, exp === null ? null : v >= PRESENT_MIN === exp, v, `esperado ${exp}`);
+  }
+
+  console.log(`\n== 9. jogador mudou de lugar sem set_scene (muda se P >= ${MOVED_MIN})`);
+  const placeCases: [string, string, string, string, boolean | null][] = [
+    // rótulo, local registrado, ação, narração, esperado
+    ["foi para casa", "Academia Ninja, Konoha", "Vou para casa.", "Você deixa a Academia para trás e atravessa a vila sob o céu laranja. Em casa, o silêncio do quarto te recebe.", true],
+    ["ficou conversando", "Academia Ninja, Konoha", "Pergunto sobre o exame.", '**Iruka:** "O exame é amanhã cedo." Ele arruma os pergaminhos na mesa.', false],
+    ["outro canto da sala", "Sala de aula, Academia Ninja", "Vou até a janela.", "Você atravessa a sala e se apoia no parapeito da janela; lá fora, os alunos correm no pátio.", false],
+    ["só planeja ir", "Ichiraku Ramen, Konoha", "Amanhã vou ao campo de treino.", 'Teuchi ri. **Teuchi:** "Então coma bem hoje, garoto." Você termina o lámen pensando no treino de amanhã.', false],
+    ["na estrada", "Portão de Konoha", "Partimos para o País das Ondas.", "O portão fica para trás. Horas depois, a estrada de terra corta a floresta e o cheiro de maresia começa a chegar.", true],
+    ["entrou no prédio ao lado", "Rua principal, Konoha", "Entro na loja de armas.", "O sino da porta toca. Lá dentro, prateleiras de kunai e shuriken brilham sob a luz de lamparinas.", true],
+    ["sem local, narração vaga", "", "Penso no que fazer.", "Você pondera as opções. O exame está perto e o tempo corre.", false],
+  ];
+  for (const [label, loc, action, narration, exp] of placeCases) {
+    const a = await ask(label, buildPlaceRequest({ scene: { mode: "exploration", location: loc }, playerAction: action, gmNarration: narration }));
+    const v = a.moved.type === "noul" ? a.moved.noul : NaN;
+    check(label, exp === null ? null : v >= MOVED_MIN === exp, v, `esperado ${exp}`);
   }
 
   await pool().end();

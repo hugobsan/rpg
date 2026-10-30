@@ -3,11 +3,11 @@ import { getAgent } from "./agents";
 import { chat, ChatMessage, estimateTokens } from "./openrouter";
 import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
 import { activeDirectives, addMemory, MemoryHit, recentMemories, searchMemories } from "./retrieval";
-import { decideCast, decideElapsed, decideTurn, scoreImportance } from "./decisions";
+import { decideCast, decideElapsed, decideMoved, decideTurn, scoreImportance } from "./decisions";
 import { attributeCap, attributePoints, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
 import { getObjectives, objectivesPromptBlock } from "./objectives";
-import { getStage, loadMap, mapPromptBlock } from "./map";
+import { getStage, loadMap, mapPromptBlock, normName } from "./map";
 import { getTable, tablePromptBlock } from "./table";
 import { takeSnapshot } from "./turnSnapshot";
 import { executeGmTool, findNamed, GM_TOOLS, saveClock, setNpcsActive, ToolContext } from "./tools";
@@ -443,7 +443,11 @@ export async function runTurn(
   await Promise.all([
     maybeCompact(campaignId, scene).catch(() => {}),
     timeMoved ? null : fallbackClock(campaignId, campaign, scene, playerInput, narration, emit).catch(() => {}),
-    fallbackCast(campaignId, toolCtx, playerInput, narration, emit).catch(() => {}),
+    // local antes do elenco: quem continua na cena é julgado já no lugar novo
+    fallbackPlace(campaignId, toolCtx, playerInput, narration)
+      .catch(() => {})
+      .then(() => fallbackCast(campaignId, toolCtx, playerInput, narration, emit))
+      .catch(() => {}),
   ]);
   emit({ type: "done" });
 }
@@ -476,21 +480,69 @@ export async function fallbackCast(
 ): Promise<void> {
   const npcs = (await getCharacters(campaignId)).filter((c) => c.kind === "npc");
   const talking = new Set(speakers(narration).flatMap((n) => findNamed(npcs, n).map((c) => c.id)));
-  await setNpcsActive(campaignId, npcs.filter((c) => !c.active && talking.has(c.id)), true, emit);
-  if (ctx.castSet) return;
-  const silent = npcs.filter((c) => c.active && !talking.has(c.id));
-  if (!silent.length) return;
-  const gone = await decideCast(
-    {
-      scene: { mode: ctx.scene.mode, location: ctx.scene.location, title: ctx.scene.title },
-      sceneChanged: !!ctx.sceneChanged,
-      playerAction: playerInput,
-      gmNarration: narration,
-      npcs: silent.map((c) => c.name),
-    },
+  // quem fala está na cena, a menos que o jogador tenha mudado de lugar depois: aí o Jev julga quem falou também
+  const ask = ctx.castSet ? [] : npcs.filter((c) => (c.active || talking.has(c.id)) && (ctx.sceneChanged || !talking.has(c.id)));
+  const gone = ask.length
+    ? await decideCast(
+        {
+          scene: { mode: ctx.scene.mode, location: ctx.scene.location, title: ctx.scene.title },
+          sceneChanged: !!ctx.sceneChanged,
+          playerAction: playerInput,
+          gmNarration: narration,
+          npcs: ask.map((c) => c.name),
+        },
+        campaignId
+      )
+    : [];
+  const left = (c: { name: string }) => !!gone?.includes(c.name);
+  await setNpcsActive(campaignId, npcs.filter((c) => !c.active && talking.has(c.id) && !left(c)), true, emit);
+  await setNpcsActive(campaignId, npcs.filter((c) => c.active && left(c)), false, emit);
+}
+
+/**
+ * O Mestre não trocou o local no turno e a narração levou o jogador a outro lugar: o Jev julga se ele
+ * mudou, o Cronista dá o nome e o set_scene aplica (o mapa registra pelo mesmo gancho). Falhou = nada muda.
+ */
+export async function fallbackPlace(campaignId: string, ctx: ToolContext, playerInput: string, narration: string): Promise<void> {
+  if (ctx.sceneChanged) return;
+  const moved = await decideMoved(
+    { scene: { mode: ctx.scene.mode, location: ctx.scene.location }, playerAction: playerInput, gmNarration: narration },
     campaignId
   );
-  await setNpcsActive(campaignId, silent.filter((c) => gone?.includes(c.name)), false, emit);
+  if (!moved) return;
+  const [chronicler, map, [player]] = await Promise.all([
+    getAgent("chronicler"),
+    loadMap(campaignId, ctx.campaign.state),
+    q<{ name: string }>(`SELECT name FROM characters WHERE campaign_id = $1 AND kind = 'player' LIMIT 1`, [campaignId]),
+  ]);
+  const known = map.places.map((p) => p.name).slice(-40);
+  const r = await chat({
+    model: chronicler.model,
+    messages: [
+      {
+        role: "system",
+        content: `Você dá nome ao lugar onde o personagem do jogador está no FIM da narração de RPG, para o mapa da campanha. Responda só o nome, do mais específico ao mais geral separado por vírgula (ex.: "Casa do Ren, Konoha" ou "Loja de armas, Rua principal, Konoha"), sem aspas nem ponto final. Se for um lugar já conhecido, use o nome dele exatamente. Se a narração não disser onde ele está, responda só: ?`,
+      },
+      {
+        role: "user",
+        content: `Personagem do jogador: ${player?.name || "?"}\nLocal anterior: ${ctx.scene.location || "(nenhum)"}\nLugares conhecidos: ${known.join("; ") || "(nenhum)"}\n\nNarração:\n${narration.slice(-3000)}`,
+      },
+    ],
+    temperature: 0,
+    max_tokens: chronicler.max_tokens, // modelo que raciocina gasta tokens antes da resposta curta
+    agentId: "chronicler",
+    campaignId,
+    purpose: "nome do local (Mestre não trocou)",
+  });
+  const location = placeName(r.content, ctx.scene.location);
+  if (location) await executeGmTool("set_scene", { location }, ctx);
+}
+
+/** Resposta do Cronista → nome do local; null se vazia, "?", longa demais ou igual ao local atual. */
+export function placeName(raw: string, current: string): string | null {
+  const name = raw.trim().split("\n")[0].replace(/^["'“”«*]+|["'“”»*.]+$/g, "").trim();
+  if (!name || name.includes("?") || name.length > 80 || normName(name) === normName(current || "")) return null;
+  return name;
 }
 
 /** O Mestre esqueceu de mexer no relógio: o Jev escolhe uma faixa de tempo e o código soma. Falhou = não anda. */
