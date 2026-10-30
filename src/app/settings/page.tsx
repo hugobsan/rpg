@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 interface SettingsShape {
   openrouter: { configured: boolean; apiKeyMasked: string };
   embeddings: { enabled: boolean; model: string };
+  ui: { diceAnimation: boolean };
 }
 
 export default function SettingsPage() {
   const [data, setData] = useState<SettingsShape | null>(null);
   const [orKey, setOrKey] = useState("");
   const [emb, setEmb] = useState({ enabled: false, model: "" });
+  const [diceAnimation, setDiceAnimation] = useState(true);
   const [msg, setMsg] = useState("");
   const [testMsg, setTestMsg] = useState("");
   const [reMsg, setReMsg] = useState("");
@@ -21,6 +23,7 @@ export default function SettingsPage() {
       .then((d: SettingsShape) => {
         setData(d);
         setEmb(d.embeddings);
+        setDiceAnimation(d.ui.diceAnimation);
       });
   useEffect(() => {
     load();
@@ -28,7 +31,7 @@ export default function SettingsPage() {
 
   const save = async () => {
     setMsg("salvando...");
-    const body: Record<string, unknown> = { embeddings: emb };
+    const body: Record<string, unknown> = { embeddings: emb, ui: { diceAnimation } };
     if (orKey.trim()) body.openrouterApiKey = orKey.trim();
     const res = await fetch("/api/settings", {
       method: "PUT",
@@ -105,6 +108,19 @@ export default function SettingsPage() {
           Reprocessar embeddings
         </button>
         {reMsg && <span className="muted" style={{ marginLeft: 10 }}>{reMsg}</span>}
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 style={{ marginTop: 0 }}>Interface</h3>
+        <label className="field" style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 0 }}>
+          <input type="checkbox" checked={diceAnimation} style={{ width: "auto" }}
+            onChange={(e) => setDiceAnimation(e.target.checked)} />
+          <span style={{ margin: 0 }}>Animação 3D dos dados</span>
+        </label>
+        <p className="muted" style={{ marginBottom: 0 }}>
+          Quando o Mestre rola um dado, o chat mostra o botão &quot;Rolar dados&quot; e você arremessa os dados numa caixa 3D.
+          O valor é sorteado no servidor; a animação só o mostra. Desligada, o resultado aparece direto no chat.
+        </p>
       </div>
 
       <button className="btn primary" onClick={save}>Salvar configurações</button>

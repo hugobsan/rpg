@@ -4,6 +4,7 @@ import type {
   Campaign,
   CampaignScript,
   Character,
+  DiceResult,
   Scene,
   TurnEvent,
 } from "@/lib/types";
@@ -11,6 +12,7 @@ import NpcModal, { playLine } from "./NpcModal";
 import ImageViewer from "./ImageViewer";
 import Gallery from "./Gallery";
 import InventoryView from "./InventoryView";
+import DiceRoller, { diceText } from "./DiceRoller";
 
 // ---------- helpers ----------
 
@@ -79,6 +81,59 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
 
   const nextKey = () => `k${++keyCounter.current}`;
 
+  // Animação 3D dos dados: a partir de um evento "dice", o resto do turno fica retido
+  // até o jogador rolar (um botão por rolagem, em fila).
+  const diceAnim = useRef(true);
+  const held = useRef<TurnEvent[]>([]);
+  const reloadAfterHeld = useRef(false);
+  const [pendingDice, setPendingDice] = useState<DiceResult | null>(null);
+  const [rolling, setRolling] = useState<DiceResult | null>(null);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => { diceAnim.current = d.ui?.diceAnimation !== false; })
+      .catch(() => {});
+  }, []);
+
+  const showEvent = (ev: TurnEvent) => {
+    if (ev.type === "tool") setFeed((f) => [...f, { key: nextKey(), kind: "chip", content: ev.summary }]);
+    else if (ev.type === "dice")
+      setFeed((f) => [
+        ...f,
+        {
+          key: nextKey(),
+          kind: "dice",
+          content: diceText(ev.result),
+          outcome: ev.result.dc === undefined ? undefined : ev.result.success ? "ok" : "fail",
+        },
+      ]);
+    else if (ev.type === "narration") setFeed((f) => [...f, { key: nextKey(), kind: "gm", content: ev.content }]);
+    else if (ev.type === "choices") setChoices(ev.choices);
+  };
+
+  // libera os eventos retidos até a próxima rolagem (all: libera tudo, sem animar)
+  const drainHeld = (all = false) => {
+    while (held.current.length) {
+      const ev = held.current[0];
+      if (ev.type === "dice" && !all) return setPendingDice(ev.result);
+      held.current.shift();
+      showEvent(ev);
+    }
+    setPendingDice(null);
+    if (reloadAfterHeld.current) {
+      reloadAfterHeld.current = false;
+      reloadState();
+    }
+  };
+
+  const releaseDice = () => {
+    const ev = held.current.shift();
+    if (ev) showEvent(ev);
+    setRolling(null);
+    drainHeld();
+  };
+
   const reloadState = useCallback(async () => {
     const res = await fetch(`/api/campaigns/${campaignId}`);
     if (!res.ok) {
@@ -113,6 +168,8 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
     setBusy(true);
     setError("");
     setChoices([]);
+    setRolling(null);
+    drainHeld(true);
     if (regen) {
       // tira do chat o que veio depois da última ação do jogador
       setFeed((f) => {
@@ -151,24 +208,13 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
               setStatusText(ev.text);
               break;
             case "tool":
-              setFeed((f) => [...f, { key: nextKey(), kind: "chip", content: ev.summary }]);
-              break;
             case "dice":
-              setFeed((f) => [
-                ...f,
-                {
-                  key: nextKey(),
-                  kind: "dice",
-                  content: `🎲 ${ev.result.notation}${ev.result.reason ? ` (${ev.result.reason})` : ""} → [${ev.result.rolls.join(", ")}]${ev.result.modifier ? ` ${ev.result.modifier > 0 ? "+" : ""}${ev.result.modifier}` : ""} = ${ev.result.total}${ev.result.dc !== undefined ? ` vs CD ${ev.result.dc} · ${ev.result.success ? "✓ passou" : "✗ não passou"}` : ""}`,
-                  outcome: ev.result.dc === undefined ? undefined : ev.result.success ? "ok" : "fail",
-                },
-              ]);
-              break;
             case "narration":
-              setFeed((f) => [...f, { key: nextKey(), kind: "gm", content: ev.content }]);
-              break;
             case "choices":
-              setChoices(ev.choices);
+              if (diceAnim.current && (ev.type === "dice" || held.current.length)) {
+                held.current.push(ev);
+                if (ev.type === "dice" && held.current.length === 1) setPendingDice(ev.result);
+              } else showEvent(ev);
               break;
             case "scene":
               stateDirty = true;
@@ -191,6 +237,12 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
     } finally {
       setBusy(false);
       setStatusText("");
+      // ficha/cena só atualizam depois da rolagem, para não adiantar o resultado
+      if (held.current.length && !failed) {
+        reloadAfterHeld.current = true;
+        return;
+      }
+      drainHeld(true);
       const data = await reloadState();
       // se o "gerar novamente" falhou, o chat volta a refletir o que está salvo
       if (regen && failed && data) setFeed(toFeed(data.messages));
@@ -278,6 +330,11 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
                 <div key={item.key} className={`event-chip ${item.kind}${item.outcome ? ` ${item.outcome}` : ""}`}>{item.content}</div>
               )
             )}
+            {pendingDice && (
+              <button className="btn primary" style={{ alignSelf: "center" }} onClick={() => setRolling(pendingDice)}>
+                🎲 Rolar dados · {pendingDice.reason ? `${pendingDice.reason} ` : ""}({pendingDice.notation})
+              </button>
+            )}
             {busy && (
               <div className="thinking">
                 <span className="dot" /><span className="dot" /><span className="dot" />
@@ -285,7 +342,7 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
               </div>
             )}
             {error && <div className="error-box">{error}</div>}
-            {!busy && feed.some((i) => i.kind === "player") && (
+            {!busy && !pendingDice && feed.some((i) => i.kind === "player") && (
               <button className="btn ghost small" style={{ alignSelf: "flex-start" }}
                 onClick={() => { setRegenReason(""); setRegenOpen(true); }}>
                 ↻ Gerar novamente
@@ -395,6 +452,8 @@ export default function GameClient({ campaignId }: { campaignId: string }) {
           </div>
         </div>
       )}
+
+      {rolling && <DiceRoller result={rolling} onDone={releaseDice} />}
 
       {openNpc && (
         <NpcModal
