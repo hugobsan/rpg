@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
 import { getAgent } from "@/lib/agents";
-import { getModelPricing, getSources, OPENROUTER } from "@/lib/openrouter";
+import { getModelPricing, getSources, isClaude, OPENROUTER, type Source } from "@/lib/openrouter";
 import { modelVoices } from "@/lib/tts";
 
 export const dynamic = "force-dynamic";
@@ -16,14 +16,19 @@ export async function PUT(
   const model = String(body.model ?? current.model).trim();
   const source = String(body.source ?? current.source);
   const or = source === OPENROUTER;
-  if (!or && !(await getSources()).some((s) => s.id === source))
-    return NextResponse.json({ error: `A fonte "${source}" não existe. Escolha outra fonte.` }, { status: 400 });
+  const src = or ? { id: OPENROUTER } : (await getSources()).find((s) => s.id === source);
+  if (!src) return NextResponse.json({ error: `A fonte "${source}" não existe. Escolha outra fonte.` }, { status: 400 });
+  const agentParams: Record<string, unknown> = { ...(body.params ?? current.params) };
+  if (!isClaude(src as Source, model)) delete agentParams.cache; // cache de prompt só nos modelos da Anthropic
+  if (or) delete agentParams.catalogCost; // o OpenRouter já informa o custo real
   if (!model) return NextResponse.json({ error: "Informe o modelo." }, { status: 400 });
-  // no OpenRouter, valida o modelo no catálogo e guarda o preço atual; outras fontes não informam preço
+  // no OpenRouter, valida o modelo no catálogo e guarda o preço atual; outras fontes não informam preço,
+  // a não ser que o agente peça o custo estimado pelo catálogo do OpenRouter (params.catalogCost)
+  const estimate = !!agentParams.catalogCost;
   let pricing = null;
-  if (or) {
+  if (or || estimate) {
     try {
-      pricing = await getModelPricing(model);
+      pricing = await getModelPricing(model, estimate);
     } catch (e) {
       return NextResponse.json(
         { error: `Não foi possível consultar o catálogo do OpenRouter: ${e instanceof Error ? e.message : e}` },
@@ -32,14 +37,18 @@ export async function PUT(
     }
     if (!pricing)
       return NextResponse.json(
-        { error: `Modelo "${model}" não existe no catálogo do OpenRouter. Escolha um id da lista.` },
+        {
+          error: or
+            ? `Modelo "${model}" não existe no catálogo do OpenRouter. Escolha um id da lista.`
+            : `Não achei "${model}" no catálogo do OpenRouter para estimar o custo. Confira o id ou desligue o custo pelo preço do OpenRouter.`,
+        },
         { status: 400 }
       );
   }
   // agente Voz: as vozes padrão precisam existir no modelo escolhido (quando o catálogo lista as vozes)
   if (id === "voice") {
     const voices = await modelVoices(model, source).catch(() => null);
-    const p = body.params ?? current.params;
+    const p = agentParams;
     const bad = voices?.length
       ? [p.maleVoice, p.femaleVoice].map((v) => String(v ?? "")).find((v) => !voices.includes(v))
       : undefined;
@@ -61,7 +70,7 @@ export async function PUT(
       body.max_tokens ?? current.max_tokens,
       or && (body.web_search ?? current.web_search), // busca web (:online) só existe no OpenRouter
       body.system_prompt ?? current.system_prompt,
-      JSON.stringify(body.params ?? current.params),
+      JSON.stringify(agentParams),
       JSON.stringify(pricing),
       id,
       source,

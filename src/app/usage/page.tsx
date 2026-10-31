@@ -13,7 +13,7 @@ export default async function UsagePage({ searchParams }: { searchParams: Promis
   return (
     <main className="container">
       <h1>Custos e uso</h1>
-      <p className={`muted ${s.lede}`}>Todas as chamadas de IA ao OpenRouter, somadas no recorte dos filtros.</p>
+      <p className={`muted ${s.lede}`}>Todas as chamadas de IA, de todas as fontes, somadas no recorte dos filtros. O custo é o real do OpenRouter e, nos agentes de outras fontes com o custo pelo preço do OpenRouter ligado, uma estimativa (≈).</p>
       {/* useSearchParams pede Suspense no App Router */}
       <Suspense>
         <UsageClient initial={{ qs: sp.toString(), summary, logs }} />

@@ -99,6 +99,9 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onSaved
   const [saveError, setSaveError] = useState("");
   const or = form.source === "openrouter";
   const viaGpt = sources.find((x) => x.id === form.source)?.auth === "chatgpt";
+  // cache de prompt: só modelos da Anthropic (fonte Anthropic ou anthropic/* no OpenRouter)
+  const claude = or ? form.model.startsWith("anthropic/") : sources.find((x) => x.id === form.source)?.kind === "anthropic";
+  const setParam = (k: string, v: unknown) => setForm({ ...form, params: { ...form.params, [k]: v } });
 
   const save = async () => {
     setSaving(true);
@@ -148,6 +151,7 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onSaved
             <span className="pill">{agent.id}</span>
             {agent.source !== "openrouter" && <span className="pill">{srcName(agent.source)}</span>}
             {agent.web_search && <span className="pill on">busca web</span>}
+            {!!agent.params.cache && <span className="pill on">cache</span>}
             {agent.id === "gm" && !!agent.params.complexModel && <span className="pill">2 modelos</span>}
           </div>
         </div>
@@ -161,9 +165,10 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onSaved
           <span className={s.price}>
             <b>{usd(p.input)}</b> entrada · <b>{usd(p.output)}</b> saída
             {p.cache_read != null && <> · {usd(p.cache_read)} cache</>} por milhão de tokens
+            {agent.source !== "openrouter" && " (preço do OpenRouter, para estimar o custo)"}
           </span>
         ) : agent.source !== "openrouter" ? (
-          <span className={s.price}>Sem preço: a fonte não informa custo (em Custos e uso ficam os tokens).</span>
+          <span className={s.price}>Sem preço: a fonte não informa custo (em Custos e uso ficam os tokens). Para estimar, ligue o custo pelo preço do OpenRouter.</span>
         ) : (
           <span className={s.price}>Preço ainda não consultado: salve o agente para buscar no catálogo.</span>
         )}
@@ -226,6 +231,14 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onSaved
               {or && <label className={`${s.check} ${s.full}`}>
                 <input type="checkbox" checked={form.web_search} onChange={(e) => setForm({ ...form, web_search: e.target.checked })} />
                 Busca web (:online): o modelo pode consultar a internet, cobrada por busca
+              </label>}
+              {claude && <label className={`${s.check} ${s.full}`}>
+                <input type="checkbox" checked={!!form.params.cache} onChange={(e) => setParam("cache", e.target.checked)} />
+                Cache de prompt: o começo que se repete (ferramentas, prompt do agente, rodadas anteriores do turno) sai por 5 a 10% do preço de entrada. Gravar custa 25% a mais e o cache dura 5 minutos: compensa em quem chama várias vezes seguidas, como o Mestre
+              </label>}
+              {!or && <label className={`${s.check} ${s.full}`}>
+                <input type="checkbox" checked={!!form.params.catalogCost} onChange={(e) => setParam("catalogCost", e.target.checked)} />
+                Custo pelo preço do OpenRouter: esta fonte não informa custo; cada chamada é estimada com o preço do mesmo modelo no catálogo do OpenRouter e entra em Custos e uso
               </label>}
             </>}
             {agent.id === "gm" && (

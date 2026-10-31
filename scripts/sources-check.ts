@@ -24,7 +24,7 @@ g.__pgPool = {
       const v = { sources: state.sources, openrouter: { apiKey: state.orKey }, embeddings: { enabled: true, model: "emb-1", source: state.source } }[params[0] as string];
       return { rows: v ? [{ value: v }] : [] };
     }
-    if (/SELECT source FROM agents/.test(text)) return { rows: [{ source: state.source }] };
+    if (/SELECT source(, params)? FROM agents/.test(text)) return { rows: [{ source: state.source, params: {} }] };
     if (/SELECT \* FROM agents/.test(text)) return { rows: [{ id: params[0], model: "m-1", params: {}, source: state.source }] };
     if (/INSERT INTO api_logs/.test(text)) logs.push(params);
     if (/INSERT INTO settings/.test(text) && params[0] === "sources") state.sources = JSON.parse(String(params[1]));

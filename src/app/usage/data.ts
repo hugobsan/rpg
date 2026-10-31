@@ -1,6 +1,7 @@
 // Consultas da tela /usage: usadas pela página (Server Component, 1ª carga) e pelas rotas /api/usage/*.
 import { q } from "@/lib/db";
 import { AGG, TZ, parseFilter } from "@/lib/usage";
+import { getSources, OPENROUTER } from "@/lib/openrouter";
 
 export interface Agg {
   calls: number;
@@ -19,7 +20,7 @@ export interface Summary {
   byDay: DayRow[];
   start: string | null;
   today: string;
-  options: { agents: { id: string; name: string }[]; campaigns: { id: string; name: string }[]; models: string[]; providers: string[] };
+  options: { agents: { id: string; name: string }[]; campaigns: { id: string; name: string }[]; models: string[]; providers: { id: string; name: string }[] };
 }
 /** Linha do histórico sem request/response (o detalhe vem de /api/usage/logs/[id] ao expandir). */
 export interface LogRow {
@@ -62,6 +63,9 @@ export async function usageSummary(sp: URLSearchParams): Promise<Summary> {
     q<{ model: string }>(`SELECT DISTINCT model FROM api_logs ORDER BY model`),
     q<{ provider: string }>(`SELECT DISTINCT provider FROM api_logs ORDER BY provider`),
   ]);
+  // fontes: o OpenRouter, as configuradas e as que só aparecem no histórico (fonte apagada: fica o id)
+  const sources = [{ id: OPENROUTER, name: "OpenRouter" }, ...(await getSources()).map(({ id, name }) => ({ id, name }))];
+  for (const { provider } of providers) if (!sources.some((x) => x.id === provider)) sources.push({ id: provider, name: provider });
   return {
     totals,
     byAgent,
@@ -69,7 +73,7 @@ export async function usageSummary(sp: URLSearchParams): Promise<Summary> {
     byDay,
     start: interval ? bounds.start : null,
     today: bounds.today,
-    options: { agents, campaigns, models: models.map((m) => m.model), providers: providers.map((p) => p.provider) },
+    options: { agents, campaigns, models: models.map((m) => m.model), providers: sources },
   };
 }
 

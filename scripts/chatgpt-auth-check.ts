@@ -20,7 +20,7 @@ g.__pgPool = {
   async query(text: string, params: unknown[] = []) {
     if (/SELECT value FROM settings/.test(text)) return { rows: params[0] as string in settings ? [{ value: structuredClone(settings[params[0] as string]) }] : [] };
     if (/INSERT INTO settings/.test(text)) settings[params[0] as string] = JSON.parse(params[1] as string);
-    if (/SELECT source FROM agents/.test(text)) return { rows: [{ source: "gpt" }] };
+    if (/SELECT source(, params)? FROM agents/.test(text)) return { rows: [{ source: "gpt", params: {} }] };
     if (/INSERT INTO api_logs/.test(text)) logs.push(params);
     return { rows: [] };
   },

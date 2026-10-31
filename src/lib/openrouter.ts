@@ -3,6 +3,7 @@ import type { SourceView } from "./types";
 import { presetOf } from "./sourcePresets";
 import { chatgptAccessToken } from "./chatgptAuth";
 import { readResponses, responsesHttpError, responsesRequest } from "./responsesApi";
+import { anthropicChat } from "./anthropicApi";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -121,14 +122,41 @@ export function maskKey(key: string): string {
 
 export const sourceView = ({ id, name, url, apiKey, kind, auth }: Source): SourceView => ({ id, name, url, kind, auth, apiKeyMasked: maskKey(apiKey) });
 
-/** URL, cabeçalhos e corpo da chamada. Fora do OpenRouter vai só o formato OpenAI: sem :online, reasoning e cabeçalhos de app. */
-export function chatRequest(opts: ChatOptions, src: Source) {
+/** Modelo da Anthropic: na fonte Anthropic ou anthropic/* no OpenRouter. Só neles o agente pode ligar o cache. */
+export const isClaude = (src: Source, model: string) =>
+  src.kind === "anthropic" || (src.id === OPENROUTER && model.startsWith("anthropic/"));
+
+/** Mensagens de sistema seguidas viram uma só, com o texto de antes (só o cache precisa delas separadas). */
+export function mergeSystem(messages: ChatMessage[]): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  for (const m of messages) {
+    const prev = out[out.length - 1];
+    if (m.role === "system" && prev?.role === "system" && typeof prev.content === "string" && typeof m.content === "string")
+      out[out.length - 1] = { ...prev, content: `${prev.content}\n${m.content}` };
+    else out.push(m);
+  }
+  return out;
+}
+
+/**
+ * URL, cabeçalhos e corpo da chamada. Fora do OpenRouter vai só o formato OpenAI: sem :online, reasoning e cabeçalhos de app.
+ * cache (Claude no OpenRouter): cache automático no fim da conversa e um ponto fixo no fim da 1ª mensagem de sistema.
+ */
+export function chatRequest(opts: ChatOptions, src: Source, cache = false) {
   const or = src.id === OPENROUTER;
   const body: Record<string, unknown> = {
     model: or && opts.webSearch ? `${opts.model}:online` : opts.model,
     messages: opts.messages,
     max_tokens: opts.max_tokens ?? 2048,
   };
+  if (or && cache) {
+    body.cache_control = { type: "ephemeral" };
+    const i = opts.messages.findIndex((m) => m.role === "system" && typeof m.content === "string");
+    if (i >= 0)
+      body.messages = opts.messages.map((m, j) =>
+        j === i ? { ...m, content: [{ type: "text", text: m.content, cache_control: { type: "ephemeral" } }] } : m
+      );
+  }
   if (!presetOf(src.kind)?.noTemperature) body.temperature = opts.temperature ?? 0.8;
   if (opts.tools?.length) body.tools = opts.tools;
   if (opts.modalities) body.modalities = opts.modalities;
@@ -186,16 +214,21 @@ export async function logApiCall(l: ApiLog): Promise<void> {
  * Toda chamada é registrada em api_logs com fonte, tokens, duração e erro — visível em Custos e uso.
  */
 export async function chat(opts: ChatOptions): Promise<ChatResult> {
-  const src = await agentSource(opts.agentId);
+  const [agent] = await q<{ source: string; params: AgentFlags }>(`SELECT source, params FROM agents WHERE id = $1`, [opts.agentId]);
+  const src = await getSource(agent?.source ?? OPENROUTER);
+  const cache = !!agent?.params?.cache && isClaude(src, opts.model);
+  if (!cache) opts = { ...opts, messages: mergeSystem(opts.messages) };
+  const native = cache && src.kind === "anthropic"; // a camada compatível da Anthropic não faz cache: vai pela API nativa
   const resp = src.auth === "chatgpt"; // Login com ChatGPT: Responses API, sempre em streaming
-  const { url, headers, body } = resp ? responsesRequest(opts, src) : chatRequest(opts, src);
+  const { url, headers, body } = resp ? responsesRequest(opts, src) : chatRequest(opts, src, cache);
   const model = body.model as string;
   const started = Date.now();
   let responseJson: Record<string, unknown> | null = null;
   let error: string | null = null;
   try {
-    const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-    if ((opts.onDelta || resp) && res.ok && res.body)
+    const res = native ? null : await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    if (!res) responseJson = await anthropicChat(opts, src);
+    else if ((opts.onDelta || resp) && res.ok && res.body)
       responseJson = await (resp ? readResponses : readStream)(res.body, opts.onDelta ?? (() => {}));
     else {
       const text = await res.text();
@@ -235,12 +268,11 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
     error = e instanceof Error ? e.message : String(e);
     throw e;
   } finally {
-    const usage = (responseJson as {
-      usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
-    } | null)?.usage;
+    const usage = (responseJson as { usage?: Usage } | null)?.usage;
     // log truncado: sem base64 de imagens, mensagens limitadas
     const logRequest = {
       model,
+      cache: cache || undefined,
       temperature: body.temperature,
       max_tokens: body.max_tokens,
       tools: opts.tools?.map((t) => t.function.name),
@@ -281,7 +313,8 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       completionTokens: usage?.completion_tokens,
       durationMs: Date.now() - started,
       error,
-      cost: src.id === OPENROUTER ? usage?.cost : null, // USD real do OpenRouter (já com cache/busca/raciocínio); as outras fontes não informam
+      // USD real do OpenRouter (já com cache/busca/raciocínio); outras fontes não informam: estimado pelo catálogo se o agente pedir
+      cost: src.id === OPENROUTER ? usage?.cost : agent?.params?.catalogCost && usage ? await estimateCost(opts.model, usage) : null,
     });
   }
 }
@@ -363,7 +396,53 @@ export type ModelPricing = {
   prompt: string;
   completion: string;
   input_cache_read?: string;
+  input_cache_write?: string; // gravação de cache de 5 min (Claude)
 };
+
+/** Opções do agente (params) que chat() lê a cada chamada. */
+type AgentFlags = { cache?: boolean; catalogCost?: boolean } | null;
+
+/** usage como vem do OpenRouter (e como anthropicApi e readStream montam): cache lido e gravado em prompt_tokens_details. */
+export type Usage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  cost?: number;
+  prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+};
+
+/**
+ * Modelo de outra fonte no catálogo do OpenRouter, pelo id: gpt-6.1-terra → openai/gpt-6.1-terra;
+ * claude-sonnet-5-5 → anthropic/claude-sonnet-5.5 (a Anthropic usa hífen na versão e às vezes data no fim).
+ */
+export function catalogMatch<T extends { id: string }>(model: string, list: T[]): T | undefined {
+  const names = new Set([model, model.replace(/-\d{8}$/, "").replace(/-(\d+)-(\d+)$/, "-$1.$2")]);
+  return list.find((m) => names.has(m.id) || names.has(m.id.slice(m.id.indexOf("/") + 1)));
+}
+
+/**
+ * Custo pelo preço do catálogo: entrada sem cache, cache lido, cache gravado e saída (sem preço de cache, o de entrada).
+ * ponytail: ignora a faixa de preço acima de 100 mil tokens de entrada (Haiku 5.5); os agentes ficam bem abaixo.
+ */
+export function catalogCost(p: ModelPricing, u: Usage): number | null {
+  const price = (v: string | undefined, fallback: number) => (v == null || Number(v) < 0 ? fallback : Number(v));
+  const input = price(p.prompt, NaN);
+  if (Number.isNaN(input)) return null; // preço variável (-1) ou ausente
+  const read = u.prompt_tokens_details?.cached_tokens ?? 0;
+  const write = u.prompt_tokens_details?.cache_write_tokens ?? 0;
+  const fresh = Math.max((u.prompt_tokens ?? 0) - read - write, 0);
+  return fresh * input + read * price(p.input_cache_read, input) + write * price(p.input_cache_write, input) + (u.completion_tokens ?? 0) * price(p.completion, 0);
+}
+
+// catálogo guardado no processo por 6 h: o custo estimado de cada chamada não vai à rede toda vez
+let catalog: { at: number; list: ReturnType<typeof listModels> } | null = null;
+
+/** Custo estimado de uma chamada de outra fonte pelo preço do OpenRouter; null se o modelo não está no catálogo (nunca lança). */
+export async function estimateCost(model: string, usage: Usage): Promise<number | null> {
+  if (!catalog || Date.now() - catalog.at > 6 * 3600_000) catalog = { at: Date.now(), list: listModels() };
+  const list = await catalog.list.catch(() => ((catalog = null), []));
+  const m = catalogMatch(model, list);
+  return m ? catalogCost(m.pricing, usage) : null;
+}
 
 /** Lista modelos disponíveis no OpenRouter (para o seletor da tela de Agentes). */
 export async function listModels(): Promise<
@@ -421,9 +500,13 @@ export async function listSourceModels(id: string): Promise<{ id: string; name: 
   return data.data.map((m) => ({ id: m.id, name: m.name || m.display_name || m.id })).sort((a, b) => a.id.localeCompare(b.id));
 }
 
-/** Preço salvo no agente: USD por milhão de tokens + contexto. null se o modelo não existe no catálogo. */
-export async function getModelPricing(id: string) {
-  const m = (await listModels()).find((x) => x.id === id || x.slug === id); // aceita o id ou o slug versionado
+/**
+ * Preço salvo no agente: USD por milhão de tokens + contexto. null se o modelo não existe no catálogo.
+ * other: modelo de outra fonte, achado pelo nome (catalogMatch), para o custo estimado.
+ */
+export async function getModelPricing(id: string, other = false) {
+  const list = await listModels();
+  const m = list.find((x) => x.id === id || x.slug === id) ?? (other ? catalogMatch(id, list) : undefined); // aceita o id ou o slug versionado
   if (!m) return null;
   const perM = (v?: string) => (v == null || Number(v) < 0 ? null : Number((Number(v) * 1e6).toPrecision(6)));
   return {

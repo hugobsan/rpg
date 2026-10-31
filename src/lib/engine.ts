@@ -144,7 +144,7 @@ async function buildGmSystem(
   memories: MemoryHit[],
   past: string, // trechos antigos do chat aprovados pelo Jev (formatHistory)
   basePrompt: string
-): Promise<string> {
+): Promise<[fixed: string, turn: string]> {
   const player = chars.find((c) => c.kind === "player");
   const activeNpcs = chars.filter((c) => c.kind === "npc" && c.active);
   const inactiveNames = chars
@@ -155,12 +155,15 @@ async function buildGmSystem(
   const clock = getClock(campaign.state);
   const directives = await activeDirectives(campaign.id);
 
-  const parts = [
+  // o que não muda de um turno para outro na campanha: com o cache ligado no Mestre, é o ponto de cache entre turnos
+  const fixed = [
     basePrompt,
     `\n====== CAMPANHA: ${campaign.name} ======`,
     STYLE_INSTRUCTIONS[campaign.style] || STYLE_INSTRUCTIONS.hybrid,
     `\n--- MECÂNICA ---\n${rulesetPromptSummary(campaign.ruleset)}`,
     "Biblioteca do mundo: técnicas e itens já criados (search_library). add_ability só precisa de personagem, nome e brief: a técnica vem da biblioteca ou o Criador de habilidades a cria completa (tipo, rank, custo, efeito, dano, marcos); não invente esses números.",
+  ];
+  const parts = [
     tablePromptBlock(getTable(campaign.state)),
     `\n--- CENA ATUAL (nº ${scene.seq}) ---\nModo: ${scene.mode} | Local: ${scene.location || "?"} | Título: ${scene.title || "-"}\n${
       clock
@@ -196,7 +199,7 @@ async function buildGmSystem(
           .join("\n")}`
       : "",
   ];
-  return parts.filter(Boolean).join("\n");
+  return [fixed.filter(Boolean).join("\n"), parts.filter(Boolean).join("\n")];
 }
 
 /** Candidatas a memória do turno: top-k por similaridade + as mais importantes/recentes (Configurações avançadas). */
@@ -363,7 +366,7 @@ export async function runTurn(
   const memories = candidates.filter((m) => decision.keepMemory(m.id, m.importance));
   const past = pastHits.filter((h) => decision.keepHistory(h.id));
 
-  const system = await buildGmSystem(
+  const [fixed, turn] = await buildGmSystem(
     campaign,
     scene,
     chars,
@@ -372,7 +375,8 @@ export async function runTurn(
     gm.system_prompt
   );
   // a última mensagem do histórico já é o input do jogador recém-salvo? Não: janela foi lida após salvar.
-  const messages: ChatMessage[] = [{ role: "system", content: system }, ...history];
+  // duas mensagens de sistema: chat() junta de volta no texto de antes, menos com o cache ligado (a 1ª é o prefixo fixo)
+  const messages: ChatMessage[] = [{ role: "system", content: fixed }, { role: "system", content: turn }, ...history];
   if (
     !history.length ||
     history[history.length - 1].role !== "user" ||

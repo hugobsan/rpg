@@ -121,6 +121,7 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
   const range = from || to ? "custom" : sp.get("range") || "30d";
   const opts = summary.options;
   const agentName = (id: string | null) => opts.agents.find((a) => a.id === id)?.name ?? id ?? "(sem agente)";
+  const srcName = (id: string) => opts.providers.find((p) => p.id === id)?.name ?? id;
   const agentList = [...opts.agents].sort((a, b) => rank(a.id) - rank(b.id));
   const toggleAgent = (id: string) => {
     const next = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
@@ -191,16 +192,13 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
               {opts.models.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           </label>
-          {/* fonte de modelos: só aparece quando já houve chamada fora do OpenRouter */}
-          {(opts.providers.length > 1 || sp.get("provider")) && (
-            <label className="field">
-              <span>Fonte</span>
-              <select value={sp.get("provider") || ""} onChange={(e) => set({ provider: e.target.value || null })}>
-                <option value="">Todas</option>
-                {opts.providers.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </label>
-          )}
+          <label className="field">
+            <span>Fonte</span>
+            <select value={sp.get("provider") || ""} onChange={(e) => set({ provider: e.target.value || null })}>
+              <option value="">Todas</option>
+              {opts.providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
           <label className={s.only}>
             <input type="checkbox" checked={sp.get("errors") === "1"} onChange={(e) => set({ errors: e.target.checked ? "1" : null })} />
             Só erros
@@ -253,7 +251,7 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
         </section>
         <section className={`card ${s.panel}`}>
           <div className={s.panelHead}><h2>Por modelo</h2></div>
-          <Breakdown label="Modelo" total={t.cost} rows={summary.byModel.map((r) => ({ ...r, key: `${r.provider}:${r.model}`, name: r.provider === "openrouter" ? r.model : `${r.model} (${r.provider})` }))} />
+          <Breakdown label="Modelo" total={t.cost} rows={summary.byModel.map((r) => ({ ...r, key: `${r.provider}:${r.model}`, name: r.provider === "openrouter" ? r.model : `${r.model} (${srcName(r.provider)})` }))} />
         </section>
       </div>
 
@@ -290,9 +288,12 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
                         <td style={{ whiteSpace: "nowrap" }}>{when(l.created_at)}</td>
                         <td style={{ whiteSpace: "nowrap" }}><Swatch color={colorOf(l.agent_id)} />{agentName(l.agent_id)}</td>
                         <td>{l.purpose}</td>
-                        <td>{l.model}{l.provider !== "openrouter" && <> <span className="pill">{l.provider}</span></>}</td>
+                        <td>{l.model}{l.provider !== "openrouter" && <> <span className="pill">{srcName(l.provider)}</span></>}</td>
                         <td style={num}>{l.prompt_tokens ?? "-"} / {l.completion_tokens ?? "-"}</td>
-                        <td style={num}>{usd(l.cost)}</td>
+                        {/* fora do OpenRouter, custo só existe estimado pelo catálogo (opção do agente) */}
+                        <td style={num} title={l.provider !== "openrouter" && l.cost != null ? "Estimado pelo preço do OpenRouter" : undefined}>
+                          {l.provider !== "openrouter" && l.cost != null && "≈ "}{usd(l.cost)}
+                        </td>
                         <td style={num}>{secs(l.duration_ms)}</td>
                         <td>{l.error ? <span className="pill err">erro</span> : <span className="pill on">ok</span>}</td>
                       </tr>
