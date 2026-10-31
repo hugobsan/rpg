@@ -7,6 +7,7 @@ import { addMemory, indexHistory, searchMemories } from "./retrieval";
 import { getCampaign, getCurrentScene } from "./engine";
 import { Character, InboxItem } from "./types";
 import { decideNpcWilling, scoreImportance } from "./decisions";
+import { startJob } from "./jobs";
 
 async function getNpc(campaignId: string, npcId: string): Promise<Character> {
   const rows = await q<Character>(
@@ -175,7 +176,7 @@ export async function endNpcChat(
   campaignId: string,
   npcId: string,
   sessionId: string
-): Promise<{ saved: number }> {
+): Promise<{ id: number; started: boolean } | { saved: 0 }> {
   const npc = await getNpc(campaignId, npcId);
   const rows = await q<{ role: string; content: string }>(
     `SELECT role, content FROM npc_chats
@@ -184,46 +185,46 @@ export async function endNpcChat(
   );
   if (rows.length < 2) return { saved: 0 };
 
-  const chronicler = await getAgent("chronicler");
-  const transcript = rows
-    .map((r) => `${r.role === "player" ? "JOGADOR" : npc.name}: ${r.content}`)
-    .join("\n");
-  const result = await chat({
-    model: chronicler.model,
-    messages: [
-      { role: "system", content: chronicler.system_prompt },
-      {
-        role: "user",
-        content: `Conversa particular entre o jogador e o NPC ${npc.name}. Extraia APENAS os pontos que o Mestre da campanha precisa saber (revelações, acordos, mudanças de relação, informações novas). Use kind "npc" ou "relationship" e subject "${npc.name}".\n\n${transcript}`,
-      },
-    ],
-    temperature: chronicler.temperature,
-    max_tokens: chronicler.max_tokens,
-    agentId: "chronicler",
-    campaignId,
-    purpose: `resumo de conversa com ${npc.name}`,
-  });
+  // em segundo plano: o modal fecha na hora e o cabeçalho mostra a tarefa até as memórias entrarem
+  return startJob(campaignId, "npc-memory", sessionId, `Memórias da conversa: ${npc.name}`, async () => {
+    const chronicler = await getAgent("chronicler");
+    const transcript = rows
+      .map((r) => `${r.role === "player" ? "JOGADOR" : npc.name}: ${r.content}`)
+      .join("\n");
+    const result = await chat({
+      model: chronicler.model,
+      messages: [
+        { role: "system", content: chronicler.system_prompt },
+        {
+          role: "user",
+          content: `Conversa particular entre o jogador e o NPC ${npc.name}. Extraia APENAS os pontos que o Mestre da campanha precisa saber (revelações, acordos, mudanças de relação, informações novas). Use kind "npc" ou "relationship" e subject "${npc.name}".\n\n${transcript}`,
+        },
+      ],
+      temperature: chronicler.temperature,
+      max_tokens: chronicler.max_tokens,
+      agentId: "chronicler",
+      campaignId,
+      purpose: `resumo de conversa com ${npc.name}`,
+    });
 
-  let saved = 0;
-  try {
-    const parsed = JSON.parse(result.content.replace(/```json|```/g, "").trim()) as {
-      memories?: { kind: string; subject?: string; content: string; importance?: number }[];
-    };
-    const mems = (parsed.memories || []).filter((m) => m?.content);
-    // importância pelo Jev; se ele falhar, fica a do Cronista
-    const importance = await scoreImportance(
-      (await getCampaign(campaignId)).ruleset.name,
-      mems.map((m) => ({ ...m, subject: m.subject || npc.name })),
-      campaignId
-    );
-    for (const [i, m] of mems.entries()) {
-      await addMemory(campaignId, m.kind || "npc", m.content, m.subject || npc.name, importance[i]);
-      saved++;
+    try {
+      const parsed = JSON.parse(result.content.replace(/```json|```/g, "").trim()) as {
+        memories?: { kind: string; subject?: string; content: string; importance?: number }[];
+      };
+      const mems = (parsed.memories || []).filter((m) => m?.content);
+      // importância pelo Jev; se ele falhar, fica a do Cronista
+      const importance = await scoreImportance(
+        (await getCampaign(campaignId)).ruleset.name,
+        mems.map((m) => ({ ...m, subject: m.subject || npc.name })),
+        campaignId
+      );
+      for (const [i, m] of mems.entries()) {
+        await addMemory(campaignId, m.kind || "npc", m.content, m.subject || npc.name, importance[i]);
+      }
+    } catch {
+      /* sem memórias extraíveis */
     }
-  } catch {
-    /* sem memórias extraíveis */
-  }
-  return { saved };
+  });
 }
 
 /** Mensagens de NPC não lidas, uma linha por sessão (GET da campanha). */
