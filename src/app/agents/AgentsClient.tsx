@@ -21,7 +21,7 @@ interface Model {
 const SPECIAL: Record<string, string> = {
   decider: "O Jev usa a Decisions API (no OpenRouter, POST /api/alpha/decisions, ao lado do /api/v1): a fonte precisa oferecer o mesmo endpoint, em {URL}/../alpha/decisions. Se falhar, o jogo segue com as decisões padrão.",
   voice: "A Voz usa POST {URL}/audio/speech, no formato da OpenAI. Fora do OpenRouter as vozes são texto livre e o custo não é informado.",
-  image: "O Ilustrador pede a imagem pelo chat com modalities, no formato do OpenRouter (imagens em message.images): a fonte precisa responder igual.",
+  image: "O Ilustrador pede a imagem pelo chat com modalities, no formato do OpenRouter (imagens em message.images): a fonte precisa responder igual. Na fonte Gemini ele usa POST {URL}/images/generations, com um modelo de imagem do Gemini (ex.: gemini-2.5-flash-image).",
 };
 
 // ordem do fluxo (a mesma de Custos e uso) e cor de cada agente, só por tokens do tema

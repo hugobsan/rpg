@@ -3,7 +3,7 @@
 // chat, Jev (decider), Voz (TTS), Ilustrador (imagem) e embeddings chamando a URL e a chave da fonte certa.
 // O banco é um pool falso posto em global.__pgPool (o mesmo global que src/lib/db.ts usa) e o fetch é trocado.
 import assert from "node:assert";
-import { authHeader, chat, chatRequest, maskKey, pickSource, sourceView, type ChatOptions, type Source } from "../src/lib/openrouter";
+import { authHeader, chat, chatRequest, imagesToChat, maskKey, pickSource, sourceView, type ChatOptions, type Source } from "../src/lib/openrouter";
 import { decide, type DecisionRequest } from "../src/lib/decisions";
 import { synthesize } from "../src/lib/tts";
 import { embed } from "../src/lib/embeddings";
@@ -43,6 +43,7 @@ globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
   calls.push({ url, headers: (init?.headers ?? {}) as Record<string, string>, body: init?.body ? JSON.parse(String(init.body)) : null });
   if (url.endsWith("/chat/completions"))
     return Response.json({ choices: [{ message: { content: "ok", images: [{ image_url: { url: "data:image/png;base64,AA" } }] } }], usage: { prompt_tokens: 3, completion_tokens: 1, cost: 0.5 } });
+  if (url.endsWith("/images/generations")) return Response.json({ data: [{ b64_json: "iVBORw0KGgo" }] });
   if (url.endsWith("/alpha/decisions")) return Response.json({ answers: { x: { type: "noul", noul: 0.9 } } });
   if (url.endsWith("/audio/speech")) return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "audio/mpeg" } });
   if (url.endsWith("/embeddings")) return Response.json({ data: [{ index: 0, embedding: [0.1, 0.2] }] });
@@ -116,6 +117,17 @@ async function main() {
   assert.equal(last().url, "http://pod:8000/v1/chat/completions");
   assert.deepEqual(last().body?.modalities, ["image", "text"]);
   assert.equal(img.images.length, 1);
+  // Gemini: imagem por /images/generations (URL do preset), só o texto do pedido; volta como message.images
+  state.sources = [POD, { id: "gem", name: "Gemini", url: "http://evil", apiKey: "g-key", kind: "gemini" }];
+  state.source = "gem";
+  const gem = await chat({ ...base, agentId: "image", model: "gemini-2.5-flash-image", modalities: ["image", "text"], onDelta: () => {} });
+  assert.equal(last().url, "https://generativelanguage.googleapis.com/v1beta/openai/images/generations");
+  assert.equal(last().headers.Authorization, "Bearer g-key");
+  assert.deepEqual(last().body, { model: "gemini-2.5-flash-image", prompt: "oi", n: 1, response_format: "b64_json" });
+  assert.deepEqual(gem.images, ["data:image/png;base64,iVBORw0KGgo"]);
+  assert.equal(lastLog().provider, "gem");
+  assert.deepEqual((imagesToChat({ data: [{ b64_json: "/9j/4AA" }, { b64_json: "UklGRxx" }] }).choices as { message: { images: { image_url: { url: string } }[] } }[])[0].message.images.map((i) => i.image_url.url), ["data:image/jpeg;base64,/9j/4AA", "data:image/webp;base64,UklGRxx"]);
+  state.source = "pod";
 
   const ans = await decide(question, { purpose: "check" });
   assert.equal(last().url, "http://pod:8000/alpha/decisions");

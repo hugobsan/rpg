@@ -8,6 +8,7 @@ export interface SourcePreset {
   noTemperature?: boolean; // não mandar temperature (o provedor rejeita os valores que os agentes usam)
   reasoningEffort?: boolean; // params.reasoning.effort vira reasoning_effort (formato da OpenAI)
   headers?: Record<string, string>; // cabeçalhos extras em toda chamada à fonte
+  imagesEndpoint?: boolean; // gera imagem por POST /images/generations (b64_json), não pelo chat com modalities
 }
 
 export const SOURCE_PRESETS: SourcePreset[] = [
@@ -31,7 +32,8 @@ export const SOURCE_PRESETS: SourcePreset[] = [
     kind: "gemini",
     name: "Gemini",
     url: "https://generativelanguage.googleapis.com/v1beta/openai",
-    note: "Endpoint compatível com a OpenAI do Google AI (beta). Gera imagem só por /images/generations: o Ilustrador não funciona por aqui.",
+    imagesEndpoint: true,
+    note: "Endpoint compatível com a OpenAI do Google AI (beta). Imagem só por /images/generations, que o Ilustrador usa sozinho nesta fonte: o modelo dele vira um de imagem do Gemini sem o prefixo google/ (a documentação cita gemini-2.5-flash-image e gemini-3-pro-image-preview); a imagem sai só do texto do pedido.",
   },
   {
     kind: "opencode",

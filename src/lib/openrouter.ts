@@ -172,6 +172,26 @@ export function chatRequest(opts: ChatOptions, src: Source, cache = false) {
   return { url: `${src.url}/chat/completions`, headers, body };
 }
 
+/** Imagem na fonte que só gera por /images/generations (Gemini): o pedido de chat vira prompt de texto. */
+export function imagesRequest(opts: ChatOptions, src: Source) {
+  const prompt = opts.messages
+    .map((m) => (typeof m.content === "string" ? m.content : (m.content ?? []).map((p) => p.text ?? "").join("")))
+    .filter(Boolean)
+    .join("\n\n");
+  const { headers } = chatRequest(opts, src);
+  return { url: `${src.url}/images/generations`, headers, body: { model: opts.model, prompt, n: 1, response_format: "b64_json" } as Record<string, unknown> };
+}
+
+// tipo da imagem pelos primeiros bytes em base64 (a resposta de /images/generations não informa)
+const mimeOf = (b64: string) => (b64.startsWith("/9j/") ? "image/jpeg" : b64.startsWith("UklGR") ? "image/webp" : "image/png");
+
+/** Resposta de /images/generations (data[].b64_json) → JSON de chat com message.images, como o OpenRouter devolve. */
+export function imagesToChat(json: Record<string, unknown>): Record<string, unknown> {
+  const data = (json.data as { b64_json?: string }[] | undefined) ?? [];
+  const images = data.filter((d) => d.b64_json).map((d) => ({ image_url: { url: `data:${mimeOf(d.b64_json!)};base64,${d.b64_json}` } }));
+  return { ...json, data: undefined, choices: [{ message: { role: "assistant", content: "", images }, finish_reason: "stop" }] };
+}
+
 export interface ApiLog {
   agentId: string;
   provider?: string; // fonte que atendeu (padrão openrouter)
@@ -221,7 +241,8 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   // a camada compatível da Anthropic não faz cache e ignora reasoning_effort: com um dos dois vai pela API nativa
   const native = src.kind === "anthropic" && (cache || !!opts.reasoning?.effort);
   const resp = src.auth === "chatgpt"; // Login com ChatGPT: Responses API, sempre em streaming
-  const { url, headers, body } = resp ? responsesRequest(opts, src) : chatRequest(opts, src, cache);
+  const img = !!opts.modalities?.includes("image") && !!presetOf(src.kind)?.imagesEndpoint;
+  const { url, headers, body } = img ? imagesRequest(opts, src) : resp ? responsesRequest(opts, src) : chatRequest(opts, src, cache);
   const model = body.model as string;
   const started = Date.now();
   let responseJson: Record<string, unknown> | null = null;
@@ -229,7 +250,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   try {
     const res = native ? null : await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
     if (!res) responseJson = await anthropicChat(opts, src, cache);
-    else if ((opts.onDelta || resp) && res.ok && res.body)
+    else if (!img && (opts.onDelta || resp) && res.ok && res.body)
       responseJson = await (resp ? readResponses : readStream)(res.body, opts.onDelta ?? (() => {}));
     else {
       const text = await res.text();
@@ -242,6 +263,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
         throw new Error(
           `${src.name} ${res.status}: ${resp ? responsesHttpError(text) : text.slice(0, 500)}`
         );
+      if (img) responseJson = imagesToChat(responseJson ?? {});
     }
     const errObj = (responseJson as { error?: { message?: string } }).error;
     if (errObj) throw new Error(`${src.name}: ${errObj.message || "erro"}`);
