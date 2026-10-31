@@ -56,9 +56,19 @@ export default function AdventureChat({ onUse }: { onUse: (rs: Ruleset) => void 
     if (d.error) setError(d.error);
     else setCur(d);
   };
+  // otimista: sai na hora; se o DELETE falhar, volta para o mesmo lugar com o erro
   const remove = async (id: string) => {
+    const at = saved?.findIndex((x) => x.id === id) ?? -1;
+    const gone = at >= 0 ? saved![at] : null;
     setSaved((l) => (l || []).filter((x) => x.id !== id));
-    await fetch(`/api/adventures?id=${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/adventures?id=${id}`, { method: "DELETE" }).catch(() => null);
+    if (res?.ok || !gone) return;
+    setSaved((l) => {
+      const next = [...(l || [])];
+      next.splice(Math.min(at, next.length), 0, gone);
+      return next;
+    });
+    setError("Não deu para apagar a aventura. Tente de novo.");
   };
 
   const send = async (raw: string) => {

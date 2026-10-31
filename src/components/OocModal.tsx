@@ -87,9 +87,19 @@ export default function OocModal({
     inputRef.current?.focus();
   };
 
+  // otimista: sai na hora; se o DELETE falhar, volta para o mesmo lugar com o erro
   const removeDirective = async (id: number) => {
+    const at = directives?.findIndex((d) => d.id === id) ?? -1;
+    const gone = at >= 0 ? directives![at] : null;
     setDirectives((ds) => (ds || []).filter((d) => d.id !== id));
-    await fetch(`/api/campaigns/${campaignId}/ooc?directive=${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/campaigns/${campaignId}/ooc?directive=${id}`, { method: "DELETE" }).catch(() => null);
+    if (res?.ok || !gone) return;
+    setDirectives((ds) => {
+      const next = [...(ds || [])];
+      next.splice(Math.min(at, next.length), 0, gone);
+      return next;
+    });
+    setError("Não deu para remover a diretriz. Tente de novo.");
   };
 
   return (

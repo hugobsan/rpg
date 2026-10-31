@@ -105,6 +105,7 @@ export default function NpcModal({
   const [speaking, setSpeaking] = useState<number | null>(null); // índice da fala gerando voz (-1 = prévia)
   const [fx, setFx] = useState<VoiceFx>(() => fxOf(npc.persona));
   const fxRef = useRef(fx); // valor mais recente, para a prévia e para salvar ao soltar o slider
+  const fxSaved = useRef(fx); // último salvo: volta para ele se o servidor recusar
   const feedRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -187,25 +188,41 @@ export default function NpcModal({
     onClose();
   };
 
-  const saveNpc = (body: object) =>
+  // otimista: a tela já mudou; se o PUT falhar, `undo` desfaz e sai o aviso
+  const saveNpc = (body: object, undo: () => void, ok?: () => void) =>
     (saving.current = fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }).catch(() => {}));
+    })
+      .catch(() => null)
+      .then((res) => {
+        if (res?.ok) return ok?.();
+        undo();
+        toast("A alteração voltou ao que era.", { kind: "alerta", title: `Não deu para salvar ${npc.name}` });
+      }));
   // voz vazia = padrão pelo sexo
   const saveVoice = (v: string) => {
+    const prev = voice;
     const next = v && tts ? { model: tts.model, voice: v } : null;
     setVoice(next);
-    saveNpc({ voice: next });
+    saveNpc({ voice: next }, () => setVoice(prev));
   };
   const saveGender = (g: string) => {
+    const prev = gender;
     const next = g === "male" || g === "female" ? g : null;
     setGender(next);
-    saveNpc({ gender: next });
+    saveNpc({ gender: next }, () => setGender(prev));
   };
   const changeFx = (patch: Partial<VoiceFx>) => setFx((fxRef.current = { ...fxRef.current, ...patch }));
-  const saveFx = () => saveNpc({ voiceFx: fxRef.current });
+  const saveFx = () => {
+    const sent = fxRef.current;
+    saveNpc(
+      { voiceFx: sent },
+      () => fxRef.current === sent && setFx((fxRef.current = fxSaved.current)), // só se não mexeram de novo
+      () => { fxSaved.current = sent; }
+    );
+  };
   const resetFx = (k: keyof VoiceFx) => {
     changeFx({ [k]: FX_DEFAULT[k] });
     saveFx();

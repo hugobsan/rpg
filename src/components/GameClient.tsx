@@ -285,12 +285,17 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
                 </button>
                 <button className="scene-image-close" title="Tirar da ficha (continua na Galeria)" aria-label="Tirar imagem da ficha"
                   onClick={async () => {
+                    // otimista: some da ficha na hora; se o PATCH falhar, volta (se nenhuma outra imagem entrou no lugar)
+                    const img = state.lastImage;
                     setState((st) => st && { ...st, lastImage: null });
-                    await fetch(`/api/campaigns/${campaignId}`, {
+                    const res = await fetch(`/api/campaigns/${campaignId}`, {
                       method: "PATCH",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ hideSheetImageId: sceneImage.id }),
-                    });
+                    }).catch(() => null);
+                    if (res?.ok) return;
+                    setState((st) => st && (st.lastImage ? st : { ...st, lastImage: img }));
+                    toast("A imagem voltou para a ficha.", { kind: "alerta", title: "Não deu para tirar a imagem" });
                   }}><Icon name="close" size={14} /></button>
               </div>
             )}
