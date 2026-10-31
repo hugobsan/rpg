@@ -51,6 +51,7 @@ export default function SettingsForm({ initial, advanced, usedBy, notice }: {
   const [autoMaps, setAutoMaps] = useState(initial.ui.autoMaps);
   const [advSaved, setAdvSaved] = useState(advanced.values);
   const [adv, setAdv] = useState(advanced.values);
+  const [advOpen, setAdvOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reRunning, setReRunning] = useState(false);
   const [re, setRe] = useState<Result>(null);
@@ -177,6 +178,7 @@ export default function SettingsForm({ initial, advanced, usedBy, notice }: {
             <button className="btn small" onClick={reprocess} disabled={reRunning}>
               {reRunning && <Loader size={14} label="Reprocessando" />} Reprocessar embeddings
             </button>
+            <button className="btn small ghost" onClick={() => setAdvOpen(true)}>Configurações avançadas</button>
             {reRunning ? <span className={s.result}>Pode demorar alguns minutos</span> : <ResultText r={re} />}
           </div>
         </div>
@@ -217,23 +219,15 @@ export default function SettingsForm({ initial, advanced, usedBy, notice }: {
         </div>
       </section>
 
-      <section className={s.section} aria-labelledby="sec-adv">
-        <div className={s.aside}>
-          <h2 id="sec-adv">Configurações avançadas</h2>
-          <p>
-            Top-k, limiares de distância de cosseno, chunking, dimensões dos embeddings e limiares do Jev, por cenário. A janela
-            do histórico e as rodadas de ferramentas do Mestre e a compactação do Cronista ficam em <Link href="/agents">Agentes</Link>.
-          </p>
-        </div>
-        <AdvancedSettings spec={advanced.spec} value={adv} onChange={setAdv} />
-      </section>
-
       <div className={`${s.saveBar} ${dirty ? s.dirty : ""}`}>
         <span className={s.saveMsg} aria-live="polite">{dirty ? "Há alterações não salvas · Ctrl+S salva" : "Tudo salvo"}</span>
         <button className="btn primary" onClick={save} disabled={saving || !dirty}>
           {saving && <Loader size={16} label="Salvando" />} Salvar configurações
         </button>
       </div>
+
+      {advOpen && <AdvancedSettings spec={advanced.spec} value={adv} onChange={setAdv} onClose={() => setAdvOpen(false)}
+        onSave={save} dirty={dirty} saving={saving} />}
 
       {/* usa a força da tela, mesmo sem salvar, para testar antes */}
       {diceTest && <DiceRoller result={diceTest} force={diceForce} onDone={() => setDiceTest(null)} />}
