@@ -396,15 +396,24 @@ export async function runTurn(
   const toolCtx: ToolContext = { campaign, scene, emit };
   const maxRounds = params.maxToolRounds ?? 8;
   let finalText = "";
+  // narração de rodadas que também chamaram ferramentas (ex.: narra e chama advance_time no fim):
+  // vale como parte da resposta; a rodada seguinte continua dela
+  let kept = "";
+  let keptChoices: string[] = [];
+  let finalChoices: string[] = [];
   let timeMoved = false; // o Mestre chamou advance_time/set_time/train neste turno
   let npcGate = false; // a narração já voltou uma vez por NPC sem registro
 
   for (let round = 0; round <= maxRounds; round++) {
-    // narração em streaming: o texto da rodada vai ao jogador enquanto chega; se a rodada virar
-    // chamada de ferramenta ou o portão de NPC devolver, o rascunho é descartado (narration_reset)
+    // narração em streaming: o texto da rodada vai ao jogador enquanto chega, depois do que já ficou;
+    // só o portão de NPC descarta tudo (narration_reset) e pede a narração inteira de novo
     let roundText = "";
     let streamed = 0;
-    const discardDraft = () => streamed && emit({ type: "narration_reset" });
+    const discardDraft = () => {
+      if (streamed || kept) emit({ type: "narration_reset" });
+      kept = "";
+      keptChoices = [];
+    };
     emit({ type: "status", text: "O Mestre está pensando..." });
     // :online só na 1ª rodada: o plugin cobra por requisição e repetiria a mesma busca a cada rodada
     const result = await chat({
@@ -421,26 +430,31 @@ export async function runTurn(
         const visible = visibleNarration((roundText += t));
         if (visible.length <= streamed) return;
         if (!streamed) emit({ type: "status", text: "Escrevendo..." });
-        emit({ type: "narration_delta", text: visible.slice(streamed) });
+        emit({ type: "narration_delta", text: (!streamed && kept ? "\n\n" : "") + visible.slice(streamed) });
         streamed = visible.length;
       },
     });
 
     if (!result.toolCalls.length || round === maxRounds) {
-      finalText = result.content || finalText;
+      const last = parseChoices(result.content || "");
+      finalText = [kept, last.clean].filter(Boolean).join("\n\n");
+      finalChoices = last.choices.length ? last.choices : keptChoices;
       // NPC com nome falando sem estar registrado: devolve uma vez para o Mestre registrar e reescrever
       const missing = !npcGate && round < maxRounds ? unregisteredSpeakers(finalText, await getCharacters(campaignId)) : [];
       if (!missing.length) break;
       npcGate = true;
       discardDraft();
-      messages.push({ role: "assistant", content: finalText });
+      messages.push({ role: "assistant", content: result.content || "" });
       messages.push({
         role: "user",
-        content: `(Sistema, fora do jogo: ${missing.join(", ")} fala${missing.length > 1 ? "m" : ""} na narração mas não está${missing.length > 1 ? "ão" : ""} registrado${missing.length > 1 ? "s" : ""}. Chame create_npc agora para cada um (canon=true se for da obra; se já existir com outro nome, use set_npc_active nesse nome) e então escreva a narração final de novo, completa. Se for figurante sem nome, só repita a narração.)`,
+        content: `(Sistema, fora do jogo: ${missing.join(", ")} fala${missing.length > 1 ? "m" : ""} na narração mas não está${missing.length > 1 ? "ão" : ""} registrado${missing.length > 1 ? "s" : ""}. Chame create_npc agora para cada um (canon=true se for da obra; se já existir com outro nome, use set_npc_active nesse nome) e então escreva de novo a narração inteira deste turno, completa (inclusive o que escreveu antes das ferramentas). Se for figurante sem nome, só repita a narração inteira.)`,
       });
       continue;
     }
-    discardDraft();
+    // texto junto das ferramentas: o jogador já leu, então fica (as opções valem se a próxima rodada não trouxer outras)
+    const told = parseChoices(result.content || "");
+    if (told.clean) kept = [kept, told.clean].filter(Boolean).join("\n\n");
+    if (told.choices.length) keptChoices = told.choices;
     const sources = useWeb && round === 0 ? webSources(result.raw) : "";
     messages.push({
       role: "assistant",
@@ -474,10 +488,13 @@ export async function runTurn(
         name: call.function.name,
       });
     }
+    if (told.clean)
+      messages[messages.length - 1].content +=
+        "\n\n(Sistema, fora do jogo: o jogador já está lendo o texto que você escreveu junto destas ferramentas. Continue dele sem repetir nada; se a narração já estiver completa, escreva só o que faltar, como o bloco de opções.)";
   }
 
-  const { clean, choices } = parseChoices(finalText);
-  const narration = clean || "*(O Mestre ficou em silêncio — tente novamente.)*";
+  const choices = finalChoices;
+  const narration = finalText || "*(O Mestre ficou em silêncio — tente novamente.)*";
   const msgId = await saveMessage(campaignId, scene.id, "gm", narration, { choices });
   emit({ type: "narration", content: narration, messageId: msgId });
   if (choices.length) emit({ type: "choices", choices });
