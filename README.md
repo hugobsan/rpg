@@ -4,6 +4,8 @@ RPG de mesa individual conduzido por IA, com **múltiplos agentes**, **memória 
 
 Resolve o problema clássico de jogar RPG em chatbots genéricos: depois de uma campanha longa, o modelo esquece habilidades, níveis, equipamentos, interações com NPCs e confunde o cânone da obra. Aqui, nada disso vive na janela de contexto — vive no banco.
 
+https://github.com/user-attachments/assets/c9d0b1a6-0587-45f9-834e-c3af30bd950a
+
 ## Como rodar
 
 ```bash
