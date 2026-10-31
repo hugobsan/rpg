@@ -80,6 +80,7 @@ export default function NpcModal({
   campaign,
   profiling = false,
   onChanged,
+  onToggleActive,
   onClose,
 }: {
   campaignId: string;
@@ -87,6 +88,7 @@ export default function NpcModal({
   campaign: Campaign;
   profiling?: boolean; // o Criador de personagens está montando o perfil agora
   onChanged?: () => void;
+  onToggleActive: (npc: Character) => void; // tirar/trazer da cena; quem chama fecha o modal
   onClose: () => void;
 }) {
   const [view, setView] = useState<(typeof TABS)[number][0]>("chat");
@@ -222,14 +224,10 @@ export default function NpcModal({
   const p = npc.persona;
   const facts = PROFILE.filter(([k]) => p[k]);
 
-  const toggleActive = async () => {
-    await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ active: !npc.active }),
-    });
-    toast(npc.active ? `${npc.name} saiu de cena.` : `${npc.name} entrou na cena.`);
-    onClose();
+  // otimista: o modal fecha e a lista muda na hora (GameClient); o PUT vai depois
+  const toggleActive = () => {
+    stopVoice();
+    onToggleActive(npc);
   };
 
   return (

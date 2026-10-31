@@ -46,15 +46,22 @@ export default function Gallery({
       .catch(() => setImages([]));
   }, [campaignId, refreshKey]);
 
+  // otimista: some na hora; se o DELETE falhar, volta para o mesmo lugar com o erro
   const remove = async (img: Img) => {
     setError("");
-    const res = await fetch(`/api/campaigns/${campaignId}/images/${img.id}`, { method: "DELETE" });
-    if (!res.ok) {
-      setError((await res.json().catch(() => ({}))).error || "Falha ao apagar a imagem");
+    setConfirming(null);
+    const at = images?.findIndex((i) => i.id === img.id) ?? -1;
+    setImages((list) => (list || []).filter((i) => i.id !== img.id));
+    const res = await fetch(`/api/campaigns/${campaignId}/images/${img.id}`, { method: "DELETE" }).catch(() => null);
+    if (!res?.ok) {
+      setImages((list) => {
+        const next = [...(list || [])];
+        next.splice(at < 0 ? next.length : Math.min(at, next.length), 0, img);
+        return next;
+      });
+      setError((await res?.json().catch(() => ({})))?.error || "Falha ao apagar a imagem");
       return;
     }
-    setConfirming(null);
-    setImages((list) => (list || []).filter((i) => i.id !== img.id));
     onDeleted?.();
   };
 

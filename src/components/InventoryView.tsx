@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Character } from "@/lib/types";
 import { toast } from "./ui/Toast";
 import s from "./SidePanels.module.css";
@@ -23,24 +23,38 @@ export default function InventoryView({
   onChange: () => void;
 }) {
   const [confirming, setConfirming] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const items = char.sheet.inventory;
+  // otimista: o que foi largado sai da lista na hora; o servidor confirma depois (ele grava a memória, demora)
+  const [dropped, setDropped] = useState<Record<string, number>>({});
+  const flying = useRef(new Map<string, number>()); // pedidos ainda sem resposta, por item
+  // a ficha nova (relida) já vem sem o item: só fica descontado o que ainda não teve resposta
+  useEffect(() => {
+    setDropped((d) => Object.fromEntries(Object.entries(d).filter(([k]) => flying.current.get(k))));
+  }, [char.sheet.inventory]);
+  const items = char.sheet.inventory
+    .map((i) => ({ ...i, qty: i.qty - (dropped[i.name] ?? 0) }))
+    .filter((i) => i.qty > 0);
 
   const drop = async (name: string, qty: number) => {
-    setBusy(true);
+    const add = (n: number) => setDropped((d) => ({ ...d, [name]: Math.max(0, (d[name] ?? 0) + n) }));
+    const fly = (n: number) => flying.current.set(name, (flying.current.get(name) ?? 0) + n);
     setError("");
+    setConfirming(null);
+    add(qty);
+    fly(1);
     const res = await fetch(`/api/campaigns/${campaignId}/inventory`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, qty }),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError((await res.json().catch(() => ({}))).error || "Falha ao largar o item.");
+    }).catch(() => null);
+    fly(-1);
+    if (!res?.ok) {
+      add(-qty);
+      const msg = (await res?.json().catch(() => ({})))?.error || "Falha ao largar o item.";
+      setError(msg);
+      toast(msg, { kind: "alerta", title: `${name} continua com você` });
       return;
     }
-    setConfirming(null);
     toast(`${qty > 1 ? `${qty}x ` : ""}${name} ficou no local atual.`, { title: "Item largado" });
     onChange();
   };
@@ -70,7 +84,7 @@ export default function InventoryView({
             </div>
             {i.qty > 1 && <span className={s.chip}>×{i.qty}</span>}
             {confirming !== i.name && (
-              <button className="btn ghost small" disabled={disabled || busy} onClick={() => setConfirming(i.name)}>
+              <button className="btn ghost small" disabled={disabled} onClick={() => setConfirming(i.name)}>
                 Largar
               </button>
             )}
@@ -78,15 +92,15 @@ export default function InventoryView({
           {confirming === i.name && (
             <div className={s.actions}>
               <span className={s.sub}>Largar {i.name}? O Mestre fica sabendo que ficou no local atual.</span>
-              <button className="btn small" disabled={busy} onClick={() => drop(i.name, 1)}>
+              <button className="btn small" onClick={() => drop(i.name, 1)}>
                 {i.qty > 1 ? "Largar 1" : "Largar"}
               </button>
               {i.qty > 1 && (
-                <button className="btn small" disabled={busy} onClick={() => drop(i.name, i.qty)}>
+                <button className="btn small" onClick={() => drop(i.name, i.qty)}>
                   Largar todos ({i.qty})
                 </button>
               )}
-              <button className="btn ghost small" disabled={busy} onClick={() => setConfirming(null)}>Cancelar</button>
+              <button className="btn ghost small" onClick={() => setConfirming(null)}>Cancelar</button>
             </div>
           )}
         </div>

@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Loader from "@/components/ui/Loader";
 import { toast } from "@/components/ui/Toast";
 import s from "./home.module.css";
 
@@ -9,18 +8,20 @@ import s from "./home.module.css";
 export default function DeleteCampaign({ id, name }: { id: string; name: string }) {
   const router = useRouter();
   const [asking, setAsking] = useState(false);
-  const [busy, setBusy] = useState(false);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (asking) cancelRef.current?.focus();
   }, [asking]);
 
+  // otimista: o cartão some na hora; se o DELETE falhar, ele volta e sai o aviso
   const del = async () => {
-    setBusy(true);
+    const card = cancelRef.current?.closest("article");
+    if (card) card.style.display = "none";
+    setAsking(false);
     const res = await fetch(`/api/campaigns/${id}`, { method: "DELETE" }).catch(() => null);
     if (!res?.ok) {
-      setBusy(false);
+      if (card) card.style.display = "";
       toast("Não foi possível excluir a campanha. Tente de novo.", { kind: "alerta" });
       return;
     }
@@ -39,13 +40,12 @@ export default function DeleteCampaign({ id, name }: { id: string; name: string 
       </div>
       {asking && (
         <div className={s.confirm} role="alertdialog" aria-label={`Excluir ${name}`}
-          onKeyDown={(e) => e.key === "Escape" && !busy && setAsking(false)}>
+          onKeyDown={(e) => e.key === "Escape" && setAsking(false)}>
           <p><b>Excluir &quot;{name}&quot;?</b></p>
           <p className="muted">Personagem, NPCs, histórico, memórias e imagens somem junto. Não dá para desfazer.</p>
           <div className={s.row}>
-            <button ref={cancelRef} className="btn ghost small" disabled={busy} onClick={() => setAsking(false)}>Cancelar</button>
-            <button className="btn danger small" disabled={busy} onClick={del}>
-              {busy ? <Loader size={14} label="Excluindo" /> : null}
+            <button ref={cancelRef} className="btn ghost small" onClick={() => setAsking(false)}>Cancelar</button>
+            <button className="btn danger small" onClick={del}>
               Excluir de vez
             </button>
           </div>

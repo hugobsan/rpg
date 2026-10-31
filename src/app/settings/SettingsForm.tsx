@@ -60,28 +60,36 @@ export default function SettingsForm({ initial, advanced, usedBy, notice }: {
   const advDirty = JSON.stringify(adv) !== JSON.stringify(advSaved);
   const dirty = embDirty || advDirty || diceAnimation !== data.ui.diceAnimation || diceForce !== data.ui.diceForce || imageGeneration !== data.ui.imageGeneration || autoMaps !== data.ui.autoMaps;
 
+  // otimista: a barra vira "Tudo salvo" na hora (o salvo passa a ser o que está na tela); se falhar, volta a acusar as alterações
   const save = async () => {
     setSaving(true);
     const body = { embeddings: emb, ui: { diceAnimation, diceForce, imageGeneration, autoMaps } };
+    const sentAdv = adv;
+    const before = { data, advSaved };
+    setData((d) => ({ ...d, embeddings: emb, ui: { ...d.ui, ...body.ui } }));
+    setAdvSaved(adv);
     const put = (url: string, b: unknown) =>
       fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).catch(() => null);
     // as avançadas vão na rota própria, só quando mudaram; ela devolve o normalizado (faixas presas)
     const [res, advRes] = await Promise.all([put("/api/settings", body), advDirty ? put("/api/settings/advanced", adv) : null]);
     if (advRes?.ok) {
       const fresh = (await advRes.json()) as Advanced;
-      setAdv(fresh);
+      setAdv((a) => (a === sentAdv ? fresh : a)); // não atropela edição feita no meio tempo
       setAdvSaved(fresh);
     }
     if (res?.ok && (!advDirty || advRes?.ok)) {
-      toast(advDirty && reprocessPending(advanced.spec, adv, advSaved)
+      toast(advDirty && reprocessPending(advanced.spec, adv, before.advSaved)
         ? "Configurações salvas. Reprocesse os embeddings para os novos parâmetros valerem no que já está indexado."
         : "Configurações salvas.", { kind: "sucesso" });
       const fresh = await fetch("/api/settings").then((r) => r.json() as Promise<SettingsShape>).catch(() => null);
       if (fresh) {
         setData(fresh);
-        setEmb(fresh.embeddings); // o servidor apara o nome do modelo
+        setEmb((e) => (e === body.embeddings ? fresh.embeddings : e)); // o servidor apara o nome do modelo
       }
     } else {
+      // o que não foi salvo volta a contar como alteração pendente
+      if (!res?.ok) setData(before.data);
+      if (advDirty && !advRes?.ok) setAdvSaved(before.advSaved);
       toast("Não foi possível salvar as configurações. Tente de novo.", { kind: "alerta" });
     }
     setSaving(false);

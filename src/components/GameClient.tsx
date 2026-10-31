@@ -151,6 +151,30 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   const characters = state?.characters;
   const npcs = useMemo(() => characters?.filter((c) => c.kind === "npc") ?? [], [characters]);
   const player = characters?.find((c) => c.kind === "player");
+
+  // tirar/trazer NPCs da cena, otimista: a lista muda na hora; o que o servidor recusar volta, com aviso
+  const setNpcActive = async (list: Character[], on: boolean) => {
+    const mark = (ids: Set<string>, value: (c: Character) => boolean) =>
+      setState((st) => st && { ...st, characters: st.characters.map((c) => (ids.has(c.id) ? { ...c, active: value(c) } : c)) });
+    const before = new Map(list.map((n) => [n.id, n.active]));
+    mark(new Set(before.keys()), () => on);
+    const res = await Promise.all(
+      list.map((n) =>
+        fetch(`/api/campaigns/${campaignId}/npcs/${n.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ active: on }),
+        }).catch(() => null)
+      )
+    );
+    const failed = new Set(list.filter((_, i) => !res[i]?.ok).map((n) => n.id));
+    if (failed.size) {
+      mark(failed, (c) => before.get(c.id) ?? c.active);
+      toast("Não deu para mudar quem está em cena.", { kind: "alerta" });
+    } else if (list.length > 1) toast(`${list.length} NPCs saíram de cena.`);
+    else toast(on ? `${list[0].name} entrou na cena.` : `${list[0].name} saiu de cena.`);
+    reloadState();
+  };
   // estável entre os pedaços do streaming: os itens do feed (memo) não re-renderizam
   const cast = useMemo<Cast>(
     () => ({ npcs: new Map(npcs.map((n) => [n.name.toLowerCase(), n])), player: player?.name, campaignId, onNpc: setOpenNpc }),
@@ -282,7 +306,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
       case "objectives":
         return <ObjectivesView state={campaign.state} />;
       case "npcs":
-        return <NpcList npcs={npcs} onOpen={setOpenNpc} campaignId={campaignId} inbox={state.inbox} onChange={reloadState} />;
+        return <NpcList npcs={npcs} onOpen={setOpenNpc} inbox={state.inbox} onSetActive={setNpcActive} />;
       case "map":
         return <MapPanel campaign={campaign} scene={scene} characters={state.characters} maps={state.maps} jobs={jobs} onChanged={reloadState} />;
       case "memories":
@@ -414,6 +438,10 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           campaign={campaign}
           profiling={jobs.some((j) => j.kind === "character" && j.target === openNpc.id && j.status === "running")}
           onChanged={reloadState}
+          onToggleActive={(n) => {
+            setOpenNpc(null);
+            setNpcActive([n], !n.active);
+          }}
           onClose={() => {
             setOpenNpc(null);
             reloadState();

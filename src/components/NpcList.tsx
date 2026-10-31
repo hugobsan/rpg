@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
 import type { Character, InboxItem } from "@/lib/types";
-import { toast } from "./ui/Toast";
 import Portrait from "./Portrait";
 import s from "./NpcList.module.css";
 
@@ -39,49 +38,29 @@ const Enter = () => (
 );
 
 /**
- * Aba NPCs. Com `campaignId` + `onChange`, cada linha ganha o tirar/trazer para a cena e aparece o "esvaziar cena".
+ * Aba NPCs. Com `onSetActive`, cada linha ganha o tirar/trazer para a cena e aparece o "esvaziar cena".
  * `inbox` (state.inbox) mostra as mensagens particulares não lidas; clicar abre o NPC já na conversa dele.
  */
 export default function NpcList({
   npcs,
   onOpen,
-  campaignId,
   inbox = [],
-  onChange,
+  onSetActive,
 }: {
   npcs: Character[];
   onOpen: (c: Character) => void;
-  campaignId?: string;
   inbox?: InboxItem[];
-  onChange?: () => void; // depois de tirar/trazer NPC: a tela recarrega o estado
+  onSetActive?: (list: Character[], on: boolean) => void; // tirar/trazer da cena (otimista, no GameClient)
 }) {
-  const [busy, setBusy] = useState<string[]>([]);
   const [clearing, setClearing] = useState(false);
   const active = npcs.filter((n) => n.active);
   const inactive = npcs.filter((n) => !n.active);
   const unread = (n: Character) => inbox.find((m) => m.npcId === n.id);
-  const canEdit = !!campaignId && !!onChange;
+  const canEdit = !!onSetActive;
 
-  const setActive = async (list: Character[], on: boolean) => {
-    setBusy((b) => [...b, ...list.map((n) => n.id)]);
-    try {
-      const res = await Promise.all(
-        list.map((n) =>
-          fetch(`/api/campaigns/${campaignId}/npcs/${n.id}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ active: on }),
-          })
-        )
-      );
-      if (res.some((r) => !r.ok)) toast("Não deu para mudar quem está em cena.", { kind: "alerta" });
-      else if (list.length > 1) toast(`${list.length} NPCs saíram de cena.`);
-      else toast(on ? `${list[0].name} entrou na cena.` : `${list[0].name} saiu de cena.`);
-      onChange?.();
-    } finally {
-      setBusy((b) => b.filter((id) => !list.some((n) => n.id === id)));
-      setClearing(false);
-    }
+  const setActive = (list: Character[], on: boolean) => {
+    setClearing(false);
+    onSetActive?.(list, on);
   };
 
   const row = (n: Character, i: number) => {
@@ -102,7 +81,7 @@ export default function NpcList({
           </span>
         </button>
         {canEdit && (
-          <button type="button" className={s.quick} disabled={busy.includes(n.id)}
+          <button type="button" className={s.quick}
             title={n.active ? "Tirar de cena" : "Trazer para a cena"} aria-label={n.active ? `Tirar ${n.name} de cena` : `Trazer ${n.name} para a cena`}
             onClick={() => setActive([n], !n.active)}>
             {n.active ? <Exit /> : <Enter />}

@@ -115,11 +115,22 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
     fetch(`/api/campaigns/${campaignId}/library`).then((r) => r.json()).then(setLib).catch(() => {});
   };
 
+  // otimista: sai da lista na hora; se o DELETE falhar, volta para o mesmo lugar com aviso
   const remove = async (e: LibraryEntry) => {
-    const res = await fetch(`/api/campaigns/${campaignId}/library/${e.id}`, { method: "DELETE" });
-    if (!res.ok) return toast("Tente de novo.", { kind: "alerta", title: `Não deu para excluir ${e.name}` });
-    setLib((l) => l && { ...l, [kind]: l[kind].filter((x) => x.id !== e.id) });
+    const k = kind;
+    const at = lib?.[k].findIndex((x) => x.id === e.id) ?? -1;
+    setLib((l) => l && { ...l, [k]: l[k].filter((x) => x.id !== e.id) });
     setConfirming(null);
+    const res = await fetch(`/api/campaigns/${campaignId}/library/${e.id}`, { method: "DELETE" }).catch(() => null);
+    if (!res?.ok) {
+      setLib((l) => {
+        if (!l) return l;
+        const next = [...l[k]];
+        next.splice(at < 0 ? next.length : Math.min(at, next.length), 0, e);
+        return { ...l, [k]: next };
+      });
+      return toast("Tente de novo.", { kind: "alerta", title: `Não deu para excluir ${e.name}` });
+    }
     toast("Fichas que já têm continuam iguais.", { title: `${e.name} saiu da biblioteca` });
   };
 
