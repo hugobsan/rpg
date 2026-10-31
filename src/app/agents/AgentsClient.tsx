@@ -78,6 +78,7 @@ export default function AgentsClient({ initialAgents, sources }: { initialAgents
             open={open === a.id}
             onToggle={() => setOpen(open === a.id ? null : a.id)}
             onClose={() => setOpen((o) => (o === a.id ? null : o))}
+            onReopen={() => setOpen((o) => o ?? a.id)}
             onSaved={(updated) => setAgents((list) => list.map((x) => (x.id === updated.id ? updated : x)))}
           />
         ))}
@@ -86,7 +87,7 @@ export default function AgentsClient({ initialAgents, sources }: { initialAgents
   );
 }
 
-function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose, onSaved }: {
+function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose, onReopen, onSaved }: {
   agent: AgentConfig;
   sources: SourceView[];
   models: Record<string, Model[] | null>;
@@ -94,6 +95,7 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose
   open: boolean;
   onToggle: () => void;
   onClose: () => void;
+  onReopen: () => void;
   onSaved: (a: AgentConfig) => void;
 }) {
   const [form, setForm] = useState(agent);
@@ -105,31 +107,41 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose
   const claude = or ? form.model.startsWith("anthropic/") : sources.find((x) => x.id === form.source)?.kind === "anthropic";
   const setParam = (k: string, v: unknown) => setForm({ ...form, params: { ...form.params, [k]: v } });
 
+  // otimista: a lista mostra o agente novo e o card recolhe na hora; o PUT vai depois e, se falhar, desfaz
   const save = async () => {
+    const prev = agent;
+    const next = { ...form, temperature: Number(form.temperature), max_tokens: Number(form.max_tokens), web_search: or && form.web_search };
     setSaving(true);
     setSaveError("");
+    setForm(next);
+    onSaved(next);
+    onClose();
     const res = await fetch(`/api/agents/${agent.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: form.name,
-        source: form.source,
-        model: form.model,
-        temperature: Number(form.temperature),
-        max_tokens: Number(form.max_tokens),
-        web_search: or && form.web_search,
-        system_prompt: form.system_prompt,
-        params: form.params,
+        name: next.name,
+        source: next.source,
+        model: next.model,
+        temperature: next.temperature,
+        max_tokens: next.max_tokens,
+        web_search: next.web_search,
+        system_prompt: next.system_prompt,
+        params: next.params,
       }),
     }).catch(() => null);
+    const same = (f: AgentConfig) => JSON.stringify(f) === JSON.stringify(next); // não atropela edição feita no meio tempo
     if (res?.ok) {
       const updated = await res.json();
       onSaved(updated);
-      setForm(updated);
-      onClose();
+      setForm((f) => (same(f) ? updated : f));
       toast(`${agent.name} salvo${updated.pricing ? " com o preço atual do catálogo" : ""}.`, { kind: "sucesso" });
     } else {
-      setSaveError((await res?.json().catch(() => null))?.error || `Erro ${res?.status ?? "de rede"} ao salvar`);
+      const error = (await res?.json().catch(() => null))?.error || `Erro ${res?.status ?? "de rede"} ao salvar`;
+      onSaved(prev); // o formulário fica com a edição (sujo) para tentar de novo
+      setSaveError(error);
+      onReopen();
+      toast(error, { kind: "alerta", title: `${agent.name} não foi salvo` });
     }
     setSaving(false);
   };
