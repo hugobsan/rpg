@@ -1,5 +1,5 @@
-// Cache de prompt na fonte Anthropic. A camada compatível com a OpenAI (/v1/chat/completions) não faz cache, então
-// com o cache ligado no agente a chamada vai pela API nativa (/v1/messages, SDK oficial). Ida: anthropicParams traduz
+// API nativa da fonte Anthropic. A camada compatível com a OpenAI (/v1/chat/completions) não faz cache e ignora
+// reasoning_effort, então o agente com cache ligado ou com raciocínio (params.reasoning.effort) vai por /v1/messages (SDK oficial). Ida: anthropicParams traduz
 // mensagens e tools do formato de chat(). Volta: toChatJson monta o mesmo JSON de readStream (choices[0].message,
 // usage no formato do OpenRouter), então chat(), o log e Custos e uso não mudam.
 // Doc: https://platform.claude.com/docs/en/build-with-claude/prompt-caching
@@ -7,6 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { ChatMessage, ChatOptions, Source, ToolCall } from "./openrouter";
 
 const EPHEMERAL = { type: "ephemeral" } as const; // 5 min, renovados a cada leitura
+const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
 // ponytail: só texto (parte de imagem vira nada), como em responsesApi; nenhum chamador manda imagem para chat() hoje
 const text = (c: ChatMessage["content"]) => (typeof c === "string" ? c : (c ?? []).map((p) => p.text ?? "").join(""));
@@ -20,16 +21,16 @@ function input(args: string): Record<string, unknown> {
 }
 
 /**
- * Corpo de messages.create com três pontos de cache: fim das tools, fim da 1ª mensagem de sistema (o prefixo fixo
+ * Corpo de messages.create. Com cache, três pontos: fim das tools, fim da 1ª mensagem de sistema (o prefixo fixo
  * do agente; as tools vêm antes e entram junto) e o automático no fim da conversa, que cada rodada de ferramentas
- * lê da anterior. Sem temperature (Claude 4.7+ recusa) nem thinking (os 5.x pensam por padrão), como na camada
- * compatível; os blocos de raciocínio não voltam no histórico, que fica só com texto e tool_use.
+ * lê da anterior. Sem temperature (Claude 4.7+ recusa) nem thinking (os 5.x pensam por padrão, e o Opus 5.5 recusa
+ * desligar); a profundidade vai em output_config.effort. Os blocos de raciocínio não voltam no histórico.
  */
-export function anthropicParams(opts: ChatOptions): Anthropic.MessageCreateParamsNonStreaming {
+export function anthropicParams(opts: ChatOptions, cache = true): Anthropic.MessageCreateParamsNonStreaming {
   const system: Anthropic.TextBlockParam[] = opts.messages
     .filter((m) => m.role === "system")
     .map((m) => ({ type: "text", text: text(m.content) }));
-  if (system[0]) system[0].cache_control = EPHEMERAL;
+  if (cache && system[0]) system[0].cache_control = EPHEMERAL;
 
   const messages: Anthropic.MessageParam[] = [];
   const push = (role: "user" | "assistant", blocks: Anthropic.ContentBlockParam[]) => {
@@ -55,15 +56,19 @@ export function anthropicParams(opts: ChatOptions): Anthropic.MessageCreateParam
     max_tokens: opts.max_tokens ?? 2048,
     system,
     messages,
-    cache_control: EPHEMERAL,
   };
+  if (cache) params.cache_control = EPHEMERAL;
+  const effort = opts.reasoning?.effort;
+  // effort do OpenRouter fora da escala da Anthropic ("minimal", "none") fica de fora: vale o padrão do modelo
+  if (typeof effort === "string" && EFFORTS.has(effort))
+    params.output_config = { effort: effort as Anthropic.OutputConfig["effort"] };
   if (opts.tools?.length) {
     params.tools = opts.tools.map(({ function: f }) => ({
       name: f.name,
       description: f.description,
       input_schema: f.parameters as Anthropic.Tool.InputSchema,
     }));
-    params.tools[params.tools.length - 1].cache_control = EPHEMERAL;
+    if (cache) params.tools[params.tools.length - 1].cache_control = EPHEMERAL;
   }
   return params;
 }
@@ -94,9 +99,9 @@ export function toChatJson(msg: Anthropic.Message): Record<string, unknown> {
 }
 
 /** POST /v1/messages em streaming pelo SDK; erro da API ou da rede vira `error` no resultado, como em readStream. */
-export async function anthropicChat(opts: ChatOptions, src: Source): Promise<Record<string, unknown>> {
+export async function anthropicChat(opts: ChatOptions, src: Source, cache = true): Promise<Record<string, unknown>> {
   try {
-    const stream = new Anthropic({ apiKey: src.apiKey }).messages.stream(anthropicParams(opts));
+    const stream = new Anthropic({ apiKey: src.apiKey }).messages.stream(anthropicParams(opts, cache));
     if (opts.onDelta) stream.on("text", (delta) => opts.onDelta!(delta));
     return toChatJson(await stream.finalMessage());
   } catch (e) {

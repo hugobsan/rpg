@@ -108,6 +108,14 @@ async function main() {
   assert.deepEqual(results.content.map((b) => b.type), ["tool_result", "tool_result", "text"]);
   assert.equal(results.content[0].tool_use_id, "c1");
 
+  // 1b. sem cache (agente com raciocínio e cache desligado): nenhum ponto de cache; effort vai em output_config
+  const nc = anthropicParams({ ...GM, reasoning: { effort: "low" } }, false);
+  assert.equal(nc.cache_control, undefined);
+  assert.ok((nc.system as Anthropic.TextBlockParam[]).every((b) => !b.cache_control) && nc.tools!.every((t) => !("cache_control" in t) || !t.cache_control));
+  assert.deepEqual(nc.output_config, { effort: "low" }, "effort do agente vai para a API nativa");
+  assert.equal(anthropicParams({ ...GM, reasoning: { effort: "minimal" } }).output_config, undefined, "effort fora da escala fica de fora");
+  assert.equal(p.output_config, undefined);
+
   // 2. volta: JSON de readStream, cache em prompt_tokens_details, recusa vira erro
   const msg = (stop: Anthropic.StopReason, content: unknown[]) => ({
     id: "m", model: "claude-sonnet-5-5", content, stop_reason: stop,

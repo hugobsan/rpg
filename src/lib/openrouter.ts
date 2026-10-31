@@ -218,7 +218,8 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   const src = await getSource(agent?.source ?? OPENROUTER);
   const cache = !!agent?.params?.cache && isClaude(src, opts.model);
   if (!cache) opts = { ...opts, messages: mergeSystem(opts.messages) };
-  const native = cache && src.kind === "anthropic"; // a camada compatível da Anthropic não faz cache: vai pela API nativa
+  // a camada compatível da Anthropic não faz cache e ignora reasoning_effort: com um dos dois vai pela API nativa
+  const native = src.kind === "anthropic" && (cache || !!opts.reasoning?.effort);
   const resp = src.auth === "chatgpt"; // Login com ChatGPT: Responses API, sempre em streaming
   const { url, headers, body } = resp ? responsesRequest(opts, src) : chatRequest(opts, src, cache);
   const model = body.model as string;
@@ -227,7 +228,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   let error: string | null = null;
   try {
     const res = native ? null : await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-    if (!res) responseJson = await anthropicChat(opts, src);
+    if (!res) responseJson = await anthropicChat(opts, src, cache);
     else if ((opts.onDelta || resp) && res.ok && res.body)
       responseJson = await (resp ? readResponses : readStream)(res.body, opts.onDelta ?? (() => {}));
     else {

@@ -25,7 +25,7 @@ export const SOURCE_PRESETS: SourcePreset[] = [
     noTemperature: true,
     headers: { "anthropic-version": "2023-06-01" }, // sem ele GET /models (nativo) dá 400
     note:
-      "Camada de compatibilidade com a OpenAI, que a própria Anthropic diz não ser solução de produção. Sem response_format; o agente com Cache de prompt ligado vai pela API nativa (/v1/messages), que faz cache. As mensagens de sistema vão juntas para o início. Nos Claude 4.7 ou mais novos temperature abaixo de 1 dá erro: a temperatura e o raciocínio do agente (params.reasoning) não são enviados. Modelos: claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5, claude-fable-5-1.",
+      "Camada de compatibilidade com a OpenAI, que a própria Anthropic diz não ser solução de produção. Sem response_format; o agente com Cache de prompt ligado ou com raciocínio (params.reasoning) vai pela API nativa (/v1/messages), que faz cache e recebe o effort. As mensagens de sistema vão juntas para o início. Nos Claude 4.7 ou mais novos temperature abaixo de 1 dá erro: a temperatura do agente não é enviada. Modelos: claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5, claude-fable-5-1.",
   },
   {
     kind: "gemini",
