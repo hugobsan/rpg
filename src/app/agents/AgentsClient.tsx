@@ -77,6 +77,7 @@ export default function AgentsClient({ initialAgents, sources }: { initialAgents
             loadModels={loadModels}
             open={open === a.id}
             onToggle={() => setOpen(open === a.id ? null : a.id)}
+            onClose={() => setOpen((o) => (o === a.id ? null : o))}
             onSaved={(updated) => setAgents((list) => list.map((x) => (x.id === updated.id ? updated : x)))}
           />
         ))}
@@ -85,13 +86,14 @@ export default function AgentsClient({ initialAgents, sources }: { initialAgents
   );
 }
 
-function AgentCard({ agent, sources, models, loadModels, open, onToggle, onSaved }: {
+function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose, onSaved }: {
   agent: AgentConfig;
   sources: SourceView[];
   models: Record<string, Model[] | null>;
   loadModels: (src: string) => void;
   open: boolean;
   onToggle: () => void;
+  onClose: () => void;
   onSaved: (a: AgentConfig) => void;
 }) {
   const [form, setForm] = useState(agent);
@@ -124,6 +126,7 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onSaved
       const updated = await res.json();
       onSaved(updated);
       setForm(updated);
+      onClose();
       toast(`${agent.name} salvo${updated.pricing ? " com o preço atual do catálogo" : ""}.`, { kind: "sucesso" });
     } else {
       setSaveError((await res?.json().catch(() => null))?.error || `Erro ${res?.status ?? "de rede"} ao salvar`);
@@ -140,6 +143,21 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onSaved
   const noPrompt = agent.id === "decider" || agent.id === "voice";
   const dirty = JSON.stringify(form) !== JSON.stringify(agent);
   const p = agent.pricing;
+
+  // Ctrl+S / Cmd+S salva o agente aberto (e nunca abre o "salvar página" do navegador)
+  const saveRef = useRef<() => void>(() => {});
+  saveRef.current = () => { if (dirty && !saving) save(); };
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        saveRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
 
   return (
     <article className={`card ${s.agent} ${open ? s.open : ""}`} style={{ "--tone": TONE[agent.id] ?? "var(--accent)" } as React.CSSProperties}>
