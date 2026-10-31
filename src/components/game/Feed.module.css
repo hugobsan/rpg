@@ -14,7 +14,7 @@
   margin: 0.4em 0 1em; padding: 2px 0 2px 0;
 }
 .mono {
-  width: 34px; height: 34px; margin-top: 3px; display: grid; place-items: center;
+  width: 34px; height: 34px; margin-top: 3px; padding: 0; display: grid; place-items: center; /* sem o padding padrão do <button>, que achatava o retrato */
   border-radius: var(--r-md); font: var(--display-weight) calc(13px * var(--display-scale)) / 1 var(--font-display); letter-spacing: var(--display-tracking);
   color: var(--who); background: color-mix(in srgb, var(--who) 14%, var(--bg-panel));
   border: 1px solid color-mix(in srgb, var(--who) 42%, transparent);
@@ -25,7 +25,7 @@ button.mono { cursor: pointer; transition: transform var(--dur-fast) var(--ease-
 button.mono:hover { box-shadow: var(--hl), 0 0 0 1px var(--who), 0 0 18px -6px var(--who); }
 button.mono:active { transform: scale(0.96); }
 /* com retrato (Portrait): a pixel art preenche o monograma, na moldura da cor de quem fala */
-.mono img { width: 100%; height: 100%; display: block; border-radius: inherit; image-rendering: pixelated; animation: fade var(--dur-slow) var(--ease-out); }
+.mono img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit; image-rendering: pixelated; animation: fade var(--dur-slow) var(--ease-out); }
 .mono:has(img) { overflow: hidden; background: radial-gradient(circle at 50% 28%, color-mix(in srgb, var(--who) 22%, transparent), transparent 72%), var(--bg-sunken); }
 .sayBody { min-width: 0; border-left: 2px solid color-mix(in srgb, var(--who) 40%, transparent); padding-left: 12px; }
 .who { display: flex; align-items: center; gap: 4px; min-height: 26px; }
