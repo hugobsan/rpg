@@ -228,7 +228,7 @@ CAMPOS DO RULESET (o exemplo completo de Naruto vem no contexto; siga o mesmo fo
     id: "pixel",
     name: "Pixel artista",
     description:
-      "Desenha o retrato de cada personagem em pixel art quando a geração de imagens está desligada (ligada, quem pinta é o Ilustrador). Devolve uma grade de pixels com paleta, que o sistema valida e converte em SVG. Roda em segundo plano para o protagonista ao criar a campanha e para cada NPC novo depois do perfil; dá para regerar no modal do NPC e na ficha.",
+      "Desenha o retrato de cada personagem em pixel art quando a geração de imagens está desligada (ligada, quem pinta é o Ilustrador). Devolve uma grade de pixels com paleta, que o sistema valida e converte em SVG. Roda em segundo plano quando o jogador clica em Gerar retrato (modal do NPC ou ficha).",
     model: "anthropic/claude-opus-5.5",
     temperature: 0.7,
     max_tokens: 6000,
@@ -311,7 +311,7 @@ EDIÇÃO: quando vier MAPA ATUAL com uma instrução, devolva o JSON COMPLETO do
     id: "characters",
     name: "Criador de personagens",
     description:
-      "Monta em segundo plano o perfil rico (aparência, idade, papel, personalidade, jeito de falar, passado, objetivos, segredos, relações, manias) e a ficha de cada NPC que o Mestre registra com create_npc, a partir do pedido dele. Usa as habilidades e os itens da biblioteca da campanha (as habilidades que faltam vão para o Criador de habilidades) e no fim pede o retrato. Também roda no botão Refazer perfil do NPC.",
+      "Monta em segundo plano o perfil rico (aparência, idade, papel, personalidade, jeito de falar, passado, objetivos, segredos, relações, manias) e a ficha de cada NPC que o Mestre registra com create_npc, a partir do pedido dele. Usa as habilidades e os itens da biblioteca da campanha (as habilidades que faltam vão para o Criador de habilidades) (o retrato fica para o botão Gerar retrato). Também roda no botão Refazer perfil do NPC.",
     // grátis; raciocina antes de responder, então max_tokens alto (senão volta vazio)
     model: "nvidia/nemotron-3.5-super-vl:free",
     temperature: 0.7,

@@ -3,7 +3,6 @@ import { db, q } from "./db";
 import { getAgent } from "./agents";
 import { chat } from "./openrouter";
 import { startJob } from "./jobs";
-import { queuePortrait } from "./portrait";
 import { ensureAbility, listLibrary } from "./library";
 import { rulesetPromptSummary } from "./ruleset";
 import { powerLevels } from "./progression";
@@ -318,6 +317,6 @@ export function queueProfile(
   return startJob(campaign.id, "character", npc.id, `${opts.redo ? "Perfil refeito" : "Perfil"}: ${npc.name}`, async () => {
     const d = await createProfile(campaign, npc, base, { ...opts, brief: opts.brief?.trim() });
     if (opts.fixedRank) delete d.sheet.rank;
-    if (await applyProfile(npc.id, base, d)) await queuePortrait(campaign.id, npc.id);
+    await applyProfile(npc.id, base, d); // retrato só pelo botão Gerar retrato
   });
 }

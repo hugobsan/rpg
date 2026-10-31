@@ -312,7 +312,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "create_npc",
       description:
-        "Registra um NPC novo na hora, ativo na cena. O Criador de personagens monta perfil, ficha e retrato em segundo plano a partir do brief. canon=true para personagens da obra.",
+        "Registra um NPC novo na hora, ativo na cena. O Criador de personagens monta perfil e ficha em segundo plano a partir do brief. canon=true para personagens da obra.",
       parameters: S(
         {
           name: { type: "string" },

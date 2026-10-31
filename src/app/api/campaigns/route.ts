@@ -5,7 +5,6 @@ import { generateScript, getCampaign } from "@/lib/engine";
 import { EXTRA_MASTERY } from "@/lib/progression";
 import { Ability, Campaign, Persona } from "@/lib/types";
 import { THEMES } from "@/lib/theme";
-import { queuePortrait } from "@/lib/portrait";
 import { listCampaigns } from "@/app/(home)/campaignList";
 
 export const dynamic = "force-dynamic";
@@ -81,8 +80,6 @@ export async function POST(req: NextRequest) {
      VALUES ($1, 'player', $2, $3, $4) RETURNING id`,
     [campaign.id, body.character.name.trim(), JSON.stringify(sheet), JSON.stringify(persona)]
   );
-  // retrato do protagonista em segundo plano (Pixel artista ou Ilustrador); falhar não impede a campanha
-  await queuePortrait(campaign.id, player.id).catch(() => {});
   await q(
     `INSERT INTO scenes (campaign_id, seq, mode, title, location)
      VALUES ($1, 1, 'exploration', 'Prólogo', $2)`,
