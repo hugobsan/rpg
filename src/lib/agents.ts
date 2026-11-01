@@ -142,7 +142,7 @@ Regras: memórias são fatos que precisarão ser lembrados muitas sessões depoi
 O QUE REGISTRAR
 - Recursos (update_resource com delta): dano sofrido, cura, energia gasta em algo que não foi uma técnica resolvida pelo Mestre, descanso que recupera. Use os números da narração ou dos dados já rolados (dano rolado com roll_dice que a narração confirma que acertou). Sem número, estime pouco e proporcional ao máximo da barra; se a narração não mostra efeito, não mexa.
 - Itens (add_item/remove_item): o que o personagem pegou, ganhou, comprou, recebeu, perdeu, entregou, gastou ou consumiu. Dinheiro também é item (ex.: "Ryō", com qty). Item que já está no inventário vai com o nome de lá.
-- XP (grant_xp): só por um feito que a narração mostra concluído: missão cumprida, luta vencida, descoberta importante, avanço marcante de treino. Quanto: pela REGRA DE XP DA MESA, no estado. Conversa, viagem e rotina não dão XP. Concluir uma missão com tamanho (xpSize) já dá a XP dela: não chame grant_xp pela mesma conclusão.
+- XP (grant_xp): só por um feito que a narração mostra concluído: missão cumprida, luta vencida, descoberta importante, avanço marcante de treino. Quanto: pela REGRA DE XP DA MESA, no estado. Conversa, viagem e rotina não dão XP. Concluir uma missão com tamanho (xpSize) já dá a XP dela: não chame grant_xp pela mesma conclusão. Técnica nova do jogador (add_ability em JÁ FEITO PELO MESTRE, aprendida agora na história, não o registro de uma que ele já sabia) também dá XP: um feito comum pela regra da mesa, no topo da faixa se for difícil para o nível dele.
 - Domínio (update_ability_progress com delta): só por um evento que faz a técnica evoluir (um insight, observar um mestre, um momento-chave). Uso (use_ability) e treino (train) já sobem o domínio.
 - Campo extra da ficha (update_extra_field): quando a narração revela ou muda um deles (afinidade, clã, vila...).
 - Memórias (add_memory): no máximo 2, só do que precisa ser lembrado daqui a 20 sessões: revelação, promessa, dívida, mudança de relação, morte, marco da história (kind milestone). Fato autossuficiente, com nomes. Rotina não vira memória.
@@ -610,6 +610,12 @@ export const LIBRARY_PROMPT_FIXES: [string, string, string][] = [
   ["abilities", "\"costFree\":false,\"damage\":\"\"", "\"costFree\":false,\"consumption\":\"\",\"costUnit\":\"\",\"damage\":\"\""],
   ["adventure", "com todos os níveis de abilityRanks.\n- abilityNaming:", "com todos os níveis de abilityRanks. Opcional, \"byConsumption\": faixas de consumo do mundo [{key, label, cost, description}], da mais barata à mais cara, quando o gasto de recurso não acompanha o nível da técnica (Naruto: minimo, baixo, medio, alto, muito_alto, extremo; um mundo de magia: fraco, moderado, forte); a técnica com faixa custa o da faixa, sem faixa vale byRank.\n- costControlLabel (opcional, com abilityCosts): nome do multiplicador de custo de cada personagem, quem gasta mais ou menos pela mesma técnica (Naruto: \"Controle de chakra\"; Harry Potter: \"Controle mágico\"). Sem ele, a ficha mostra \"Eficiência\".\n- abilityNaming:"],
   ["adventure", "costFree (true só se não gasta recurso; o custo vem do rank), description,", "costFree (true só se não gasta recurso; o valor vem das regras do mundo), consumption (key de byConsumption, se houver), costUnit (só se o gasto é por unidade), description,"],
+  // técnica nova aprendida dá XP (feito comum pela regra da mesa)
+  [
+    "scribe",
+    "não chame grant_xp pela mesma conclusão.\n- Domínio",
+    "não chame grant_xp pela mesma conclusão. Técnica nova do jogador (add_ability em JÁ FEITO PELO MESTRE, aprendida agora na história, não o registro de uma que ele já sabia) também dá XP: um feito comum pela regra da mesa, no topo da faixa se for difícil para o nível dele.\n- Domínio",
+  ],
 ];
 
 // uma vez por processo (antes era um INSERT por agente a cada getAgent, várias vezes por turno);
