@@ -331,5 +331,39 @@
         "Shunshin no Jutsu"
       ]
     }
+  ],
+  "patches": [
+    {
+      "name": "Bunshin no Jutsu",
+      "why": "descrição falava de um personagem; volta o texto geral do kit",
+      "set": {
+        "description": "Jutsu do Clone (rank E no cânone). Técnica que todo shinobi sabe; em Konoha, sem ela o aluno não se forma na Academia."
+      }
+    },
+    {
+      "name": "Henge no Jutsu",
+      "why": "descrição falava de um personagem; volta o texto geral do kit",
+      "set": {
+        "description": "Jutsu da Transformação (rank E no cânone). Técnica básica ensinada na Academia: o usuário assume a aparência de outra pessoa, animal ou objeto."
+      }
+    },
+    {
+      "name": "Kage Bunshin no Jutsu",
+      "why": "descrição contava a história de Naruto",
+      "set": {
+        "description": "Clones das Sombras: cópias sólidas, não ilusões, que dividem igualmente o chakra de quem as cria. Proibida em Konoha pelo risco de esgotar o usuário, está registrada no Pergaminho Proibido; só quem tem reserva enorme de chakra cria muitos clones de uma vez."
+      }
+    },
+    {
+      "name": "Katon: Gōkakyū no Jutsu",
+      "why": "entrada estava vazia (sem descrição nem efeito)",
+      "set": {
+        "description": "Técnica de fogo característica do clã Uchiha: o usuário molda chakra de fogo e o expele pela boca como uma grande bola de chamas. Entre os Uchiha, dominá-la marca a passagem à vida adulta.",
+        "effect": "Atinge uma área de até 5 m de diâmetro a até 10 m à frente. Teste de Ninjutsu contra Velocidade de cada alvo na área; quem perder sofre o dano, e materiais inflamáveis pegam fogo. Uma técnica de Suiton de rank igual ou maior a anula.",
+        "requirements": "Selos: Serpente, Carneiro, Macaco, Javali, Cavalo, Tigre; natureza Katon",
+        "damage": "2d6",
+        "users": "Clã Uchiha (Sasuke, Itachi), Kakashi Hatake"
+      }
+    }
   ]
 }
