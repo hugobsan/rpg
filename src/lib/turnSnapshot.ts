@@ -49,8 +49,12 @@ export async function takeSnapshot(campaignId: string, playerInput: string): Pro
   );
 }
 
-/** Volta a campanha ao estado anterior ao último turno e devolve a ação do jogador daquele turno. */
-export async function restoreSnapshot(campaignId: string): Promise<string> {
+/**
+ * Volta a campanha ao estado anterior ao último turno e devolve a ação do jogador daquele turno.
+ * keepAction ("parar" o Mestre): a ação do jogador (1ª mensagem depois da foto) fica, como num turno que falhou;
+ * "gerar novamente" e editar seguem valendo para ela, inclusive depois de recarregar a página.
+ */
+export async function restoreSnapshot(campaignId: string, keepAction = false): Promise<string> {
   const [row] = await q<{ player_input: string; data: Snapshot }>(
     `SELECT player_input, data FROM turn_snapshots WHERE campaign_id = $1`,
     [campaignId]
@@ -85,7 +89,11 @@ export async function restoreSnapshot(campaignId: string): Promise<string> {
         campaignId,
       ]
     );
-    await client.query(`DELETE FROM messages WHERE campaign_id = $1 AND id > $2`, [campaignId, s.maxMessageId]);
+    await client.query(
+      `DELETE FROM messages WHERE campaign_id = $1 AND id > $2
+         AND NOT ($3 AND id = COALESCE((SELECT MIN(id) FROM messages WHERE campaign_id = $1 AND id > $2 AND role = 'player'), 0))`,
+      [campaignId, s.maxMessageId, keepAction]
+    );
     await client.query(`DELETE FROM memories WHERE campaign_id = $1 AND id > $2 AND kind <> 'directive'`, [campaignId, s.maxMemoryId]);
     // mensagens de NPC (npc_message) e falas de conversa particular depois da foto
     await client.query(`DELETE FROM npc_chats WHERE campaign_id = $1 AND id > $2`, [campaignId, s.maxNpcChatId ?? null]);

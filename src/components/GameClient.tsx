@@ -85,7 +85,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
 
   const {
     state, setState, reload: reloadState, error, setError,
-    feed, draft, choices, setChoices, busy, status, send, regenerate, edit,
+    feed, draft, choices, setChoices, busy, status, send, regenerate, edit, canStop, stop,
     pendingDice, rolling, roll, releaseDice,
     feedRef, hasMore, loadingOlder, loadOlder,
   } = useTurn(campaignId, { initial, onEvent });
@@ -427,6 +427,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           onSuggest={suggest}
           suggesting={suggesting}
           onOoc={() => setOocOpen(true)}
+          onStop={canStop ? stop : undefined}
         />
       </main>
 

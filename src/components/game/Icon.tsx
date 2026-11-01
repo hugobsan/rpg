@@ -18,6 +18,7 @@ const PATHS = {
   sliders: <><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></>,
   chat: <path d="M4 5h16v11H10l-5 4v-4H4z" />,
   send: <path d="M12 19V5M6 11l6-6 6 6" />,
+  stop: <rect x="7" y="7" width="10" height="10" rx="1.5" />,
   speaker: <><path d="M4 9.5v5h3.5l5 4v-13l-5 4z" /><path d="M16 9a4.5 4.5 0 0 1 0 6" /><path d="M18.5 6.5a8 8 0 0 1 0 11" /></>,
   regen: <><path d="M4 4.5v5h5" /><path d="M5.6 14.5a7 7 0 1 0 1.7-7.3L4 9.5" /></>,
   forward: <><path d="M5 6l6 6-6 6" /><path d="M12 6l6 6-6 6" /></>,

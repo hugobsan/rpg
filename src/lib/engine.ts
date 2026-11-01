@@ -340,7 +340,10 @@ export async function runTurn(
   playerInput: string,
   emit: (e: TurnEvent) => void,
   // "gerar novamente": o estado já foi restaurado; feedback = motivo opcional do jogador
-  regen?: { feedback: string }
+  regen?: { feedback: string },
+  // "parar" do jogador: vale só até a narração ser salva. Abortado, lança signal.reason (sempre depois da foto e da
+  // ação salvas: quem chama volta a foto); depois da narração é ignorado e o pós-narração (Escrivão etc.) segue
+  signal?: AbortSignal
 ): Promise<void> {
   // status por fase: a tela acende "consultando", "dados" e "escrevendo" por estas palavras
   emit({ type: "status", text: "Lendo a cena..." });
@@ -465,6 +468,7 @@ export async function runTurn(
       kept = "";
       keptChoices = [];
     };
+    signal?.throwIfAborted();
     emit({ type: "status", text: "O Mestre está pensando..." });
     // :online só na 1ª rodada: o plugin cobra por requisição e repetiria a mesma busca a cada rodada
     const result = await chat({
@@ -484,6 +488,10 @@ export async function runTurn(
         emit({ type: "narration_delta", text: (!streamed && kept ? "\n\n" : "") + visible.slice(streamed) });
         streamed = visible.length;
       },
+      signal,
+    }).catch((e) => {
+      signal?.throwIfAborted();
+      throw e;
     });
 
     const told = parseChoices(result.content || "");

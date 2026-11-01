@@ -29,6 +29,9 @@ import { diceText } from "../DiceRoller";
  *   send(text)     envia a ação; devolve false se não enviou (ocupado ou texto vazio)
  *   regenerate(fb) "gerar novamente" a última resposta (fb = motivo, pode ser "")
  *   edit(text)     troca a última ação do jogador por text e gera a resposta de novo
+ *   canStop, stop() parar o Mestre: só enquanto a narração não chegou (depois dela o turno já está salvo e o
+ *                  pós-narração segue). O servidor desfaz o turno e mantém a ação do jogador: o chat fica nela, com
+ *                  gerar novamente e editar; um envio novo logo depois entra no lugar dela (vira edit)
  *
  * Dados 3D: com a animação ligada (Configurações), a partir de um evento "dice" todo o resto do
  * turno (inclusive o streaming) fica retido até o jogador rolar, um botão por rolagem, em fila.
@@ -82,6 +85,9 @@ export function useTurn(
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const busyRef = useRef(false); // dois cliques seguidos não mandam dois turnos
+  const [canStop, setCanStop] = useState(false);
+  const stopping = useRef(false); // o jogador pediu para parar este turno
+  const stopped = useRef(false); // o último turno foi parado: a ação dele ficou salva sem resposta
   const onEvent = useRef(opts.onEvent);
   onEvent.current = opts.onEvent;
 
@@ -218,6 +224,9 @@ export function useTurn(
   const run = async (text: string, regen?: { feedback: string; edit?: boolean }) => {
     busyRef.current = true;
     setBusy(true);
+    setCanStop(true);
+    stopping.current = false;
+    stopped.current = false;
     setError("");
     setChoices([]);
     setRolling(null);
@@ -233,6 +242,7 @@ export function useTurn(
     } else setFeed((f) => [...f, { key: nextKey(), kind: "player", content: text }]);
     setStatus("Lendo a cena..."); // o servidor manda as fases seguintes
     let failed = false;
+    let narrated = false;
     try {
       const res = await fetch(`/api/campaigns/${campaignId}/turn`, {
         method: "POST",
@@ -253,6 +263,10 @@ export function useTurn(
           const line = part.split("\n").find((l) => l.startsWith("data: "));
           if (!line) continue;
           const ev = JSON.parse(line.slice(6)) as TurnEvent;
+          if (ev.type === "narration") {
+            narrated = true; // salva no servidor (mesmo se ainda retida pela rolagem): não dá mais para parar
+            setCanStop(false);
+          }
           if (IMMEDIATE.has(ev.type)) {
             if (ev.type === "status") setStatus(ev.text);
             else if (ev.type === "error") {
@@ -272,7 +286,19 @@ export function useTurn(
     } finally {
       busyRef.current = false;
       setBusy(false);
+      setCanStop(false);
       setStatus("");
+      if (stopping.current && !narrated && !failed) {
+        // parado: o servidor já voltou o estado; some o que veio depois da ação (chips, dados, rascunho)
+        stopped.current = true;
+        held.current = [];
+        setPendingDice(null);
+        setRolling(null);
+        setDraft("");
+        setFeed((f) => f.slice(0, f.map((i) => i.kind).lastIndexOf("player") + 1));
+        void reload();
+        return;
+      }
       // ficha/cena só atualizam depois da rolagem, para não adiantar o resultado
       if (held.current.length && !failed) {
         reloadAfterHeld.current = true;
@@ -292,8 +318,22 @@ export function useTurn(
 
   const send = (text: string) => {
     if (busyRef.current || !text.trim()) return false;
-    void run(text);
+    // depois de parar, a ação parada (salva sem resposta) dá lugar à nova
+    void (stopped.current ? run(text.trim(), { feedback: "", edit: true }) : run(text));
     return true;
+  };
+
+  const stop = () => {
+    if (!busyRef.current || stopping.current || !canStop) return;
+    stopping.current = true;
+    setCanStop(false);
+    setStatus("Parando o Mestre...");
+    // o SSE do turno termina depois que o servidor desfaz o turno; é por ele que o run acaba
+    fetch(`/api/campaigns/${campaignId}/turn`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stop: true }),
+    }).catch(() => {});
   };
 
   const regenerate = (feedback: string) => {
@@ -310,7 +350,7 @@ export function useTurn(
 
   return {
     state, setState, reload, error, setError,
-    feed, draft, choices, setChoices, busy, status, send, regenerate, edit,
+    feed, draft, choices, setChoices, busy, status, send, regenerate, edit, canStop, stop,
     pendingDice, rolling, roll, releaseDice,
     feedRef, hasMore, loadingOlder, loadOlder,
   };

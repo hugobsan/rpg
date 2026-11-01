@@ -102,7 +102,7 @@ export function toChatJson(msg: Anthropic.Message): Record<string, unknown> {
 /** POST /v1/messages em streaming pelo SDK; erro da API ou da rede vira `error` no resultado, como em readStream. */
 export async function anthropicChat(opts: ChatOptions, src: Source, cache = true): Promise<Record<string, unknown>> {
   try {
-    const stream = new Anthropic({ apiKey: src.apiKey }).messages.stream(anthropicParams(opts, cache));
+    const stream = new Anthropic({ apiKey: src.apiKey }).messages.stream(anthropicParams(opts, cache), { signal: opts.signal });
     if (opts.onDelta) stream.on("text", (delta) => opts.onDelta!(delta));
     return toChatJson(await stream.finalMessage());
   } catch (e) {

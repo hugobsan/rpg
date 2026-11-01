@@ -49,6 +49,8 @@ export interface ChatOptions {
   reasoning?: Record<string, unknown>;
   // streaming: recebe cada pedaço do texto enquanto a resposta é gerada (o resultado final vem igual)
   onDelta?: (text: string) => void;
+  // "parar" do jogador: aborta a requisição (o provedor para de gerar e de cobrar); o chat lança o erro
+  signal?: AbortSignal;
   // metadados para o log
   agentId: string;
   campaignId?: string | null;
@@ -289,7 +291,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   let responseJson: Record<string, unknown> | null = null;
   let error: string | null = null;
   try {
-    const post = () => fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    const post = () => fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: opts.signal });
     let res = native ? null : await post();
     // modelo que recusa temperature (família GPT-5, mesmo quando o catálogo diz que aceita): repete uma vez sem ela
     if (res?.status === 400 && "temperature" in body) {
@@ -339,7 +341,8 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       raw: responseJson,
     };
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    // parado no meio: o usage só vem no último pedaço, então o log fica sem tokens nem custo (o parcial vai em response)
+    error = opts.signal?.aborted ? "interrompido pelo jogador (parar)" : e instanceof Error ? e.message : String(e);
     throw e;
   } finally {
     const usage = (responseJson as { usage?: Usage } | null)?.usage;

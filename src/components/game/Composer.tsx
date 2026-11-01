@@ -1,5 +1,5 @@
 "use client";
-import { useImperativeHandle, useRef, useState, type Ref } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import Icon from "./Icon";
 import Loader from "../ui/Loader";
 import s from "./Composer.module.css";
@@ -15,8 +15,9 @@ export interface ComposerHandle {
  * Campo da ação: cresce com o texto, Enter envia, Shift+Enter quebra linha, Esc solta o foco
  * (aí as teclas 1 a 9 escolhem uma opção). O texto vive aqui: digitar não re-renderiza a tela.
  * Ações rápidas pede ao servidor opções para o momento da cena (aparecem no lugar das do Mestre).
+ * Com onStop (o Mestre está gerando a narração), o botão de enviar vira o de parar; Esc também para.
  */
-export default function Composer({ ref, onSend, busy, placeholder, onSuggest, suggesting, onOoc }: {
+export default function Composer({ ref, onSend, busy, placeholder, onSuggest, suggesting, onOoc, onStop }: {
   ref?: Ref<ComposerHandle>;
   onSend: (text: string) => boolean;
   busy: boolean;
@@ -24,9 +25,24 @@ export default function Composer({ ref, onSend, busy, placeholder, onSuggest, su
   onSuggest: () => void;
   suggesting: boolean;
   onOoc: () => void;
+  onStop?: () => void;
 }) {
   const [text, setText] = useState("");
   const area = useRef<HTMLTextAreaElement>(null);
+  const stopRef = useRef(onStop);
+  stopRef.current = onStop;
+  const canStop = !!onStop;
+
+  // Esc para o Mestre, menos com modal ou diálogo aberto (lá o Esc fecha o modal, inclusive o da rolagem)
+  useEffect(() => {
+    if (!canStop) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.repeat || document.querySelector("[aria-modal='true'], .modal-backdrop, [role='dialog']")) return;
+      stopRef.current?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canStop]);
 
   const focusEnd = () =>
     requestAnimationFrame(() => {
@@ -71,9 +87,16 @@ export default function Composer({ ref, onSend, busy, placeholder, onSuggest, su
             <Icon name="chat" size={16} /><span>Fora do jogo</span>
           </button>
           <span className={s.hint}>Enter envia · Shift+Enter quebra a linha</span>
-          <button className={`btn primary ${s.send}`} onClick={send} disabled={busy || !text.trim()} aria-label="Enviar ação">
-            {busy ? <Loader size={16} label="O Mestre está respondendo" /> : <Icon name="send" size={18} />}
-          </button>
+          {onStop ? (
+            <button className={`btn primary ${s.send}`} onClick={onStop} aria-label="Parar o Mestre"
+              data-tip="Parar o Mestre" data-tip-align="end" aria-keyshortcuts="Escape">
+              <Icon name="stop" size={16} />
+            </button>
+          ) : (
+            <button className={`btn primary ${s.send}`} onClick={send} disabled={busy || !text.trim()} aria-label="Enviar ação">
+              {busy ? <Loader size={16} label="O Mestre está respondendo" /> : <Icon name="send" size={18} />}
+            </button>
+          )}
         </div>
       </div>
     </div>
