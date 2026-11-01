@@ -1399,6 +1399,9 @@ export async function executeGmTool(
         // o Escrivão tirava o prazo sem a narração pedir; só com uma anotação de missão do Mestre neste turno
         if (args.noDeadline === true && found.deadlineMinutes !== undefined && ctx.scribe && !ctx.scribe.briefs)
           return `Nada mudou: [${found.id}] mantém o prazo. Tirar o prazo só com uma ANOTAÇÃO DE MISSÃO do Mestre neste turno.`;
+        // o Escrivão cancelava missões aceitas quando o jogador "encerrava" uma atividade; recusar oferta continua livre
+        if (args.status === "cancelado" && found.status !== "oferecida" && ctx.scribe && !ctx.scribe.briefs)
+          return `Nada mudou: [${found.id}] continua aberto. Cancelar missão aceita só com uma ANOTAÇÃO DE MISSÃO do Mestre neste turno; encerrar uma atividade não encerra missão.`;
         o = { ...found };
         const bad = setSize(o);
         if (bad) return bad;

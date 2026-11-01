@@ -50,6 +50,11 @@ async function main() {
     const scribe = (briefs: number) => (n: string, a: Record<string, unknown>) => executeGmTool(n, a, { ...ctx, scribe: { briefs } });
     assert.match(await scribe(0)("update_objective", { objective: "o2", noDeadline: true }), /^Nada mudou/);
     assert.equal((await byTitle("Escolta")).deadlineMinutes, 480 + 180, "prazo mantido");
+    // nem cancela missão aceita sem anotação (cancelava ao jogador "encerrar o treino"); recusar oferta continua livre
+    assert.match(await scribe(0)("update_objective", { objective: "o2", status: "cancelado" }), /^Nada mudou.*continua aberto/);
+    assert.equal((await byTitle("Escolta")).status, "aberto", "missão aceita mantida");
+    await run("add_objective", { title: "Favor do vizinho", kind: "outro", description: "levar recado", status: "oferecida" });
+    assert.match(await scribe(0)("update_objective", { objective: "Favor do vizinho", status: "cancelado" }), /cancelado/);
 
     const block = objectivesPromptBlock(getObjectives(await state()), 480);
     assert.match(block, /\[o2\] Missão: Escolta — levar o Tazuna \| prazo: Dia 1 · 11:00 \(faltam 3 h\)/);
