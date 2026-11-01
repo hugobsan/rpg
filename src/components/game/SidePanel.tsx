@@ -10,6 +10,7 @@ export interface PanelTab<K extends string = string> {
   badge?: number; // não lidas
   mobile?: boolean; // atalho direto na barra do celular
   end?: boolean; // vai para o pé do trilho (configurações da mesa)
+  group?: boolean; // fica dentro do grupo "Gestão" (gestão da campanha), que abre e fecha
 }
 
 const SIDE_KEY = "chronicle.sideWidth";
@@ -78,6 +79,23 @@ export default function SidePanel<K extends string>({ tabs, active, onSelect, co
   }, [drawer, active]);
 
   const current = tabs.find((t) => t.key === active) ?? tabs[0];
+
+  // grupo "Gestão": abre sozinho quando uma aba dele fica ativa (inclusive aberta de fora, show("gallery"))
+  const groupTabs = tabs.filter((t) => t.group);
+  const inGroup = !!current.group;
+  const [groupOpen, setGroupOpen] = useState(false);
+  useEffect(() => {
+    if (inGroup) setGroupOpen(true);
+  }, [active, inGroup]);
+  const groupBadge = groupOpen ? 0 : groupTabs.reduce((n, t) => n + (t.badge ?? 0), 0);
+  const groupButton = (cls: string, on: boolean) => (
+    <button key="group" role="tab" aria-selected={on} aria-expanded={groupOpen} aria-controls="side-group"
+      className={`${cls} ${s.grp} ${on ? s.on : ""} ${inGroup ? s.has : ""}`} onClick={() => setGroupOpen(!groupOpen)}
+      title="Gestão da campanha" aria-label={groupBadge ? `Gestão da campanha, ${groupBadge} não lidas` : "Gestão da campanha"}>
+      <span className={s.icon}><Icon name="folder" size={20} /><Badge n={groupBadge} /></span>
+      <span className={s.label}>Gestão<Icon name="chevron" size={10} className={s.chev} /></span>
+    </button>
+  );
   const tabButton = (t: PanelTab<K>, cls: string, onClick: () => void) => (
     <button key={t.key} role="tab" aria-selected={t.key === active} className={cls} onClick={onClick}
       title={t.label} aria-label={t.badge ? `${t.label}, ${t.badge} não lidas` : t.label}>
@@ -103,7 +121,17 @@ export default function SidePanel<K extends string>({ tabs, active, onSelect, co
           <div className={s.grip} aria-hidden="true" />
           <div className={s.sheetHead}>
             <div className={s.sheetTabs} role="tablist" ref={sheetTabs}>
-              {tabs.map((t) => tabButton(t, s.stab, () => onSelect(t.key)))}
+              {groupOpen ? (
+                <div id="side-group" role="group" aria-label="Gestão da campanha" className={s.sgroup}>
+                  <button className={s.stab} onClick={() => setGroupOpen(false)} aria-label="Voltar às abas">
+                    <span className={s.icon}><Icon name="chevron" size={20} className={s.back} /></span>
+                    <span className={s.label}>Voltar</span>
+                  </button>
+                  {groupTabs.map((t) => tabButton(t, s.stab, () => onSelect(t.key)))}
+                </div>
+              ) : (
+                tabs.map((t) => (t.group ? t === groupTabs[0] && groupButton(s.stab, false) : tabButton(t, s.stab, () => onSelect(t.key))))
+              )}
             </div>
             <button className={s.close} onClick={() => onDrawer(false)} aria-label="Fechar painel"><Icon name="close" size={18} /></button>
           </div>
@@ -112,6 +140,15 @@ export default function SidePanel<K extends string>({ tabs, active, onSelect, co
       </>
     );
   }
+
+  const railTab = (t: PanelTab<K>) =>
+    tabButton(t, `${s.rtab} ${t.end ? s.end : ""} ${!collapsed && t.key === active ? s.on : ""}`, () => {
+      if (t.key === active && !collapsed) onCollapse(true);
+      else {
+        onSelect(t.key);
+        onCollapse(false);
+      }
+    });
 
   return (
     <aside className={`game-side ${s.side}`} aria-label="Painéis do jogo">
@@ -131,13 +168,16 @@ export default function SidePanel<K extends string>({ tabs, active, onSelect, co
       )}
       <nav className={s.rail} role="tablist" aria-orientation="vertical" aria-label="Abas">
         {tabs.map((t) =>
-          tabButton(t, `${s.rtab} ${t.end ? s.end : ""} ${!collapsed && t.key === active ? s.on : ""}`, () => {
-            if (t.key === active && !collapsed) onCollapse(true);
-            else {
-              onSelect(t.key);
-              onCollapse(false);
-            }
-          })
+          !t.group ? railTab(t) : t === groupTabs[0] && (
+            <div key="group" className={`${s.rgroup} ${groupOpen ? s.open : ""}`}>
+              {groupButton(s.rtab, !collapsed && inGroup && !groupOpen)}
+              {groupOpen && (
+                <div id="side-group" role="group" aria-label="Gestão da campanha" className={s.rsub}>
+                  {groupTabs.map(railTab)}
+                </div>
+              )}
+            </div>
+          )
         )}
       </nav>
     </aside>

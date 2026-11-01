@@ -255,14 +255,15 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
     { key: "sheet", label: "Ficha", icon: "sheet", mobile: true },
     { key: "abilities", label: campaign.ruleset.abilitiesLabel || "Habilidades", icon: "spark" },
     { key: "inventory", label: "Inventário", icon: "bag" },
-    { key: "library", label: "Biblioteca", icon: "library" },
     { key: "objectives", label: "Missões", icon: "flag", mobile: true },
     { key: "npcs", label: "NPCs", icon: "people", badge: unread, mobile: true },
     { key: "map", label: "Mapa", icon: "map", mobile: true },
-    { key: "memories", label: "Marcos", icon: "bookmark" },
-    { key: "books", label: "Livros", icon: "book" },
-    { key: "script", label: "Roteiro", icon: "scroll" },
-    { key: "gallery", label: "Galeria", icon: "image" },
+    // gestão da campanha: ficam juntas no grupo "Gestão" da lateral
+    { key: "memories", label: "Marcos", icon: "bookmark", group: true },
+    { key: "books", label: "Livros", icon: "book", group: true },
+    { key: "script", label: "Roteiro", icon: "scroll", group: true },
+    { key: "library", label: "Biblioteca", icon: "library", group: true },
+    { key: "gallery", label: "Galeria", icon: "image", group: true },
     { key: "table", label: "Mesa", icon: "sliders", end: true },
   ];
   // header e atalhos abrem uma aba: no desktop expande o painel, no celular sobe a folha
