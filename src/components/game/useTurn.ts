@@ -23,7 +23,7 @@ import { diceText } from "../DiceRoller";
  *                  narration_reset; o narration final entra no feed e zera o rascunho.
  *                  Renderize o rascunho num componente à parte e os itens do feed com React.memo:
  *                  cada pedaço do streaming re-renderiza quem usa o hook.
- *   choices        opções do último turno
+ *   choices        opções do último turno (setChoices: troca pelas das Ações rápidas)
  *   busy, status   turno em andamento e o texto da fase, vindo do servidor: "Lendo a cena...",
  *                  "O Mestre está pensando...", "Consultando memórias e livros...", "Escrevendo..."
  *   send(text)     envia a ação; devolve false se não enviou (ocupado ou texto vazio)
@@ -310,7 +310,7 @@ export function useTurn(
 
   return {
     state, setState, reload, error, setError,
-    feed, draft, choices, busy, status, send, regenerate, edit,
+    feed, draft, choices, setChoices, busy, status, send, regenerate, edit,
     pendingDice, rolling, roll, releaseDice,
     feedRef, hasMore, loadingOlder, loadOlder,
   };

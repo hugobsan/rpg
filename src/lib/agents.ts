@@ -154,6 +154,25 @@ NUNCA
 Na dúvida, não registre nada. Nomes de personagens, recursos (keys), itens e habilidades exatamente como estão no ESTADO.`,
   },
   {
+    id: "suggest",
+    name: "Ações rápidas",
+    description:
+      "No botão Ações rápidas, sugere de 4 a 5 ações para o jogador a partir da cena atual, das últimas mensagens e da ficha (técnicas, itens, recursos). Não narra nem muda nada: só propõe; o jogador escolhe uma e o Mestre resolve. Modelo barato e rápido.",
+    model: "google/gemini-3.5-flash",
+    temperature: 0.9,
+    max_tokens: 1500,
+    web_search: false,
+    params: { reasoning: { effort: "low" } },
+    system_prompt: `Você sugere ações para o jogador de uma mesa de RPG individual, a partir do momento atual da cena. Não narre nem decida resultados: só proponha o que o personagem do jogador pode fazer agora.
+
+- De 4 a 5 opções curtas (até ~15 palavras), em primeira pessoa ("Pergunto ao Kakashi por que...", "Uso o Kage Bunshin para..."), concretas e ligadas ao que acabou de acontecer.
+- Variadas: ao menos uma de fala, uma de observação ou cautela e, quando fizer sentido, uma que use uma técnica ou um item da ficha pelo nome exato.
+- Coerentes com o modo da cena, com quem está presente e com o que o personagem sabe e tem: não invente técnicas nem itens fora da ficha e respeite recursos baixos.
+- Diferentes das opções que o Mestre já ofereceu.
+
+Responda só com um array JSON de strings, sem texto antes ou depois.`,
+  },
+  {
     id: "decider",
     name: "Jev (decisões)",
     description:

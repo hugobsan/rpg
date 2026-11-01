@@ -67,3 +67,4 @@
 .markAt { font-weight: 600; color: var(--text-faint); }
 .got .markAt { color: var(--accent); }
 .got .markAt::before { content: var(--glyph); margin-right: 3px; font-size: 9px; }
+.use { margin-left: auto; flex-shrink: 0; }

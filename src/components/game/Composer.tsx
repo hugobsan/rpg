@@ -4,31 +4,28 @@ import Icon from "./Icon";
 import Loader from "../ui/Loader";
 import s from "./Composer.module.css";
 
-/** Grupo de ações rápidas (técnicas, itens): clicar preenche a ação com o nome. */
-export interface QuickGroup {
-  label: string;
-  items: { name: string; note?: string; title?: string }[];
-}
-
 export interface ComposerHandle {
   /** Põe o texto no campo (substitui) e foca no fim, para o jogador ajustar antes de enviar. */
   fill: (text: string) => void;
+  /** Técnica ou item da ficha: com o campo vazio começa a frase; senão acrescenta ao que já está escrito. */
+  use: (name: string) => void;
 }
 
 /**
  * Campo da ação: cresce com o texto, Enter envia, Shift+Enter quebra linha, Esc solta o foco
  * (aí as teclas 1 a 9 escolhem uma opção). O texto vive aqui: digitar não re-renderiza a tela.
+ * Ações rápidas pede ao servidor opções para o momento da cena (aparecem no lugar das do Mestre).
  */
-export default function Composer({ ref, onSend, busy, placeholder, quick, onOoc }: {
+export default function Composer({ ref, onSend, busy, placeholder, onSuggest, suggesting, onOoc }: {
   ref?: Ref<ComposerHandle>;
   onSend: (text: string) => boolean;
   busy: boolean;
   placeholder: string;
-  quick: QuickGroup[];
+  onSuggest: () => void;
+  suggesting: boolean;
   onOoc: () => void;
 }) {
   const [text, setText] = useState("");
-  const [tray, setTray] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
 
   const focusEnd = () =>
@@ -38,39 +35,17 @@ export default function Composer({ ref, onSend, busy, placeholder, quick, onOoc 
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
     });
-  useImperativeHandle(ref, () => ({ fill: (t) => { setText(t); focusEnd(); } }), []);
+  useImperativeHandle(ref, () => ({
+    fill: (t) => { setText(t); focusEnd(); },
+    use: (name) => { setText((t) => (t.trim() ? `${t.trimEnd()} usando ${name} ` : `Uso ${name} `)); focusEnd(); },
+  }), []);
 
   const send = () => {
-    if (onSend(text)) {
-      setText("");
-      setTray(false);
-    }
-  };
-  // ação rápida: com o campo vazio começa a frase; senão acrescenta ao que já está escrito
-  const use = (name: string) => {
-    setText((t) => (t.trim() ? `${t.trimEnd()} usando ${name} ` : `Uso ${name} `));
-    setTray(false);
-    focusEnd();
+    if (onSend(text)) setText("");
   };
 
   return (
     <div className={s.composer}>
-      {tray && (
-        <div className={s.tray} role="dialog" aria-label="Ações rápidas" onKeyDown={(e) => e.key === "Escape" && setTray(false)}>
-          {quick.map((g) => (
-            <div key={g.label} className={s.row}>
-              <span className={s.rowLabel}>{g.label}</span>
-              <div className={s.chips}>
-                {g.items.map((i) => (
-                  <button key={i.name} className={s.chip} onClick={() => use(i.name)} title={i.title || i.name}>
-                    {i.name}{i.note && <span className={s.cost}>{i.note}</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
       <div className={s.box}>
         <textarea
           ref={area}
@@ -84,19 +59,14 @@ export default function Composer({ ref, onSend, busy, placeholder, quick, onOoc 
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               send();
-            } else if (e.key === "Escape") {
-              if (tray) setTray(false);
-              else e.currentTarget.blur();
-            }
+            } else if (e.key === "Escape") e.currentTarget.blur();
           }}
         />
         <div className={s.bar}>
-          {quick.length > 0 && (
-            <button className={`${s.tool} ${tray ? s.on : ""}`} onClick={() => setTray((v) => !v)} aria-expanded={tray} aria-label="Ações rápidas"
-              title={`Usar ${quick.map((g) => g.label.toLowerCase()).join(" ou ")} da ficha`}>
-              <Icon name="bolt" size={16} /><span>Ações rápidas</span>
-            </button>
-          )}
+          <button className={s.tool} onClick={onSuggest} disabled={busy || suggesting} aria-label="Ações rápidas"
+            data-tip="Sugere ações para este momento da cena">
+            {suggesting ? <Loader size={16} label="Pensando em ações" /> : <Icon name="bolt" size={16} />}<span>Ações rápidas</span>
+          </button>
           <button className={`${s.tool} ${s.ooc}`} onClick={onOoc} aria-label="Fora do jogo" title="Converse com o Mestre como jogador: nada disso entra na história">
             <Icon name="chat" size={16} /><span>Fora do jogo</span>
           </button>

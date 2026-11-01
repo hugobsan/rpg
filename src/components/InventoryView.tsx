@@ -16,11 +16,13 @@ export default function InventoryView({
   campaignId,
   disabled,
   onChange,
+  onUse,
 }: {
   char: Character;
   campaignId: string;
   disabled?: boolean; // durante o turno do Mestre a ficha pode estar mudando
   onChange: () => void;
+  onUse?: (name: string) => void; // põe o item no campo da ação
 }) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -83,11 +85,14 @@ export default function InventoryView({
               {i.description && <div className={s.sub}>{i.description}</div>}
             </div>
             {i.qty > 1 && <span className={s.chip}>×{i.qty}</span>}
-            {confirming !== i.name && (
+            {confirming !== i.name && <>
+              {onUse && (
+                <button className="btn ghost small" onClick={() => onUse(i.name)} data-tip="Escrever no campo da ação" data-tip-align="end">Usar</button>
+              )}
               <button className="btn ghost small" disabled={disabled} onClick={() => setConfirming(i.name)}>
                 Largar
               </button>
-            )}
+            </>}
           </div>
           {confirming === i.name && (
             <div className={s.actions}>

@@ -25,7 +25,8 @@ function Ring({ value, estimated }: { value: number; estimated: boolean }) {
 }
 
 /** Aba de habilidades (Jutsus em Naruto): visível mesmo vazia, com o que cada uma custa e faz. */
-export default function AbilitiesView({ char, ruleset }: { char: Character; ruleset: Ruleset }) {
+// onUse: só na aba do jogador (põe a técnica no campo da ação); na ficha de NPC não há
+export default function AbilitiesView({ char, ruleset, onUse }: { char: Character; ruleset: Ruleset; onUse?: (name: string) => void }) {
   const label = ruleset.abilitiesLabel || "Habilidades";
   const resLabel = (key: string) => ruleset.resources.find((r) => r.key === key)?.label || key;
   const costs = ruleset.abilityCosts;
@@ -79,6 +80,11 @@ export default function AbilitiesView({ char, ruleset }: { char: Character; rule
               <span>{typeLabel(a.type)}</span>
             </div>
           </div>
+          {onUse && (
+            <button className={`btn ghost small ${s.use}`} onClick={() => onUse(a.name)} data-tip="Escrever no campo da ação" data-tip-align="end">
+              Usar
+            </button>
+          )}
         </div>
         <div className={s.stats}>
           {cost && (

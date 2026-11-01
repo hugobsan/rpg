@@ -5,7 +5,6 @@ import type { Character, TurnEvent } from "@/lib/types";
 import type { CampaignView } from "@/lib/campaignView";
 import { getClock } from "@/lib/clock";
 import { campaignTheme } from "@/lib/theme";
-import { effectiveCost } from "@/lib/progression";
 import { DIFFICULTIES, getTable } from "@/lib/table";
 import { useTurn } from "./game/useTurn";
 import { useJobs } from "./game/useJobs";
@@ -28,7 +27,7 @@ import TableRulesPanel from "./TableRulesPanel";
 import Skeleton from "./ui/Skeleton";
 import { toast } from "./ui/Toast";
 import SceneHeader from "./game/SceneHeader";
-import Composer, { type ComposerHandle, type QuickGroup } from "./game/Composer";
+import Composer, { type ComposerHandle } from "./game/Composer";
 import SidePanel, { type PanelTab } from "./game/SidePanel";
 import Icon from "./game/Icon";
 import { Choices, Draft, EditLine, FeedLine, Recap, TurnWait, type Cast } from "./game/Feed";
@@ -86,7 +85,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
 
   const {
     state, setState, reload: reloadState, error, setError,
-    feed, draft, choices, busy, status, send, regenerate, edit,
+    feed, draft, choices, setChoices, busy, status, send, regenerate, edit,
     pendingDice, rolling, roll, releaseDice,
     feedRef, hasMore, loadingOlder, loadOlder,
   } = useTurn(campaignId, { initial, onEvent });
@@ -186,22 +185,22 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   // sua última mensagem: só ela pode ser editada (o servidor só desfaz o último turno; depois de um Continuar, nenhuma)
   const lastPlayer = useMemo(() => feed.findLast((i) => i.kind === "player"), [feed]);
   const idle = !busy && !pendingDice;
-  // ações rápidas do composer: técnicas (com o custo efetivo) e itens da ficha
-  const ruleset = state?.campaign.ruleset;
-  const quick = useMemo<QuickGroup[]>(() => {
-    if (!player || !ruleset) return [];
-    const res = (k: string) => ruleset.resources.find((r) => r.key === k)?.label ?? k;
-    return [
-      {
-        label: ruleset.abilitiesLabel || "Habilidades",
-        items: player.sheet.abilities.map((a) => {
-          const c = effectiveCost(ruleset, a);
-          return { name: a.name, note: c?.amount ? `${c.amount} ${res(c.resource)}` : undefined, title: a.effect || a.description };
-        }),
-      },
-      { label: "Itens", items: player.sheet.inventory.map((i) => ({ name: i.name, note: i.qty > 1 ? `×${i.qty}` : undefined, title: i.description })) },
-    ].filter((g) => g.items.length);
-  }, [player, ruleset]);
+  // Ações rápidas: opções para o momento da cena, no lugar das do Mestre (mesmos cartões: clicar envia, lápis edita)
+  const [suggesting, setSuggesting] = useState(false);
+  const suggest = async () => {
+    setSuggesting(true);
+    const res = await fetch(`/api/campaigns/${campaignId}/suggest`, { method: "POST" }).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    setSuggesting(false);
+    if (!res?.ok || !data?.choices?.length) return toast(data?.error || "Não deu para sugerir ações agora.", { kind: "alerta", title: "Ações rápidas" });
+    setChoices(data.choices);
+    requestAnimationFrame(() => feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight }));
+  };
+  // jutsu ou item pelo card da lateral: vai para o campo da ação (no celular a folha fecha)
+  const putOnComposer = (name: string) => {
+    composer.current?.use(name);
+    setDrawer(false);
+  };
   const sceneImage = state?.lastImage ?? null;
 
   const turnStarted = () => {
@@ -313,9 +312,9 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           </>
         );
       case "abilities":
-        return player && <AbilitiesView char={player} ruleset={campaign.ruleset} />;
+        return player && <AbilitiesView char={player} ruleset={campaign.ruleset} onUse={putOnComposer} />;
       case "inventory":
-        return player && <InventoryView char={player} campaignId={campaignId} disabled={busy} onChange={reloadState} />;
+        return player && <InventoryView char={player} campaignId={campaignId} disabled={busy} onChange={reloadState} onUse={putOnComposer} />;
       case "library":
         return <LibraryView campaignId={campaignId} ruleset={campaign.ruleset} jobs={jobs} onChange={reloadState} />;
       case "objectives":
@@ -425,7 +424,8 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           onSend={sendTurn}
           busy={busy}
           placeholder={placeholder}
-          quick={quick}
+          onSuggest={suggest}
+          suggesting={suggesting}
           onOoc={() => setOocOpen(true)}
         />
       </main>
