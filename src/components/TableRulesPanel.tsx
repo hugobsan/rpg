@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { Campaign, TableRules } from "@/lib/types";
-import { DIFFICULTIES, getTable, tableDc } from "@/lib/table";
+import { DIFFICULTIES, getTable, tableDc, XP_PACES, xpRule } from "@/lib/table";
 import { campaignTheme, inferTheme, THEMES } from "@/lib/theme";
 import s from "./TableRulesPanel.module.css";
 
@@ -13,12 +13,15 @@ const Svg = ({ d, size = 14 }: { d: string; size?: number }) => (
   </svg>
 );
 
-function Stepper({ value, onChange, label }: { value: number; onChange: (v: number) => void; label: string }) {
+function Stepper({ value, onChange, label, min = -10, max = 10, fmt = signed }: {
+  value: number; onChange: (v: number) => void; label: string; min?: number; max?: number; fmt?: (v: number) => string;
+}) {
+  const tone = fmt === signed ? (value > 0 ? s.up : value < 0 ? s.down : undefined) : undefined;
   return (
     <span className={s.stepper} role="group" aria-label={label}>
-      <button type="button" aria-label="Diminuir" disabled={value <= -10} onClick={() => onChange(value - 1)}><Svg d="M5 12h14" /></button>
-      <output className={value > 0 ? s.up : value < 0 ? s.down : undefined} aria-live="polite">{signed(value)}</output>
-      <button type="button" aria-label="Aumentar" disabled={value >= 10} onClick={() => onChange(value + 1)}><Svg d="M12 5v14M5 12h14" /></button>
+      <button type="button" aria-label="Diminuir" disabled={value <= min} onClick={() => onChange(value - 1)}><Svg d="M5 12h14" /></button>
+      <output className={tone} aria-live="polite">{fmt(value)}</output>
+      <button type="button" aria-label="Aumentar" disabled={value >= max} onClick={() => onChange(value + 1)}><Svg d="M12 5v14M5 12h14" /></button>
     </span>
   );
 }
@@ -101,12 +104,13 @@ export default function TableRulesPanel({ campaign, onChange }: { campaign: Camp
   };
   const suggested = inferTheme(campaign.ruleset);
   const chosenTheme = typeof campaign.state.theme === "string";
+  const xp = xpRule(table);
   const tick = (section: string) => saved === section && <span className={s.saved}>salvo</span>;
 
   return (
     <div className={s.wrap}>
       <p className={s.intro}>
-        Como a mesa joga: o quanto os testes são difíceis e o clima visual. Vale a partir da próxima rolagem.
+        Como a mesa joga: o quanto os testes são difíceis, o ritmo de XP e o clima visual. Vale a partir da próxima rolagem.
         Também dá para pedir ao Mestre na <b>conversa fora do jogo</b> (ex.: &quot;deixa o combate mais difícil&quot;).
       </p>
       {error && <div className="error-box">{error}</div>}
@@ -196,6 +200,35 @@ export default function TableRulesPanel({ campaign, onChange }: { campaign: Camp
             20 natural sempre passa e 1 natural sempre falha, seja qual for a CD.
           </span>
         </label>
+      </section>
+
+      <section className={s.section}>
+        <h4>Ganho de XP {tick("xp")}</h4>
+        <div className={s.seg} role="radiogroup" aria-label="Ritmo de XP">
+          {XP_PACES.map((p) => {
+            const on = xp.min === p.xp.min && xp.max === p.xp.max && xp.great === p.xp.great;
+            return (
+              <button key={p.key} type="button" role="radio" aria-checked={on} onClick={() => !on && save({ xp: { ...p.xp } }, "xp")}>
+                {p.label}<small>{p.xp.min}–{p.xp.max}% · {p.xp.great}%</small>
+              </button>
+            );
+          })}
+        </div>
+        <p className={s.tone}>
+          O Escrivão dá XP só por feito que a narração mostra concluído (missão, luta vencida, descoberta, avanço de treino),
+          em % do que falta para o próximo nível. Conversa, viagem e rotina não dão XP.
+        </p>
+        {/* cada passo respeita min ≤ max ≤ grande, então nunca manda uma regra inválida */}
+        {([
+          ["min", "Feito comum, mínimo", 0, xp.max],
+          ["max", "Feito comum, máximo", xp.min, xp.great],
+          ["great", "Feito grande, até", xp.max, 100],
+        ] as const).map(([k, label, lo, hi]) => (
+          <div key={k} className={s.line}>
+            <span>{label}</span>
+            <Stepper label={label} value={xp[k]} min={lo} max={hi} fmt={(v) => `${v}%`} onChange={(v) => save({ xp: { ...xp, [k]: v } }, "xp")} />
+          </div>
+        ))}
       </section>
 
       <section className={s.section}>

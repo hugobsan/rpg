@@ -324,6 +324,7 @@ export interface TableRules {
   categories: { key: string; label: string; offset: number }[]; // ajuste da CD por tipo de ação (até 12)
   crits: boolean; // 20 natural passa, 1 natural falha (só 1d20 com CD)
   notes?: string; // orientação livre de dificuldade para o Mestre
+  xp?: { min: number; max: number; great: number }; // XP por feito, em % do que falta para o próximo nível (o Escrivão aplica)
 }
 
 /** Mensagem particular de NPC não lida (sessão aberta pelo NPC com npc_message). */

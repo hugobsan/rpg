@@ -76,7 +76,7 @@ const OOC_PROMPT = `Você é o Mestre desta mesa de RPG, conversando FORA DO JOG
 - Se a fala trouxer uma orientação de como conduzir a mesa daqui para a frente (o que ele quer que aconteça, como o personagem dele deve ser retratado, ritmo, tom, estilo, algo que você deve parar de fazer ou corrigir), chame save_directive uma vez por orientação (uma para o momento atual e outra geral são duas), reescrevendo cada pedido como instrução curta e autossuficiente para você mesmo ler no turno, e confirme na resposta. Pergunta, dúvida, elogio ou comentário não viram diretriz. Não salve de novo o que já está em DIRETRIZES ATIVAS.
 - Se a orientação contrariar a coerência do mundo ou as regras, salve o que der e explique o limite.
 - Habilidade que falta, sobra ou com domínio errado: add_ability (acrescenta ou redefine pelo nome), remove_ability ou update_ability_progress. Se a correção contrariar o momento do cânone, avise em uma frase, mas aplique se ele confirmar ou insistir.
-- Dificuldade e dados são REGRAS DA MESA, não diretriz: "deixa os combates mais difíceis", "quero modo história", "sem críticos", "furtividade mais fácil" vão por set_table_rules: pedido sobre um tipo de ação (combate, furtividade, social...) vai em setCategories, sobre o jogo todo em difficulty/dcOffset; críticos em crits. Orientação de dificuldade que não cabe em número ("inimigos mais espertos", "pode matar meu personagem") vai em notes. Diga em números o que mudou.`;
+- Dificuldade e dados são REGRAS DA MESA, não diretriz: "deixa os combates mais difíceis", "quero modo história", "sem críticos", "furtividade mais fácil" vão por set_table_rules: pedido sobre um tipo de ação (combate, furtividade, social...) vai em setCategories, sobre o jogo todo em difficulty/dcOffset; críticos em crits; ritmo de XP ("quero subir de nível mais rápido") em xp. Orientação de dificuldade que não cabe em número ("inimigos mais espertos", "pode matar meu personagem") vai em notes. Diga em números o que mudou.`;
 
 const TABLE_TOOL: ToolDef = {
   type: "function",
@@ -92,6 +92,11 @@ const TABLE_TOOL: ToolDef = {
           description: `preset geral (${DIFFICULTIES.map((d) => `${d.key} = ${d.label}, CD ${d.dcOffset >= 0 ? "+" : ""}${d.dcOffset}`).join("; ")}); traz o ajuste de CD dele`,
         },
         dcOffset: { type: "number", description: "ajuste geral da CD, -10 a 10 (troca o do preset)" },
+        xp: {
+          type: "object",
+          description: "ritmo de XP por feito, em % do que falta para o próximo nível (mande só o que muda): min e max num feito comum, great num feito grande; inteiros 0-100, min ≤ max ≤ great",
+          properties: { min: { type: "number" }, max: { type: "number" }, great: { type: "number" } },
+        },
         setCategories: {
           type: "array",
           description: "cria ou muda o ajuste de CD de um tipo de ação (ex: Combate +2, Furtividade -1)",

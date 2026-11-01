@@ -18,6 +18,18 @@ export const getTable = (state: Record<string, unknown> | null | undefined): Tab
   ...(state?.table as Partial<TableRules> | undefined),
 });
 
+// ritmo de XP: % do que falta para o próximo nível por feito comum (min a max) e por feito grande (até great)
+export const XP_PACES = [
+  { key: "lento", label: "Lento", xp: { min: 2, max: 5, great: 12 } },
+  { key: "normal", label: "Normal", xp: { min: 5, max: 10, great: 25 } },
+  { key: "rapido", label: "Rápido", xp: { min: 10, max: 20, great: 40 } },
+];
+export const xpRule = (t: TableRules) => t.xp ?? XP_PACES[1].xp;
+export const xpRuleText = (t: TableRules) => {
+  const x = xpRule(t);
+  return `de ${x.min} a ${x.max}% do que falta para o próximo nível num feito comum, até ${x.great}% num grande`;
+};
+
 const preset = (d: Difficulty) => DIFFICULTIES.find((x) => x.key === d) ?? DIFFICULTIES[2];
 const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : "±0");
 const offsetOk = (n: number) => Number.isInteger(n) && Math.abs(n) <= 10;
@@ -66,6 +78,14 @@ export function normalizeTable(patch: Record<string, unknown>, current: TableRul
     const notes = String(patch.notes ?? "").trim();
     if (notes.length > 600) return "notes: até 600 caracteres";
     t.notes = notes || undefined;
+  }
+  if (patch.xp !== undefined) {
+    // parcial vale (o Mestre fora do jogo manda só o que muda)
+    const raw = { ...xpRule(current), ...(patch.xp as Record<string, unknown>) };
+    const xp = { min: Number(raw.min), max: Number(raw.max), great: Number(raw.great) };
+    if (![xp.min, xp.max, xp.great].every((v) => Number.isInteger(v) && v >= 0 && v <= 100) || xp.min > xp.max || xp.max > xp.great)
+      return "xp: inteiros de 0 a 100 com min ≤ max ≤ great (% do que falta para o próximo nível)";
+    t.xp = xp;
   }
   return t;
 }
@@ -128,6 +148,7 @@ export function tableSummary(t: TableRules): string {
     `${preset(t.difficulty).label} (CD ${signed(t.dcOffset)})`,
     t.categories.length ? t.categories.map((c) => `${c.label} ${signed(c.offset)}`).join(", ") : "",
     `críticos ${t.crits ? "ligados" : "desligados"}`,
+    `XP ${xpRule(t).min}–${xpRule(t).max}% por feito (grande até ${xpRule(t).great}%)`,
     t.notes ? `nota: ${t.notes}` : "",
   ]
     .filter(Boolean)

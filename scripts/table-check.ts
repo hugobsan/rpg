@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { pool, q } from "../src/lib/db";
 import { rollDice } from "../src/lib/dice";
 import { executeGmTool, saveTable, ToolContext } from "../src/lib/tools";
-import { DEFAULT_TABLE, getTable, mergeCategories, normalizeTable, tableDc, tablePromptBlock } from "../src/lib/table";
+import { DEFAULT_TABLE, getTable, mergeCategories, normalizeTable, tableDc, tablePromptBlock, xpRule, xpRuleText } from "../src/lib/table";
 import { restoreSnapshot, takeSnapshot } from "../src/lib/turnSnapshot";
 import type { Campaign, DiceResult, Scene, TableRules, TurnEvent } from "../src/lib/types";
 
@@ -21,6 +21,12 @@ async function main() {
   const hard = ok(normalizeTable({ difficulty: "hard" }, DEFAULT_TABLE));
   assert.equal(hard.dcOffset, 2, "preset traz o ajuste dele");
   assert.equal(ok(normalizeTable({ difficulty: "brutal", dcOffset: 3 }, DEFAULT_TABLE)).dcOffset, 3, "ajuste explícito vence o preset");
+  // ritmo de XP: padrão 5–10%/25%, patch parcial mantém o resto, ordem min ≤ max ≤ great
+  assert.deepEqual(xpRule(DEFAULT_TABLE), { min: 5, max: 10, great: 25 });
+  assert.deepEqual(ok(normalizeTable({ xp: { great: 40 } }, DEFAULT_TABLE)).xp, { min: 5, max: 10, great: 40 }, "parcial");
+  assert.equal(typeof normalizeTable({ xp: { min: 12 } }, DEFAULT_TABLE), "string", "min acima do max é recusado");
+  assert.equal(typeof normalizeTable({ xp: { great: 101 } }, DEFAULT_TABLE), "string", "acima de 100 é recusado");
+  assert.match(xpRuleText({ ...DEFAULT_TABLE, xp: { min: 2, max: 5, great: 12 } }), /de 2 a 5% .* até 12%/);
   assert.equal(ok(normalizeTable({ crits: true }, hard)).dcOffset, 2, "patch parcial mantém o resto");
 
   // validação

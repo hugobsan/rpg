@@ -20,7 +20,7 @@ import { attributeCap, attributePoints, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
 import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { getStage, loadMap, mapPromptBlock, normName } from "./map";
-import { getTable, tablePromptBlock } from "./table";
+import { getTable, tablePromptBlock, xpRuleText } from "./table";
 import { takeSnapshot } from "./turnSnapshot";
 import {
   DEFERRED_TOOLS,
@@ -723,6 +723,7 @@ async function runScribe(
   const state = [
     `Hora na história: ${clock ? `${formatClock(clock.minutes)} (${period(clock.minutes)})` : "não definida (missão só sem prazo)"}`,
     objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null),
+    `REGRA DE XP DA MESA: ${xpRuleText(getTable(campaign.state))}.`,
     player ? `\n--- JOGADOR ---\n${sheet(player)}` : "",
     npcs.length ? `\n--- NPCs EM CENA ---\n${npcs.map(sheet).join("\n")}` : "",
   ];

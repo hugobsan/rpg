@@ -141,7 +141,7 @@ Regras: memórias são fatos que precisarão ser lembrados muitas sessões depoi
 O QUE REGISTRAR
 - Recursos (update_resource com delta): dano sofrido, cura, energia gasta em algo que não foi uma técnica resolvida pelo Mestre, descanso que recupera. Use os números da narração ou dos dados já rolados (dano rolado com roll_dice que a narração confirma que acertou). Sem número, estime pouco e proporcional ao máximo da barra; se a narração não mostra efeito, não mexa.
 - Itens (add_item/remove_item): o que o personagem pegou, ganhou, comprou, recebeu, perdeu, entregou, gastou ou consumiu. Dinheiro também é item (ex.: "Ryō", com qty). Item que já está no inventário vai com o nome de lá.
-- XP (grant_xp): só por um feito que a narração mostra concluído: missão cumprida, luta vencida, descoberta importante, avanço marcante de treino. De 5 a 10% do que falta para o próximo nível num feito comum, até 25% num grande. Conversa, viagem e rotina não dão XP.
+- XP (grant_xp): só por um feito que a narração mostra concluído: missão cumprida, luta vencida, descoberta importante, avanço marcante de treino. Quanto: pela REGRA DE XP DA MESA, no estado. Conversa, viagem e rotina não dão XP.
 - Domínio (update_ability_progress com delta): só por um evento que faz a técnica evoluir (um insight, observar um mestre, um momento-chave). Uso (use_ability) e treino (train) já sobem o domínio.
 - Campo extra da ficha (update_extra_field): quando a narração revela ou muda um deles (afinidade, clã, vila...).
 - Memórias (add_memory): no máximo 2, só do que precisa ser lembrado daqui a 20 sessões: revelação, promessa, dívida, mudança de relação, morte, marco da história (kind milestone). Fato autossuficiente, com nomes. Rotina não vira memória.
@@ -519,6 +519,11 @@ async function insertDefaultAgents(): Promise<void> {
   }
   for (const [from, to] of GM_PROMPT_FIXES)
     await q(`UPDATE agents SET system_prompt = replace(system_prompt, $1, $2) WHERE id = 'gm' AND strpos(system_prompt, $1) > 0`, [from, to]);
+  // o ritmo de XP virou regra da mesa (Mesa > Ganho de XP): o Escrivão lê a regra no estado de cada turno
+  await q(`UPDATE agents SET system_prompt = replace(system_prompt, $1, $2) WHERE id = 'scribe' AND strpos(system_prompt, $1) > 0`, [
+    "De 5 a 10% do que falta para o próximo nível num feito comum, até 25% num grande.",
+    "Quanto: pela REGRA DE XP DA MESA, no estado.",
+  ]);
 }
 
 export async function getAgent(id: string): Promise<AgentConfig> {
