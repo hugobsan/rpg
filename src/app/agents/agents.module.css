@@ -79,3 +79,20 @@
 .pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 0 var(--s-3); min-width: 0; }
 @media (max-width: 480px) { .pick { grid-template-columns: 1fr; } }
 
+
+/* presets de fonte */
+.presets { margin-bottom: var(--s-5); display: flex; flex-direction: column; gap: var(--s-3); }
+.presets h2 { margin: 0; font-size: calc(19px * var(--display-scale)); }
+.presets > p { margin: 0; max-width: 80ch; font-size: 13.5px; }
+.presetList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-2); }
+.presetList li {
+  display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; padding: var(--s-3);
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-sunken);
+}
+.presetList li.presetOn { border-color: var(--accent-line); }
+.presetInfo { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.presetInfo .pill { margin: 0; }
+.presetInfo .hint { flex-basis: 100%; margin-top: 0; }
+.presetActions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+.presetNew { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+.presetNew input { flex: 1; min-width: 220px; }

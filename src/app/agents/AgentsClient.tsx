@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { AgentConfig, SourceView } from "@/lib/types";
+import { PRESET_FIXED, presetActive, snapshot, type AgentPreset } from "@/lib/agentPresets";
 import Loader from "@/components/ui/Loader";
 import { toast } from "@/components/ui/Toast";
 import AgentsDiagram from "./AgentsDiagram";
@@ -42,8 +43,12 @@ const usd = (n: number | null | undefined) =>
   n == null ? "?" : n === 0 ? "grátis" : `US$ ${n.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}`;
 const ctx = (n: number) => `${Math.round(n / 1000).toLocaleString("pt-BR")} mil`;
 
-export default function AgentsClient({ initialAgents, sources }: { initialAgents: AgentConfig[]; sources: SourceView[] }) {
+export default function AgentsClient({ initialAgents, sources, initialPresets }: {
+  initialAgents: AgentConfig[]; sources: SourceView[]; initialPresets: AgentPreset[];
+}) {
   const [agents, setAgents] = useState(() => [...initialAgents].sort((a, b) => rank(a.id) - rank(b.id)));
+  // sobe a cada preset aplicado: os cartões remontam com o formulário do modelo novo
+  const [gen, setGen] = useState(0);
   // modelos por fonte, só para o editor (seletor de modelo e preço ao vivo): ausente = carregando, null = a fonte não listou
   const [models, setModels] = useState<Record<string, Model[] | null>>({});
   const asked = useRef(new Set<string>());
@@ -67,10 +72,15 @@ export default function AgentsClient({ initialAgents, sources }: { initialAgents
   return (
     <>
       <AgentsDiagram />
+      <Presets agents={agents} sources={sources} initial={initialPresets}
+        onApplied={(updated) => {
+          setAgents((list) => list.map((x) => updated.find((u) => u.id === x.id) ?? x));
+          setGen((g) => g + 1);
+        }} />
       <div className={s.grid}>
         {agents.map((a) => (
           <AgentCard
-            key={a.id}
+            key={`${a.id}-${gen}`}
             agent={a}
             sources={sources}
             models={models}
@@ -84,6 +94,119 @@ export default function AgentsClient({ initialAgents, sources }: { initialAgents
         ))}
       </div>
     </>
+  );
+}
+
+/** Presets de fonte: foto da fonte e do modelo de cada agente, aplicada de uma vez (Jev, Ilustrador e Voz ficam fora). */
+function Presets({ agents, sources, initial, onApplied }: {
+  agents: AgentConfig[];
+  sources: SourceView[];
+  initial: AgentPreset[];
+  onApplied: (updated: AgentConfig[]) => void;
+}) {
+  const [presets, setPresets] = useState(initial);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState<string | null>(null); // id do preset sendo aplicado/gravado
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const srcName = (id: string) => (id === "openrouter" ? "OpenRouter" : sources.find((x) => x.id === id)?.name ?? id);
+  const fixed = agents.filter((a) => PRESET_FIXED.includes(a.id)).map((a) => a.name).join(", ");
+
+  const persist = async (next: AgentPreset[], ok: string) => {
+    const res = await fetch("/api/agents/presets", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ presets: next }),
+    }).catch(() => null);
+    if (!res?.ok) return toast((await res?.json().catch(() => null))?.error || "Não foi possível salvar os presets.", { kind: "alerta" });
+    setPresets(await res.json());
+    toast(ok, { kind: "sucesso" });
+  };
+
+  const create = async () => {
+    const n = name.trim();
+    if (!n) return;
+    setBusy("new");
+    await persist([...presets, { id: crypto.randomUUID(), name: n, agents: snapshot(agents) }], `Preset "${n}" salvo com a configuração atual.`);
+    setName("");
+    setBusy(null);
+  };
+
+  // cada agente pelo PUT de sempre (valida fonte e modelo e busca o preço); quem já está igual não é tocado
+  const apply = async (p: AgentPreset) => {
+    setBusy(p.id);
+    type Result = { ok: AgentConfig } | { error: string } | null;
+    const results = await Promise.all(Object.entries(p.agents).map(async ([id, e]): Promise<Result> => {
+      const a = agents.find((x) => x.id === id);
+      if (!a || presetActive({ ...p, agents: { [id]: e } }, [a]) && !!a.params.cache === !!e.cache && a.web_search === !!e.web_search) return null;
+      const params = { ...a.params, cache: !!e.cache, ...(e.complexModel !== undefined && { complexModel: e.complexModel }) };
+      const res = await fetch(`/api/agents/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: e.source, model: e.model, web_search: !!e.web_search, params }),
+      }).catch(() => null);
+      if (res?.ok) return { ok: (await res.json()) as AgentConfig };
+      return { error: `${a.name}: ${(await res?.json().catch(() => null))?.error || `erro ${res?.status ?? "de rede"}`}` };
+    }));
+    const updated = results.flatMap((r) => (r && "ok" in r ? [r.ok] : []));
+    const errors = results.flatMap((r) => (r && "error" in r ? [r.error] : []));
+    if (updated.length) onApplied(updated);
+    if (errors.length) toast(errors.join(" · "), { kind: "alerta", title: `Preset "${p.name}" aplicado em parte` });
+    else toast(updated.length ? `${updated.length} agente(s) trocado(s).` : "Os agentes já estavam assim.", { kind: "sucesso", title: `Preset "${p.name}" em uso` });
+    setBusy(null);
+  };
+
+  const summary = (p: AgentPreset) => {
+    const count = new Map<string, number>();
+    for (const e of Object.values(p.agents)) count.set(e.source, (count.get(e.source) ?? 0) + 1);
+    return [...count].map(([src, n]) => `${srcName(src)} ×${n}`).join(" · ");
+  };
+
+  return (
+    <section className={`card ${s.presets}`} aria-labelledby="presets-title">
+      <h2 id="presets-title">Presets de fonte</h2>
+      <p className="muted">
+        Troca a fonte e o modelo de todos os agentes de uma vez, quando o saldo de uma fonte aperta. Para criar, deixe os agentes
+        como quer (fonte, modelo, turnos complexos do Mestre, cache) e salve a configuração atual com um nome.
+        {fixed && ` ${fixed} ficam fora: dependem do OpenRouter.`}
+      </p>
+      {presets.length > 0 && (
+        <ul className={s.presetList}>
+          {presets.map((p) => {
+            const active = presetActive(p, agents);
+            return (
+              <li key={p.id} className={active ? s.presetOn : undefined}>
+                <div className={s.presetInfo}>
+                  <b>{p.name}</b>{active && <span className="pill on">em uso</span>}
+                  <span className={s.hint}>{summary(p)}</span>
+                </div>
+                <div className={s.presetActions}>
+                  {deleting === p.id ? <>
+                    <button className="btn small danger" onClick={() => { setDeleting(null); persist(presets.filter((x) => x.id !== p.id), `Preset "${p.name}" excluído.`); }}>Excluir</button>
+                    <button className="btn small ghost" onClick={() => setDeleting(null)}>Cancelar</button>
+                  </> : <>
+                    <button className="btn small primary" disabled={!!busy || active} onClick={() => apply(p)}>
+                      {busy === p.id && <Loader size={14} label="Aplicando" />} Aplicar
+                    </button>
+                    <button className="btn small ghost" disabled={!!busy || active} data-tip="Salvar a configuração atual neste preset"
+                      onClick={() => persist(presets.map((x) => (x.id === p.id ? { ...x, agents: snapshot(agents) } : x)), `Preset "${p.name}" atualizado.`)}>
+                      Atualizar
+                    </button>
+                    <button className="btn small ghost" disabled={!!busy} onClick={() => setDeleting(p.id)}>Excluir</button>
+                  </>}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <form className={s.presetNew} onSubmit={(e) => { e.preventDefault(); create(); }}>
+        <input type="text" value={name} maxLength={60} placeholder="Nome do preset (ex.: OpenAI, Anthropic, OpenRouter)"
+          aria-label="Nome do preset" onChange={(e) => setName(e.target.value)} />
+        <button className="btn" disabled={!name.trim() || !!busy}>
+          {busy === "new" && <Loader size={14} label="Salvando" />} Salvar configuração atual
+        </button>
+      </form>
+    </section>
   );
 }
 
