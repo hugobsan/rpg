@@ -229,10 +229,11 @@ async function main() {
   // 11. modelo que só gera imagem (pelo catálogo): vai por POST /images do OpenRouter; os de imagem + texto seguem no chat
   state.source = "openrouter";
   sent.length = 0;
-  const flux = await chat({ ...GM, model: "black-forest-labs/flux-3-image-klein", tools: undefined, modalities: ["image", "text"] });
+  const flux = await chat({ ...GM, model: "black-forest-labs/flux-3-image-klein", tools: undefined, modalities: ["image", "text"], aspectRatio: "1:1" });
   const imgCall = sent.find((x) => x.url === "https://openrouter.ai/api/v1/images");
   assert.ok(imgCall, "modelo que só gera imagem vai por POST /images do OpenRouter");
   assert.equal(imgCall.body.model, "black-forest-labs/flux-3-image-klein");
+  assert.equal(imgCall.body.aspect_ratio, "1:1", "proporção pedida vai no corpo");
   assert.match(String(imgCall.body.prompt), /abro a porta/, "o prompt é o texto das mensagens");
   assert.ok(flux.images[0].startsWith("data:image/svg+xml;base64,"), "media_type da resposta vira o tipo do data URL");
   assert.equal(lastLog().cost, 0.008, "custo real do OpenRouter");

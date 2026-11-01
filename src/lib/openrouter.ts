@@ -44,6 +44,7 @@ export interface ChatOptions {
   tools?: ToolDef[];
   webSearch?: boolean;
   modalities?: string[];
+  aspectRatio?: string; // proporção da imagem ("1:1"), no POST /images do OpenRouter
   // raciocínio do modelo (parâmetro unificado do OpenRouter), ex.: { effort: "low" }
   reasoning?: Record<string, unknown>;
   // streaming: recebe cada pedaço do texto enquanto a resposta é gerada (o resultado final vem igual)
@@ -206,7 +207,11 @@ export function imagesRequest(opts: ChatOptions, src: Source) {
     .filter(Boolean)
     .join("\n\n");
   const { headers } = chatRequest(opts, src);
-  if (src.id === OPENROUTER) return { url: `${src.url}/images`, headers, body: { model: opts.model, prompt } as Record<string, unknown> };
+  if (src.id === OPENROUTER) {
+    const body: Record<string, unknown> = { model: opts.model, prompt };
+    if (opts.aspectRatio) body.aspect_ratio = opts.aspectRatio; // o provedor ajusta para a mais próxima que aceita
+    return { url: `${src.url}/images`, headers, body };
+  }
   return { url: `${src.url}/images/generations`, headers, body: { model: opts.model, prompt, n: 1, response_format: "b64_json" } as Record<string, unknown> };
 }
 

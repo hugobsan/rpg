@@ -149,6 +149,7 @@ export async function drawPortrait(campaignId: string, characterId: string): Pro
       ),
     }],
     modalities: ["image", "text"],
+    aspectRatio: "1:1", // retrato quadrado (o prompt também pede, mas FLUX, Recraft e afins seguem o parâmetro)
     max_tokens: agent.max_tokens,
     temperature: agent.temperature,
     agentId: "image",
