@@ -1,7 +1,7 @@
 import { q } from "./db";
 import { type Advanced, getAdvanced } from "./advanced";
 import { getAgent } from "./agents";
-import { chat, ChatMessage, CHARS_PER_TOKEN, estimateTokens } from "./openrouter";
+import { chat, ChatMessage, CHARS_PER_TOKEN, estimateTokens, ToolCall } from "./openrouter";
 import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
 import {
   activeDirectives,
@@ -23,7 +23,17 @@ import { getStage, loadMap, mapPromptBlock, normName } from "./map";
 import { localMapsPromptBlock } from "./cartographer";
 import { getTable, tablePromptBlock } from "./table";
 import { takeSnapshot } from "./turnSnapshot";
-import { executeGmTool, findNamed, GM_TOOLS, saveClock, setNpcsActive, ToolContext } from "./tools";
+import {
+  DEFERRED_TOOLS,
+  executeGmTool,
+  findNamed,
+  GM_TOOLS,
+  GM_TURN_TOOLS,
+  saveClock,
+  SCRIBE_TOOLS,
+  setNpcsActive,
+  ToolContext,
+} from "./tools";
 import {
   Campaign,
   CampaignScript,
@@ -132,8 +142,8 @@ const STYLE_INSTRUCTIONS: Record<string, string> = {
 const MODE_HINTS: Record<string, string> = {
   exploration: "Cena de EXPLORAÇÃO: descrições sensoriais ricas, ritmo médio, semeie ganchos.",
   dialogue: "Cena de DIÁLOGO: respostas curtas, foco nas falas e linguagem corporal dos NPCs. Não resuma conversas — interprete-as.",
-  battle: "Cena de BATALHA: turno a turno, tático e tenso. Descreva posições e aberturas, peça a ação do jogador, resolva com rolagens e atualize recursos. Inimigos agem com inteligência coerente.",
-  training: "Cena de TREINAMENTO: resolva com train informando horas realistas (ele avança o relógio e aplica o ganho de domínio ou atributo); respeite a recusa por exaustão. Recompense marcos reais com XP.",
+  battle: "Cena de BATALHA: turno a turno, tático e tenso. Descreva posições e aberturas, peça a ação do jogador, resolva com rolagens e narre dano e gasto com números claros. Inimigos agem com inteligência coerente.",
+  training: "Cena de TREINAMENTO: resolva com train informando horas realistas (ele avança o relógio e aplica o ganho de domínio ou atributo); respeite a recusa por exaustão. Deixe claros na narração os marcos reais (o Escrivão dá a XP).",
   downtime: "Cena de DESCANSO: leve e breve; avance o tempo com resumos e cenas curtas de personagem.",
 };
 
@@ -165,6 +175,8 @@ async function buildGmSystem(
     "Ao abrir cena nova ou mudar de local (set_scene), informe present com todos os NPCs que estão lá: quem ficar de fora sai de cena.",
     "search_history busca no chat inteiro da campanha (turnos e conversas com NPCs, com dia, hora e local): use para lembrar exatamente o que alguém disse ou fez, ou detalhes antigos que não viraram memória.",
     "O estado do turno (cena, hora, personagens, memórias) chega numa mensagem de contexto logo antes da ação do jogador.",
+    // cada ferramenta chamada antes do texto custa outra rodada com o prompt inteiro
+    `Anotações (${[...DEFERRED_TOOLS].join(", ")}) só valem depois da narração: chame-as junto da narração, no fim da resposta, nunca antes dela. Dano, cura e gasto de recurso, itens ganhos ou perdidos, XP, domínio por evento, memórias e missões o Escrivão registra sozinho depois, pelo que a narração mostra: narre com números claros (quem perdeu quanto, o que pegou ou entregou). O relógio também anda sozinho pelo tempo que a narração mostra; set_time só em saltos explícitos.`,
   ];
   const parts = [
     tablePromptBlock(getTable(campaign.state)),
@@ -276,6 +288,17 @@ export async function saveMessage(
 }
 
 // ---------- turno do jogador ----------
+
+/** Resposta imediata de uma anotação (DEFERRED_TOOLS): ela roda depois da narração. */
+const NOTED = "Anotado: será aplicado depois da narração.";
+
+const argsOf = (c: ToolCall): Record<string, unknown> => {
+  try {
+    return JSON.parse(c.function.arguments || "{}");
+  } catch {
+    return {};
+  }
+};
 
 function parseChoices(text: string): { clean: string; choices: string[] } {
   const m = text.match(/```choices\s*([\s\S]*?)```/);
@@ -412,6 +435,8 @@ export async function runTurn(
   let finalChoices: string[] = [];
   let timeMoved = false; // o Mestre chamou advance_time/set_time/train neste turno
   let npcGate = false; // a narração já voltou uma vez por NPC sem registro
+  const deferred: ToolCall[] = []; // anotações do Mestre (DEFERRED_TOOLS), aplicadas depois da narração
+  const done: string[] = []; // o que as ferramentas do Mestre já fizeram, para o Escrivão não repetir
 
   for (let round = 0; round <= maxRounds; round++) {
     // narração em streaming: o texto da rodada vai ao jogador enquanto chega, depois do que já ficou;
@@ -430,7 +455,7 @@ export async function runTurn(
       messages,
       temperature: gm.temperature,
       max_tokens: gm.max_tokens,
-      tools: GM_TOOLS,
+      tools: GM_TURN_TOOLS,
       webSearch: useWeb && round === 0,
       agentId: "gm",
       campaignId,
@@ -444,24 +469,31 @@ export async function runTurn(
       },
     });
 
-    if (!result.toolCalls.length || round === maxRounds) {
-      const last = parseChoices(result.content || "");
-      finalText = [kept, last.clean].filter(Boolean).join("\n\n");
-      finalChoices = last.choices.length ? last.choices : keptChoices;
+    const told = parseChoices(result.content || "");
+    // narração com só anotações junto: elas ficam para depois e o turno acaba aqui, sem outra chamada ao modelo
+    const notesOnly = result.toolCalls.length > 0 && !!told.clean && result.toolCalls.every((c) => DEFERRED_TOOLS.has(c.function.name));
+    if (!result.toolCalls.length || notesOnly || round === maxRounds) {
+      deferred.push(...result.toolCalls.filter((c) => DEFERRED_TOOLS.has(c.function.name)));
+      finalText = [kept, told.clean].filter(Boolean).join("\n\n");
+      finalChoices = told.choices.length ? told.choices : keptChoices;
       // NPC com nome falando sem estar registrado: devolve uma vez para o Mestre registrar e reescrever
       const missing = !npcGate && round < maxRounds ? unregisteredSpeakers(finalText, await getCharacters(campaignId)) : [];
       if (!missing.length) break;
       npcGate = true;
       discardDraft();
-      messages.push({ role: "assistant", content: result.content || "" });
-      messages.push({
-        role: "user",
-        content: `(Sistema, fora do jogo: ${missing.join(", ")} fala${missing.length > 1 ? "m" : ""} na narração mas não está${missing.length > 1 ? "ão" : ""} registrado${missing.length > 1 ? "s" : ""}. Chame create_npc agora para cada um (canon=true se for da obra; se já existir com outro nome, use set_npc_active nesse nome) e então escreva de novo a narração inteira deste turno, completa (inclusive o que escreveu antes das ferramentas). Se for figurante sem nome, só repita a narração inteira.)`,
-      });
+      const gate = `(Sistema, fora do jogo: ${missing.join(", ")} fala${missing.length > 1 ? "m" : ""} na narração mas não está${missing.length > 1 ? "ão" : ""} registrado${missing.length > 1 ? "s" : ""}. Chame create_npc agora para cada um (canon=true se for da obra; se já existir com outro nome, use set_npc_active nesse nome) e então escreva de novo a narração inteira deste turno, completa (inclusive o que escreveu antes das ferramentas). Se for figurante sem nome, só repita a narração inteira.)`;
+      if (notesOnly) {
+        // as anotações já estão na fila: a resposta delas leva o aviso (a API quer o resultado de cada ferramenta)
+        messages.push({ role: "assistant", content: result.content || null, tool_calls: result.toolCalls });
+        for (const call of result.toolCalls) messages.push({ role: "tool", content: NOTED, tool_call_id: call.id, name: call.function.name });
+        messages[messages.length - 1].content += `\n\n${gate}`;
+      } else {
+        messages.push({ role: "assistant", content: result.content || "" });
+        messages.push({ role: "user", content: gate });
+      }
       continue;
     }
     // texto junto das ferramentas: o jogador já leu, então fica (as opções valem se a próxima rodada não trouxer outras)
-    const told = parseChoices(result.content || "");
     if (told.clean) kept = [kept, told.clean].filter(Boolean).join("\n\n");
     if (told.choices.length) keptChoices = told.choices;
     const sources = useWeb && round === 0 ? webSources(result.raw) : "";
@@ -471,6 +503,11 @@ export async function runTurn(
       tool_calls: result.toolCalls,
     });
     for (const call of result.toolCalls) {
+      if (DEFERRED_TOOLS.has(call.function.name)) {
+        deferred.push(call);
+        messages.push({ role: "tool", content: NOTED, tool_call_id: call.id, name: call.function.name });
+        continue;
+      }
       let output: string;
       try {
         const args = JSON.parse(call.function.arguments || "{}");
@@ -490,6 +527,7 @@ export async function runTurn(
       } catch (e) {
         output = `Erro: ${e instanceof Error ? e.message : String(e)}`;
       }
+      if (!/^(search_|read_|get_|list_)/.test(call.function.name)) done.push(`${call.function.name} ${call.function.arguments} → ${output.slice(0, 300)}`);
       messages.push({
         role: "tool",
         content: output,
@@ -508,10 +546,20 @@ export async function runTurn(
   emit({ type: "narration", content: narration, messageId: msgId });
   if (choices.length) emit({ type: "choices", choices });
 
-  // depois da narração (o jogador já está lendo); antes do done, para o "gerar novamente" não cruzar com a gravação
+  // depois da narração (o jogador já está lendo); antes do done, para o "gerar novamente" não cruzar com a gravação.
+  // Anotações primeiro: só SQL, e o local e o elenco abaixo leem o que set_scene marcou (sceneChanged, castSet)
+  for (const call of deferred) {
+    if (call.function.name === "note_objective") continue; // vai para o Escrivão
+    await executeGmTool(call.function.name, argsOf(call), toolCtx).catch((e) => console.warn(`[anotação] ${call.function.name}:`, e));
+  }
+  scene = toolCtx.scene;
+  const briefs = deferred.filter((c) => c.function.name === "note_objective").map((c) => String(argsOf(c).brief || "")).filter(Boolean);
   await Promise.all([
     maybeCompact(campaignId, scene).catch(() => {}),
-    timeMoved ? null : fallbackClock(campaignId, campaign, scene, playerInput, narration, emit).catch(() => {}),
+    // Escrivão depois do relógio: prazo relativo de missão conta da hora nova e as gravações de objetivos não se cruzam
+    (timeMoved ? Promise.resolve() : fallbackClock(campaignId, campaign, scene, playerInput, narration, emit).catch(() => {}))
+      .then(() => runScribe(campaignId, toolCtx, playerInput, narration, done, briefs))
+      .catch((e) => console.warn("[escrivão]", e)),
     // local antes do elenco: quem continua na cena é julgado já no lugar novo
     fallbackPlace(campaignId, toolCtx, playerInput, narration)
       .catch(() => {})
@@ -640,6 +688,71 @@ async function fallbackClock(
   emit({ type: "time", minutes: clock.minutes + delta });
   // prazo vencido aqui (depois da narração) aparece como PERDIDO no contexto do próximo turno
   await saveClock(campaignId, clock.minutes + delta, emit);
+}
+
+const SCRIBE_TOOL_DEFS = GM_TOOLS.filter((t) => SCRIBE_TOOLS.has(t.function.name));
+
+/**
+ * Escrivão: depois da narração, registra nas fichas o que a ação e a narração estabeleceram (recursos, itens, XP,
+ * domínio por evento, memórias e missões, inclusive as anotações note_objective do Mestre). Essas ferramentas saíram
+ * do Mestre: cada uma custava outra rodada com o prompt inteiro dele. Uma chamada com as ferramentas em paralelo e,
+ * só se alguma deu erro, uma segunda para corrigir. Falhou = nada muda.
+ */
+async function runScribe(
+  campaignId: string,
+  ctx: ToolContext,
+  playerInput: string,
+  narration: string,
+  done: string[],
+  briefs: string[]
+): Promise<void> {
+  const [agent, campaign, chars] = await Promise.all([getAgent("scribe"), getCampaign(campaignId), getCharacters(campaignId)]);
+  const clock = getClock(campaign.state);
+  const sheet = (c: Character) =>
+    sheetSummary(c, false, campaign.ruleset) +
+    (c.sheet.inventory.length ? `\n  inventário: ${c.sheet.inventory.map((i) => `${i.qty}x ${i.name}`).join(", ")}` : "");
+  const npcs = chars.filter((c) => c.kind === "npc" && c.active);
+  const player = chars.find((c) => c.kind === "player");
+  const state = [
+    `Hora na história: ${clock ? `${formatClock(clock.minutes)} (${period(clock.minutes)})` : "não definida (missão só sem prazo)"}`,
+    objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null),
+    player ? `\n--- JOGADOR ---\n${sheet(player)}` : "",
+    npcs.length ? `\n--- NPCs EM CENA ---\n${npcs.map(sheet).join("\n")}` : "",
+  ];
+  const messages: ChatMessage[] = [
+    { role: "system", content: agent.system_prompt },
+    {
+      role: "user",
+      content: `--- ESTADO ---\n${state.filter(Boolean).join("\n")}\n\n--- AÇÃO DO JOGADOR ---\n${playerInput}\n\n--- NARRAÇÃO DO MESTRE ---\n${narration}\n\n--- JÁ FEITO PELO MESTRE NESTE TURNO (não repita) ---\n${
+        done.join("\n") || "(nada)"
+      }${briefs.length ? `\n\n--- ANOTAÇÕES DE MISSÃO DO MESTRE ---\n${briefs.map((b) => `- ${b}`).join("\n")}` : ""}`,
+    },
+  ];
+  const tctx: ToolContext = { ...ctx, campaign }; // estado novo: relógio já andado e fichas depois das ferramentas do Mestre
+  for (let round = 0; round < 2; round++) {
+    const r = await chat({
+      model: agent.model,
+      messages,
+      temperature: agent.temperature,
+      max_tokens: agent.max_tokens,
+      reasoning: agent.params.reasoning as Record<string, unknown> | undefined,
+      tools: SCRIBE_TOOL_DEFS,
+      agentId: "scribe",
+      campaignId,
+      purpose: round ? "anotações do turno (correção)" : "anotações do turno",
+    });
+    if (!r.toolCalls.length) return;
+    messages.push({ role: "assistant", content: r.content || null, tool_calls: r.toolCalls });
+    let failed = false;
+    for (const call of r.toolCalls) {
+      const out = SCRIBE_TOOLS.has(call.function.name)
+        ? await executeGmTool(call.function.name, argsOf(call), tctx).catch((e) => `Erro: ${e instanceof Error ? e.message : String(e)}`)
+        : `Erro: ${call.function.name} não é ferramenta do Escrivão.`;
+      if (/^Erro|não existe|precisa/.test(out)) failed = true;
+      messages.push({ role: "tool", content: out, tool_call_id: call.id, name: call.function.name });
+    }
+    if (!failed) return;
+  }
 }
 
 function toolSummary(name: string, args: Record<string, unknown>): string {

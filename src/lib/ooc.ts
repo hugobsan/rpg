@@ -12,7 +12,7 @@ import { DIFFICULTIES, getTable, mergeCategories, normalizeTable, tablePromptBlo
 // as ferramentas do turno, menos as que leem o roteiro e os segredos dos NPCs (spoiler) e a mensagem de NPC
 // (é jogada, não conversa fora do jogo), mais remover habilidade
 const HIDDEN = ["get_script", "update_script", "get_character", "npc_message"];
-const OOC_GAME_TOOLS: ToolDef[] = [
+export const OOC_GAME_TOOLS: ToolDef[] = [
   ...GM_TOOLS.filter((t) => !HIDDEN.includes(t.function.name)),
   {
     type: "function",

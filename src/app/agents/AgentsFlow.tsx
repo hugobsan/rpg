@@ -31,6 +31,7 @@ const COLOR = {
   items: "#f59e6b",
   carto: "#38bdf8",
   adv: "#e879f9",
+  scribe: "#a3e635",
 } as const;
 type Who = keyof typeof COLOR;
 
@@ -50,6 +51,7 @@ const KIND_LABEL: Record<Who, string> = {
   items: "Criador de itens",
   carto: "Cartógrafo",
   adv: "Criador de aventuras",
+  scribe: "Escrivão",
 };
 
 interface Tip {
@@ -174,23 +176,30 @@ const NODES: (FlowNode | LaneNode)[] = [
   n("t_gm", X[4], 60, "gm", "Mestre", "narra e arbitra", {
     oque: "Narra o mundo, arbitra as regras e altera o jogo por ferramentas. Usa o modelo escolhido pelo Jev, mantido em todas as rodadas do turno.",
     quando: "Em cada turno do jogador, em loop com as ferramentas.",
-    freq: "1 a 9 chamadas por turno (normalmente 2 a 4). Termina quando responde só com texto.",
+    freq: "1 a 9 chamadas por turno. Termina quando responde só com texto, ou com a narração e só anotações (cena, elenco, cargo, roteiro, missão), que rodam depois dela sem outra chamada.",
     custo: "O mais caro: cada rodada reenvia prompt, ficha, memórias, histórico (até ≈9 mil tokens) e as definições das ferramentas. A busca web (:online) vale só na 1ª rodada e é cobrada por busca.",
   }),
   n("t_tools", X[5], 60, "code", "Ferramentas", "dados, ficha, cena, delegações", {
-    oque: "Executadas pelo código a pedido do Mestre: rolar dados, mudar recursos, atributos, habilidades, itens e XP, criar NPC, trocar a cena, gravar e buscar memórias, buscar no chat inteiro da campanha (search_history: trechos curtos com dia, hora e local), consultar livros, roteiro e biblioteca, pedir mapas 3D. As escritas vão direto ao Postgres; criar NPC, técnica nova e mapa são delegados aos criadores (lane 4).",
+    oque: "Executadas pelo código a pedido do Mestre: rolar dados, resolver e treinar técnicas, atributos e habilidades novas, criar NPC, buscar memórias, buscar no chat inteiro da campanha (search_history: trechos curtos com dia, hora e local), consultar livros, roteiro e biblioteca, pedir mapas 3D. As escritas vão direto ao Postgres; criar NPC, técnica nova e mapa são delegados aos criadores (lane 4). As anotações (set_scene, set_npc_active, set_rank, update_script, note_objective) respondem \"Anotado\" na hora e só rodam depois da narração.",
     quando: "Sempre que o Mestre pedir, em qualquer rodada.",
     custo: "Sem IA: só SQL (e embeddings ao gravar ou buscar memórias e histórico).",
   }),
   n("t_fx", X[4], 230, "code", "Efeitos persistidos", "narração e opções salvas", {
-    oque: "Fichas, cena, NPCs, memórias e roteiro já foram gravados pelas ferramentas durante o loop. No fim, a narração e o bloco de opções são salvos e enviados ao jogador.",
-    quando: "Quando o Mestre responde só com texto (ou estoura as rodadas).",
+    oque: "A narração e o bloco de opções são salvos e enviados ao jogador. Depois, antes do fim do turno: as anotações do Mestre e, em paralelo, o relógio (Jev) seguido do Escrivão, o local e o elenco.",
+    quando: "Quando o Mestre responde só com texto, ou com texto e só anotações (ou estoura as rodadas).",
   }),
   n("t_chron", X[3], 230, "chron", "Cronista: compacta", "só se estourar o limite", {
     oque: "Resume as mensagens antigas ainda não compactadas (todas menos as 12 mais recentes) num resumo acumulado na cena, marca-as como compactadas e extrai memórias estruturadas: evento, NPC, descoberta, marco, relação.",
     quando: "Depois da narração, se as mensagens não compactadas passam de ≈11 mil tokens.",
     freq: "De vez em quando (estimativa: 1 a cada 10 a 15 turnos). Também roda 1 vez por conversa com NPC.",
     custo: "Baixo: modelo barato, mas lê de uma vez todo o trecho antigo (≈11 mil tokens de entrada).",
+  }),
+  n("t_scribe", X[1], 230, "scribe", "Escrivão", "registra o que a narração mostrou", {
+    oque: "Lê a ação, a narração, o que as ferramentas do Mestre já fizeram e as fichas, e registra só o que a narração estabeleceu: dano, cura e gasto, itens, XP, domínio por evento, campos da ficha, memórias e missões (as anotações de missão do Mestre viram objetivos com o prazo certo). Uma chamada com as ferramentas em paralelo.",
+    quando: "Depois de cada narração, logo depois do relógio, antes do fim do turno.",
+    freq: "1 chamada por turno (2 se alguma ferramenta deu erro).",
+    custo: "Baixo: modelo barato e rápido, ≈3 mil tokens de entrada; ~US$ 0,001 e 1 a 3 s.",
+    fallback: "Se falhar, nada é registrado; o jogador corrige pedindo ao Mestre fora do jogo.",
   }),
   n("t_imp", X[2], 230, "jev", "Jev: nota de importância", "1 a 5, em lote", {
     oque: "Dá a nota de 1 a 5 de todas as memórias extraídas numa única chamada. Nota 5 entra sempre no contexto; as demais disputam as vagas por importância.",
@@ -369,6 +378,8 @@ const EDGES: Edge[] = [
   e("t_gm", "sr", "t_tools", "tl", "ferramentas ⇄", { both: true }),
   e("t_gm", "sb", "t_fx", "tt", "só texto"),
   e("t_fx", "sl", "t_chron", "tr", "estourou o limite"),
+  e("t_fx", "sb", "t_scribe", "tb", "depois da narração"),
+  e("t_scribe", "sb", "pg", "tb", "grava fichas e missões"),
   e("t_chron", "sl", "t_imp", "tr", "memórias"),
   e("t_imp", "sb", "pg", "tb", "grava memórias"),
   e("t_tools", "sb", "pg", "tt", "grava ficha, cena, memórias"),
