@@ -143,7 +143,7 @@ Regras: memórias são fatos que precisarão ser lembrados muitas sessões depoi
     id: "image",
     name: "Ilustrador",
     description:
-      "Gera a imagem do ambiente/cena atual sob demanda (botão na tela da campanha).",
+      "Gera a imagem do ambiente/cena atual (botão Ver ambiente) e o retrato dos personagens (botão Gerar retrato), sob demanda.",
     model: "google/gemini-3.1-flash-image-preview",
     temperature: 0.8,
     max_tokens: 2048,
@@ -223,30 +223,6 @@ CAMPOS DO RULESET (o exemplo completo de Naruto vem no contexto; siga o mesmo fo
 - progressionNotes: como habilidades especiais evoluem em estágios (milestones por domínio de 0 a 100), com um exemplo da obra, como o Sharingan em Naruto.
 - masteryBonus, masteryCost, training: ajustes finos de domínio e treino; omita para usar o padrão (o mesmo de Naruto), a não ser que o jogador peça algo diferente.
 - keys sempre em minúsculas, sem acento, snake_case (ex.: "transfiguracao", "defesa_contra_artes_das_trevas").`,
-  },
-  {
-    id: "pixel",
-    name: "Pixel artista",
-    description:
-      "Desenha o retrato de cada personagem em pixel art quando a geração de imagens está desligada (ligada, quem pinta é o Ilustrador). Devolve uma grade de pixels com paleta, que o sistema valida e converte em SVG. Roda em segundo plano quando o jogador clica em Gerar retrato (modal do NPC ou ficha).",
-    model: "anthropic/claude-opus-5.5",
-    temperature: 0.7,
-    max_tokens: 6000,
-    web_search: false,
-    // o Opus 5.5 sempre raciocina (não dá para desligar) e no padrão gastava os tokens todos pensando
-    params: { reasoning: { effort: "low" } },
-    system_prompt: `Você é o Pixel artista de uma mesa de RPG. Recebe a descrição de UM personagem (cenário, papel, aparência) e desenha o retrato de busto dele em pixel art, como os retratos de diálogo dos RPGs 16-bit. Vale para qualquer mundo: fantasia, ficção científica, anime, horror, histórico.
-
-RESPOSTA: só um JSON válido, sem texto antes ou depois e sem cercas de código:
-{"palette":{"o":"#1b1424","s":"#e8b796"},"rows":["................................"]}
-- rows: EXATAMENTE 32 linhas, cada uma com EXATAMENTE 32 caracteres. Cada caractere é um pixel: "." = transparente, qualquer outro = uma chave da paleta.
-- palette: de 8 a 16 cores; chave = 1 letra ou dígito; valor = "#rrggbb".
-
-COMO DESENHAR
-- Composição: cabeça e ombros de frente ou em 3/4, centralizados (o eixo do rosto entre as colunas 15 e 16), a cabeça ocupando cerca de metade da altura, olhos perto da linha 13, ombros e tronco tocando a última linha. Fundo transparente: sem cenário, moldura nem texto.
-- Leitura em tamanho pequeno: silhueta forte, contorno de 1 pixel num tom escuro da cor vizinha (não preto puro), 2 a 3 tons por material com luz vinda de cima à esquerda, olhos claros e expressivos (com 1 pixel de brilho), boca e sobrancelhas que mostrem o temperamento.
-- Fidelidade: os traços que identificam o personagem precisam estar lá: cor e corte do cabelo, tom de pele, idade, roupa e o acessório marcante (bandana, chapéu, óculos, cicatriz, armadura, símbolo de clã ou facção), coerentes com o cenário e a época. Personagem canônico de obra: siga a aparência oficial.
-- Sem descrição de aparência: invente uma coerente com o cenário e o papel, nada genérico.`,
   },
   {
     id: "cartographer",
@@ -424,6 +400,8 @@ export function ensureDefaultAgents(): Promise<void> {
 }
 
 async function insertDefaultAgents(): Promise<void> {
+  // Pixel artista aposentado: o retrato agora é sempre do Ilustrador
+  await q(`DELETE FROM agents WHERE id = 'pixel'`);
   for (const a of DEFAULT_AGENTS) {
     await q(
       `INSERT INTO agents (id, name, description, model, temperature, max_tokens, web_search, system_prompt, params)

@@ -87,7 +87,7 @@ async function main() {
   assert.equal(c.url, "https://api.anthropic.com/v1/chat/completions");
   assert.ok(!("temperature" in c.body) && !("top_p" in c.body));
   assert.equal(sourceView(anthropic).kind, "anthropic");
-  // Cartógrafo e Pixel artista (raciocínio + ferramentas) na Anthropic: nada que dê 400 (temperature, top_p, reasoning)
+  // Cartógrafo (raciocínio + ferramentas) na Anthropic: nada que dê 400 (temperature, top_p, reasoning)
   const cartographer: ChatOptions = { ...full, webSearch: false, modalities: undefined, onDelta: undefined, temperature: 0.5, model: "claude-opus-5-5", agentId: "cartographer" };
   assert.deepEqual(Object.keys(chatRequest(cartographer, anthropic).body).sort(), ["max_tokens", "messages", "model", "tools"]);
   // na OpenAI o raciocínio vira reasoning_effort

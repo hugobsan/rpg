@@ -29,7 +29,6 @@ const COLOR = {
   char: "#fb7185",
   abil: "#ec5a55",
   items: "#f59e6b",
-  pixel: "#a3e635",
   carto: "#38bdf8",
   adv: "#e879f9",
 } as const;
@@ -49,7 +48,6 @@ const KIND_LABEL: Record<Who, string> = {
   char: "Criador de personagens",
   abil: "Criador de habilidades",
   items: "Criador de itens",
-  pixel: "Pixel artista",
   carto: "Cartógrafo",
   adv: "Criador de aventuras",
 };
@@ -269,11 +267,11 @@ const NODES: (FlowNode | LaneNode)[] = [
   n("c_merge", X[3], 760, "code", "Ficha gravada com merge", "preserva o que o Mestre mudou", {
     oque: "Sem IA: grava o perfil e a ficha com a linha travada. O que o Mestre mudou nesse meio tempo (dano, gasto, cargo, sexo) fica como ele deixou; técnicas e itens se somam por nome.",
   }),
-  n("c_pix", X[4], 760, "pixel", "Pixel artista", "retrato em pixel art", {
-    oque: "Desenha o retrato de busto como uma grade de pixels com paleta (não SVG livre); o código valida e converte em SVG nítido. Com a geração de imagens ligada nas Configurações, quem pinta o retrato é o Ilustrador, em estilo pixel art.",
-    quando: "Depois do perfil de cada NPC novo, ao criar a campanha (protagonista) e nos botões Gerar e Regerar retrato.",
-    freq: "1 chamada por personagem (regerar faz outra).",
-    custo: "Opus 5.5 com raciocínio baixo: ≈700 tokens de saída, ≈10 s, cerca de US$ 0,02 por retrato. Pelo Ilustrador, cerca de US$ 0,03.",
+  n("c_pix", X[4], 760, "img", "Ilustrador", "retrato do personagem", {
+    oque: "Pinta o retrato de busto do personagem com o modelo de imagem, a partir do cenário, do cargo, dos campos da ficha e da aparência. Só com a geração de imagens ligada nas Configurações; desligada, o botão avisa e nada é gerado.",
+    quando: "Só nos botões Gerar e Regerar retrato (modal do NPC ou ficha).",
+    freq: "1 imagem por clique.",
+    custo: "Cobrado por imagem gerada, cerca de US$ 0,03 por retrato.",
     fallback: "A tarefa vira erro com aviso; o personagem mostra as iniciais e o botão Regerar.",
   }),
   n("c_out", X[5], 760, "code", "Retrato salvo", "NPCs, modal, ficha e falas", {
@@ -398,7 +396,7 @@ const EDGES: Edge[] = [
   e("c_reg", "sr", "c_char", "tl", "tarefa"),
   e("c_char", "sr", "c_merge", "tl", "JSON"),
   e("c_merge", "sr", "c_pix", "tl", "retrato"),
-  e("c_pix", "sr", "c_out", "tl", "SVG"),
+  e("c_pix", "sr", "c_out", "tl", "imagem"),
   e("c_char", "sb", "b_lib", "tt", "técnicas e itens"),
   e("b_gm", "sr", "b_lib", "tl", "consulta"),
   e("b_lib", "sr", "b_abil", "tl", "não existe"),

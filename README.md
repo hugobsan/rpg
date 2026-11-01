@@ -55,13 +55,12 @@ Cada agente é um registro editável (fonte + modelo + system prompt + parâmetr
 | **Roteirista** | `deepseek/deepseek-v4-pro` (+`:online`) | Gera o roteiro interno (arcos, eventos canônicos, ganchos) | Roda raramente; longo e barato |
 | **Cronista** | `google/gemini-3.5-flash` | Compacta histórico e extrai memórias estruturadas | Roda com frequência; rápido e barato |
 | **Jev (decisões)** | `typesafe/jev-1.14-20261014` | Decide, sem gerar texto: modelo do turno, busca web, memórias relevantes, recusa de NPC, importância de memórias | Modelo de decisão: ~US$0,00005 e <1 s por chamada |
-| **Ilustrador** | `google/gemini-3.1-flash-image-preview` | Gera a imagem do ambiente atual sob demanda | Nano Banana 2: qualidade alta, custo baixo |
+| **Ilustrador** | `google/gemini-3.1-flash-image-preview` | Gera a imagem do ambiente atual e o retrato dos personagens, sob demanda | Nano Banana 2: qualidade alta, custo baixo |
 | **Voz** | `heygen/heygen-voice-1-turbo:free` | Lê as falas dos NPCs (TTS), com voz padrão por sexo | Grátis e fala português; áudio em cache |
 | **Criador de personagens** | `nvidia/nemotron-3.5-super-vl:free` | Monta em segundo plano o perfil rico e a ficha de cada NPC novo (`create_npc`) e do botão Refazer perfil, a partir da biblioteca | Grátis; raciocina antes (~1,5 min por NPC), fora do turno |
 | **Criador de aventuras** | `nvidia/nemotron-3.5-super-vl:free` | Entrevista o jogador e monta o JSON de uma aventura nova (Criar com IA) | Grátis; raciocina antes de responder (rodada de 1 a 2 min) |
 | **Criador de habilidades** | `nvidia/nemotron-3.5-super-vl:free` | Cria técnicas (jutsus, feitiços...) para a biblioteca: na hora, quando o `add_ability` pede uma que não existe, e em lotes no segundo plano | Grátis; prazo de 90 s dentro do turno |
 | **Criador de itens** | `nvidia/nemotron-3.5-super-vl:free` | Cria ferramentas, armas e consumíveis para a biblioteca, em lotes | Grátis |
-| **Pixel artista** | `anthropic/claude-opus-5.5` (raciocínio baixo) | Desenha o retrato de cada personagem como grade de pixels, que o código converte em SVG | ~US$0,02 e ~10 s por retrato; com imagens ligadas, quem pinta é o Ilustrador |
 | **Cartógrafo** | `anthropic/claude-opus-5.5` (raciocínio médio) | Compõe o mapa 3D de um lugar como descrição declarativa (relevo, contornos, caminhos, espalhamento, materiais, luz, pontos de interesse) | ~US$0,14 por mapa novo e US$0,18 por edição; só gera quando pedido |
 
 O seletor de modelos busca a lista viva de `openrouter.ai/api/v1/models` com preço e contexto — os defaults nunca ficam obrigatórios.
@@ -127,7 +126,7 @@ Além do diorama do mundo, cada lugar pode ter uma maquete 3D própria, composta
 ### Biblioteca, retratos e tarefas em segundo plano
 
 - **Biblioteca** (tabela `library`, `src/lib/library.ts`, aba Biblioteca): técnicas e itens do mundo da campanha. O `add_ability` do Mestre recebe só nome e brief: vem da biblioteca ou o **Criador de habilidades** cria na hora (e guarda); `add_item` completa a descrição pela biblioteca; `search_library` consulta antes de inventar. Na aba (ou pedindo ao Mestre fora do jogo, `generate_library`) o jogador manda gerar N técnicas ou itens com um foco, em lotes que recebem os nomes já existentes para não repetir. Verificação: `npx tsx scripts/library-check.ts`.
-- **Retratos** (tabela `portraits`, `src/lib/portrait.ts`, componente `Portrait`): um por personagem, gerado só quando o jogador clica em Gerar retrato (modal do NPC ou ficha). Com a geração de imagens ligada, pinta o Ilustrador; desligada, o **Pixel artista** devolve uma grade de pixels com paleta que vira SVG. Verificação: `npx tsx scripts/portrait-check.ts`.
+- **Retratos** (tabela `portraits`, `src/lib/portrait.ts`, componente `Portrait`): um por personagem, gerado só quando o jogador clica em Gerar retrato (modal do NPC ou ficha). Quem pinta é o **Ilustrador**, só com a geração de imagens ligada nas Configurações (desligada, o botão avisa e nada é gerado). Verificação: `npx tsx scripts/portrait-check.ts`.
 - **Tarefas em segundo plano** (tabela `jobs`, `src/lib/jobs.ts`): perfis de NPC, memórias de conversa com NPC, retratos, lotes da biblioteca e mapas rodam fora do turno. O cabeçalho do jogo mostra o que está rodando (com progresso) e, quando termina, a tela recarrega e avisa. Duas tarefas iguais não rodam juntas; uma parada há 15 min sem sinal (servidor reiniciado) vira erro. Verificação: `npx tsx scripts/jobs-check.ts`.
 
 ### Estilos de campanha
@@ -214,7 +213,7 @@ src/lib/
   npc.ts                   # conversas particulares com NPCs
   characters.ts            # Criador de personagens: perfil e ficha do NPC em segundo plano, merge sem atropelar o Mestre
   library.ts               # biblioteca de técnicas e itens, Criador de habilidades e de itens, lotes
-  portrait.ts              # retratos: Pixel artista (grade → SVG) ou Ilustrador
+  portrait.ts              # retratos: Ilustrador
   cartographer.ts          # Cartógrafo: mapas 3D por lugar (pedido, entrada, gravação)
   mapSpec.ts               # spec declarativo do mapa 3D: validação e limites
   jobs.ts                  # tarefas em segundo plano acompanhadas pela tela

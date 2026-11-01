@@ -228,7 +228,7 @@ CREATE TABLE IF NOT EXISTS adventure_drafts (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- retrato do personagem (lib/portrait.ts): SVG do Pixel artista ou imagem do Ilustrador. Fora de characters,
+-- retrato do personagem (lib/portrait.ts): imagem do Ilustrador (SVG nos antigos, do Pixel artista aposentado). Fora de characters,
 -- que é lido em todo turno; a tela monta a URL com a versão (cache longo)
 CREATE TABLE IF NOT EXISTS portraits (
   character_id UUID PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,

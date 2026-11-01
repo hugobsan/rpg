@@ -215,8 +215,8 @@ export default function SettingsForm({ initial, advanced, usedBy, notice }: {
             </button>
           </label>
           <label className={s.switch}>
-            <b>Imagens do ambiente</b>
-            <span>O botão &quot;Ver ambiente&quot; gera uma imagem da cena com o Ilustrador; costuma ser a chamada mais cara do jogo. Desligada, o botão some. As imagens que já existem continuam na ficha e na galeria.</span>
+            <b>Imagens do ambiente e retratos</b>
+            <span>O botão &quot;Ver ambiente&quot; gera uma imagem da cena e o &quot;Gerar retrato&quot; pinta o personagem, ambos com o Ilustrador; costumam ser as chamadas mais caras do jogo. Desligada, nada é gerado e o &quot;Ver ambiente&quot; some. As imagens e retratos que já existem continuam.</span>
             <input type="checkbox" role="switch" checked={imageGeneration} onChange={(e) => setImageGeneration(e.target.checked)} />
           </label>
           <label className={s.switch}>
