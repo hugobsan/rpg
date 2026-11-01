@@ -1,15 +1,17 @@
 /**
  * Verificação do Criador de personagens sem IA: leitura e limpeza do JSON dele, merge que não atropela
- * o que o Mestre mudou enquanto o job rodava, gravação com a linha travada e o create_npc de NPC que já existe.
- * Campanha temporária. Rodar: npx tsx scripts/characters-check.ts
+ * o que o Mestre mudou enquanto o job rodava (habilidades por ref da biblioteca), gravação com a linha travada
+ * (ficha gravada só com { ref, progress }) e o create_npc de NPC que já existe.
+ * Campanha temporária num mundo test-<uuid> (campanha e linhas desse mundo apagadas no fim). Rodar: npx tsx scripts/characters-check.ts
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import { pool, q } from "../src/lib/db";
 import { applyProfile, mergeProfile, normalizeDraft, parseCreatorJson, Snapshot } from "../src/lib/characters";
 import { executeGmTool, ToolContext } from "../src/lib/tools";
 import { blankSheet, normalizeRuleset } from "../src/lib/ruleset";
-import type { Campaign, Scene, Sheet, TurnEvent } from "../src/lib/types";
+import type { Campaign, Scene, Sheet, StoredSheet, TurnEvent } from "../src/lib/types";
 
 const r = normalizeRuleset(JSON.parse(fs.readFileSync("naruto-ruleset.json", "utf-8")));
 
@@ -51,9 +53,9 @@ async function main() {
     ["Raikiri", "ninjutsu", "A", 50],
     ["Golpe Estranho", "", undefined, 50],
   ]);
-  assert.deepEqual(d.abilities[1].cost, { resource: "chakra", amount: 20 });
+  assert.ok(d.abilities.every((a) => !("cost" in a)), "custo não vem do Criador de personagens (vem do rank)");
   assert.deepEqual(d.abilities[1].milestones?.map((m) => m.threshold), [0, 50], "marcos em ordem");
-  assert.equal(d.abilities[2].cost, undefined, "recurso inexistente");
+  assert.ok(d.abilities.every((a) => a.ref === undefined), "sem ref antes de ligar na biblioteca (createProfile)");
   assert.deepEqual(d.sheet.inventory, [
     { name: "Kunai", qty: 1, description: undefined },
     { name: "Icha Icha", qty: 2, description: "livro" },
@@ -83,10 +85,12 @@ async function main() {
     },
     r
   );
-  // no meio tempo o Mestre: dano, chidori com add_ability, cargo, sexo pelo modal, voz, mudou o passado
+  // createProfile liga cada habilidade a uma entrada da biblioteca (ref); aqui as refs são simuladas
+  draft.abilities = draft.abilities.map((a, i) => ({ ...a, ref: 900001 + i }));
+  // no meio tempo o Mestre: dano, chidori com add_ability (mesma entrada da biblioteca), cargo, sexo pelo modal, voz, mudou o passado
   const cur: Snapshot = JSON.parse(JSON.stringify(base));
   cur.sheet.resources.hp.current = 30;
-  cur.sheet.abilities.push({ name: "chidori", type: "ninjutsu", progress: 15 });
+  cur.sheet.abilities.push({ name: "Chidori", type: "ninjutsu", ref: 900001, progress: 15 });
   cur.sheet.rank = "chunin";
   cur.sheet.inventory.push({ name: "Pergaminho", qty: 1 });
   cur.persona.backstory = "O Mestre reescreveu";
@@ -106,10 +110,10 @@ async function main() {
   assert.equal(m.sheet.attributes.taijutsu, 8);
   assert.equal(m.sheet.attributes.genjutsu, base.sheet.attributes.genjutsu, "o que o Criador não deu continua");
   assert.deepEqual(m.sheet.extra, { vila: "Konoha", cla: "Hatake" });
-  assert.deepEqual(m.sheet.abilities, [
-    { name: "chidori", type: "ninjutsu", progress: 15, rank: "A", effect: "estocada de raio" },
-    { name: "Kawarimi", type: "ninjutsu", progress: 100 },
-  ].map((a) => ({ ...draft.abilities.find((x) => x.name.toLowerCase() === a.name.toLowerCase()), ...a })), "a do Mestre vence campo a campo, o Criador completa e soma");
+  assert.deepEqual(m.sheet.abilities, [cur.sheet.abilities[0], draft.abilities[1]], "mesma ref: a da ficha fica (domínio do Mestre); ref nova entra");
+  // ficha crua (como applyProfile lê do banco): junta por ref do mesmo jeito
+  const rawCur = { ...cur, sheet: { ...cur.sheet, abilities: [{ ref: 900001, progress: 15 }] } } as unknown as Snapshot;
+  assert.deepEqual(mergeProfile(base, rawCur, draft).sheet.abilities.map((a) => [a.ref, a.progress]), [[900001, 15], [900002, 100]]);
   assert.deepEqual(m.sheet.inventory.map((i) => `${i.qty}x ${i.name}`), ["1x Pergaminho", "5x Kunai"]);
   assert.equal(m.persona.backstory, "O Mestre reescreveu", "persona mexida no meio tempo fica");
   assert.equal(m.persona.personality, "Calmo e preguiçoso", "o que o Mestre deu no registro o Criador expande");
@@ -120,7 +124,8 @@ async function main() {
   assert.equal(mergeProfile(base, { ...cur, persona: { ...cur.persona, gender: undefined } }, draft).persona.gender, "female", "sexo ainda não decidido: o Criador preenche");
 
   // ---------- gravação no banco (JSONB reordena chaves: não pode contar como mudança) ----------
-  const [c] = await q<{ id: string }>(`INSERT INTO campaigns (name, ruleset) VALUES ('[teste-personagens] check', $1) RETURNING id`, [JSON.stringify(r)]);
+  const world = `test-${randomUUID()}`; // nunca a biblioteca real do mundo naruto
+  const [c] = await q<{ id: string }>(`INSERT INTO campaigns (name, ruleset) VALUES ('[teste-personagens] check', $1) RETURNING id`, [JSON.stringify({ ...r, world })]);
   const id = c.id;
   try {
     const [npc] = await q<{ id: string }>(
@@ -131,6 +136,7 @@ async function main() {
     await q(`UPDATE characters SET sheet = jsonb_set(sheet, '{resources,hp,current}', '25') WHERE id = $1`, [npc.id]);
     assert.equal(await applyProfile(npc.id, base, draft), true);
     const [row] = await q<{ sheet: Sheet; persona: Snapshot["persona"] }>(`SELECT sheet, persona FROM characters WHERE id = $1`, [npc.id]);
+    assert.deepEqual((row.sheet as unknown as StoredSheet).abilities, [{ ref: 900001, progress: 80 }, { ref: 900002, progress: 100 }], "grava só ref e domínio");
     assert.deepEqual(row.sheet.resources.hp, { current: 105, max: 120 });
     assert.deepEqual(row.sheet.resources.chakra, { current: 200, max: 200 });
     assert.equal(row.sheet.rank, "jounin");
@@ -142,7 +148,7 @@ async function main() {
     // create_npc de quem já existe só traz de volta (sem Criador)
     await q(`UPDATE characters SET active = FALSE WHERE id = $1`, [npc.id]);
     const events: TurnEvent[] = [];
-    const ctx: ToolContext = { campaign: { id, state: {}, ruleset: r } as unknown as Campaign, scene: {} as Scene, emit: (e) => events.push(e) };
+    const ctx: ToolContext = { campaign: { id, state: {}, ruleset: { ...r, world } } as unknown as Campaign, scene: {} as Scene, emit: (e) => events.push(e) };
     const out = await executeGmTool("create_npc", { name: "Kakashi", gender: "male", brief: "jounin" }, ctx);
     assert.match(out, /já estava registrado/);
     const [after] = await q<{ active: boolean; n: string }>(
@@ -152,6 +158,7 @@ async function main() {
     assert.deepEqual(after, { active: true, n: "0" });
   } finally {
     await q(`DELETE FROM campaigns WHERE id = $1`, [id]);
+    await q(`DELETE FROM library WHERE world = $1`, [world]);
   }
   console.log("characters-check: ok");
 }

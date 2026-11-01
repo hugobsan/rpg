@@ -2,18 +2,21 @@
  * Checagem da progressão (domínio, nível de poder, pontos livres, teto, treino) sem IA.
  * Parte pura sobre o naruto-ruleset.json e parte de banco: cria uma campanha de teste,
  * chama as ferramentas do Mestre direto (use_ability, train, update_attribute, grant_xp)
- * e apaga a campanha no fim.
+ * e apaga a campanha no fim. A campanha usa um mundo test-<uuid>: o kit entra na biblioteca desse mundo
+ * (a ficha guarda as refs) e as linhas são apagadas no fim.
  *
  *   npx tsx scripts/progression-check.ts
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import { q, pool } from "../src/lib/db";
 import { blankSheet, normalizeRuleset, startingKit } from "../src/lib/ruleset";
 import {
   attributeCap, attributePoints, effectiveCost, LEGACY_MASTERY, masteryBonus, powerLevel, raiseBlocked, train,
 } from "../src/lib/progression";
 import { executeGmTool, ToolContext } from "../src/lib/tools";
+import { dehydrateSheet, ensureLibraryAbility, hydrateSheets } from "../src/lib/library";
 import type { Ability, Campaign, Character, Scene, Sheet, TurnEvent } from "../src/lib/types";
 
 const rs = normalizeRuleset(JSON.parse(fs.readFileSync("naruto-ruleset.json", "utf-8")));
@@ -42,7 +45,8 @@ ok("custo por faixa de domínio (D=3, C=6, S=35)", () => {
   assert.equal(c(100, "C"), 4); // 4,5 → 4
   assert.equal(c(100, "S"), 26);
   assert.equal(c(0, "S"), 53); // 52,5 → 53
-  assert.equal(effectiveCost(rs, { ...ab(10), cost: { resource: "chakra", amount: 0 } })!.amount, 0);
+  assert.equal(effectiveCost(rs, { ...ab(10), costFree: true })!.amount, 0);
+  assert.equal(effectiveCost(rs, { name: "X", type: "ninjutsu" }), null, "sem rank e sem costFree: sem custo calculável");
 });
 ok("kit inicial com 60% de domínio", () => {
   assert.ok(startingKit(rs, "estudante").every((a) => a.progress === 60));
@@ -136,20 +140,24 @@ ok("treino de alvo inexistente explica", () => {
 
 // ---------- ferramentas no banco ----------
 async function dbChecks() {
+  const world = `test-${randomUUID()}`; // nunca a biblioteca real do mundo naruto
   const [camp] = await q<Campaign>(
     `INSERT INTO campaigns (name, style, ruleset, state) VALUES ('progression-check (teste)', 'hybrid', $1, $2) RETURNING *`,
-    [JSON.stringify(rs), JSON.stringify({ clock: { minutes: 8 * 60 } })]
+    [JSON.stringify({ ...rs, world }), JSON.stringify({ clock: { minutes: 8 * 60 } })]
   );
   try {
     const s = sheet();
-    s.abilities = startingKit(rs, "estudante");
-    s.abilities.push({ name: "Katon Novo", type: "ninjutsu", rank: "C", progress: 10 });
-    await q(`INSERT INTO characters (campaign_id, kind, name, sheet, persona) VALUES ($1,'player','Teste',$2,'{}')`, [camp.id, JSON.stringify(s)]);
+    // kit + uma técnica nova, ligados à biblioteca do mundo de teste (como na criação da campanha)
+    for (const a of [...startingKit(rs, "estudante"), { name: "Katon Novo", type: "ninjutsu", rank: "C", progress: 10 }]) {
+      const e = (await ensureLibraryAbility(camp, a))!;
+      s.abilities.push({ ...a, ref: e.id });
+    }
+    await q(`INSERT INTO characters (campaign_id, kind, name, sheet, persona) VALUES ($1,'player','Teste',$2,'{}')`, [camp.id, JSON.stringify(dehydrateSheet(s))]);
     const [scene] = await q<Scene>(`INSERT INTO scenes (campaign_id, seq, mode, title) VALUES ($1,1,'training','t') RETURNING *`, [camp.id]);
     const events: TurnEvent[] = [];
     const ctx: ToolContext = { campaign: camp, scene, emit: (e) => events.push(e) };
     const run = (name: string, args: Record<string, unknown>) => executeGmTool(name, args, ctx);
-    const char = async () => (await q<Character>(`SELECT * FROM characters WHERE campaign_id = $1 AND kind = 'player'`, [camp.id]))[0];
+    const char = async () => (await hydrateSheets(await q<Character>(`SELECT * FROM characters WHERE campaign_id = $1 AND kind = 'player'`, [camp.id])))[0];
 
     // use_ability: Katon C (6) com 10% → 9 de chakra; ninjutsu 5 x2 + domínio 0 = +10
     let out = await run("use_ability", { character: "Teste", ability: "katon novo", dc: 18, target: "tronco" });
@@ -216,6 +224,7 @@ async function dbChecks() {
     ok("grant_xp: nível de poder sobe sozinho, cargo fica", () => {});
   } finally {
     await q(`DELETE FROM campaigns WHERE id = $1`, [camp.id]);
+    await q(`DELETE FROM library WHERE world = $1`, [world]);
   }
 }
 

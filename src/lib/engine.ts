@@ -115,7 +115,7 @@ export function sheetSummary(c: Character, full: boolean, rs: Ruleset, compact =
             const next = nextMilestone(a);
             if (cur) line += ` — atual: ${cur.description}`;
             if (next) line += ` | próximo marco aos ${next.threshold}%: ${next.description}`;
-            if (a.incomplete) line += ` [INCOMPLETA na biblioteca: complete com edit_ability]`;
+            if (a.incomplete && !a.removed) line += ` [INCOMPLETA na biblioteca: complete com edit_ability]`;
             if (a.removed) line += ` [saiu da biblioteca]`;
             return line;
           })

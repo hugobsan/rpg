@@ -43,7 +43,8 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   const ruleset = normalizeRuleset(body.ruleset);
-  ruleset.world ||= slugKey(ruleset.name); // escopo da biblioteca (igual ao worldOf), fixo desde a criação
+  // escopo da biblioteca, fixo desde a criação; nome sem letras latinas daria slug vazio
+  ruleset.world ||= slugKey(ruleset.name) || `mundo_${crypto.randomUUID().slice(0, 8)}`;
 
   const rows = await q<Campaign>(
     `INSERT INTO campaigns (name, style, ruleset, state) VALUES ($1,$2,$3,$4) RETURNING *`,

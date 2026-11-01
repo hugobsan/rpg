@@ -32,23 +32,28 @@ export async function listLibrary(
   kind: LibraryKind,
   opts: { query?: string; limit?: number } = {}
 ): Promise<LibraryEntry[]> {
-  // a busca olha o nome e o texto (descrição, efeito, quem usa); o nome que bate vem antes
+  // a busca olha o nome e o texto (descrição, efeito, tradução, quem usa), sem acento; o nome que bate vem antes
   const rows = await q<LibraryEntry>(
     `SELECT ${COLS} FROM library
       WHERE world = $1 AND kind = $2 AND deleted_at IS NULL
-        AND ($3::text IS NULL OR name ILIKE '%' || $3 || '%' OR data::text ILIKE '%' || $3 || '%')
-      ORDER BY ($3::text IS NOT NULL AND name ILIKE '%' || $3 || '%') DESC, name LIMIT $4`,
-    [worldOf(campaign), kind, opts.query?.trim() || null, opts.limit ?? 500]
+        AND ($3::text IS NULL OR translate(lower(name), $5, $6) LIKE '%' || $3 || '%'
+             OR translate(lower(data::text), $5, $6) LIKE '%' || $3 || '%')
+      ORDER BY ($3::text IS NOT NULL AND translate(lower(name), $5, $6) LIKE '%' || $3 || '%') DESC, name LIMIT $4`,
+    [worldOf(campaign), kind, opts.query?.trim() ? fold(opts.query) : null, opts.limit ?? 500, ACCENTS, PLAIN]
   );
   return rows.map(entry);
 }
 
-/** Entrada do mundo pelo nome, sem diferenciar maiúsculas e acentos; ignora as excluídas. */
+/**
+ * Entrada do mundo pelo nome ou pela tradução (o Mestre pode escrever "Grande Bola de Fogo"), sem diferenciar
+ * maiúsculas e acentos; o nome vence a tradução; ignora as excluídas.
+ */
 export async function findLibrary(campaign: Campaign, kind: LibraryKind, name: string): Promise<LibraryEntry | null> {
   const [r] = await q<LibraryEntry>(
     `SELECT ${COLS} FROM library
-      WHERE world = $1 AND kind = $2 AND deleted_at IS NULL AND translate(lower(name), $4, $5) = $3
-      ORDER BY id LIMIT 1`,
+      WHERE world = $1 AND kind = $2 AND deleted_at IS NULL
+        AND (translate(lower(name), $4, $5) = $3 OR translate(lower(data->>'translation'), $4, $5) = $3)
+      ORDER BY translate(lower(name), $4, $5) = $3 DESC, id LIMIT 1`,
     [worldOf(campaign), kind, fold(name), ACCENTS, PLAIN]
   );
   return r ? entry(r) : null;
@@ -107,7 +112,7 @@ export async function hydrateSheet(sheet: Sheet | StoredSheet): Promise<Sheet> {
 export function dehydrateSheet(sheet: Sheet | StoredSheet): StoredSheet {
   return {
     ...sheet,
-    abilities: (sheet.abilities as AnyAbility[]).map((a) => (typeof a.ref === "number" ? compact({ ref: a.ref, progress: a.progress }) : a)),
+    abilities: ((sheet.abilities ?? []) as AnyAbility[]).map((a) => (typeof a.ref === "number" ? compact({ ref: a.ref, progress: a.progress }) : a)),
   };
 }
 
@@ -128,27 +133,37 @@ export async function linkAbility(
   if (hit) return { entry: hit, from: "library" };
   opts.onCreator?.();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const creating = ensureAbility(campaign, name, opts.brief);
-  const created = await Promise.race([
-    creating,
+  const making = makeAbility(campaign, name, opts.brief);
+  const made = await Promise.race([
+    making,
     new Promise<null>((ok) => {
       if (opts.timeoutMs) timer = setTimeout(() => ok(null), opts.timeoutMs);
     }),
   ]);
   clearTimeout(timer);
-  if (created) return { entry: created, from: "creator" };
+  if (made) {
+    const stored = await storeMade(campaign, made);
+    if (stored) return { entry: stored, from: "creator" };
+  }
   const data = { ...fallbackAbility(campaign.ruleset, name, opts.fallback ?? {}), incomplete: true };
   const saved = (await saveLibrary(campaign, "ability", data, false, "gm")) ?? (await findLibrary(campaign, "ability", data.name));
   if (!saved) throw new Error(`Não foi possível registrar "${name}" na biblioteca.`);
-  // o Criador respondeu depois do prazo: a resposta completa a incompleta (que as fichas já apontam) em vez de virar outra entrada
-  void creating
-    .then(async (late) => {
-      if (!late || late.id === saved.id) return;
-      await q(`UPDATE library SET deleted_at = now() WHERE id = $1`, [late.id]);
-      const done = await editAbility(campaign, saved.id, { ...(late.data as LibraryAbility), incomplete: null });
-      if (typeof done === "string") console.error(`[linkAbility ${name}] ${done}`);
-    })
-    .catch((e) => console.error(`[linkAbility ${name}]`, e));
+  // o Criador respondeu depois do prazo: a resposta só completa a incompleta (que as fichas já apontam), nunca
+  // mexe em outra entrada; se o nome oficial já é de outra entrada viva, a incompleta fica com o nome do Mestre
+  if (!made)
+    void making
+      .then(async (late) => {
+        if (!late) return;
+        const patch: Record<string, unknown> = { ...late.data, incomplete: null };
+        const taken = await findLibrary(campaign, "ability", late.data.name);
+        if (taken && taken.id !== saved.id) {
+          delete patch.name;
+          console.warn(`[linkAbility ${name}] o Criador chamou de "${late.data.name}", que já é #${taken.id}; #${saved.id} fica com o nome do Mestre`);
+        }
+        const done = await editAbility(campaign, saved.id, patch);
+        if (typeof done === "string") console.error(`[linkAbility ${name}] ${done}`);
+      })
+      .catch((e) => console.error(`[linkAbility ${name}]`, e));
   return { entry: saved, from: "incomplete" };
 }
 
@@ -185,7 +200,7 @@ export async function editAbility(campaign: Campaign, target: string | number, p
     return `Edição recusada: name e type são obrigatórios (type é uma destas keys: ${campaign.ruleset.abilityTypes.map((t) => t.key).join(", ")}).`;
   const taken = `Já existe "${data.name}" na biblioteca deste mundo; escolha outro nome ou edite aquela.`;
   const same = await findLibrary(campaign, "ability", data.name);
-  if (same && same.id !== cur.id) return taken;
+  if (same && same.id !== cur.id && fold(same.name) === fold(data.name)) return taken;
   try {
     const [r] = await q<LibraryEntry>(`UPDATE library SET name = $1, data = $2 WHERE id = $3 RETURNING ${COLS}`, [data.name, JSON.stringify(data), cur.id]);
     return entry(r);
@@ -415,37 +430,44 @@ async function create(campaign: Campaign, kind: LibraryKind, req: CreateRequest)
 }
 
 // o mesmo nome pedido duas vezes ao mesmo tempo (Mestre + Criador de personagens) chama o Criador uma vez só
-const inflight = new Map<string, Promise<LibraryEntry | null>>();
+const inflight = new Map<string, Promise<Made | null>>();
 
 /**
- * Entrada do mundo para a habilidade: a da biblioteca ou, se não existir, criada agora pelo
- * Criador de habilidades a partir do brief (e guardada na biblioteca). null se não deu.
+ * Técnica feita pelo Criador de habilidades, sem gravar. Com padrão de nomes vale o nome do Criador (o oficial);
+ * sem, o que o Mestre usa na história. null se não deu.
  */
-export async function ensureAbility(campaign: Campaign, name: string, brief?: string): Promise<LibraryEntry | null> {
-  const hit = await findLibrary(campaign, "ability", name);
-  if (hit) return hit;
+function makeAbility(campaign: Campaign, name: string, brief?: string): Promise<Made | null> {
   const key = `${worldOf(campaign)}:${fold(name)}`;
   let p = inflight.get(key);
   if (!p) {
-    p = (async () => {
-      const [made] = await create(campaign, "ability", { count: 1, name, focus: brief, canon: campaign.ruleset.canonBased, existing: [] });
-      if (!made) return null;
-      // com padrão de nomes vale o nome do Criador (o oficial, que pode já estar na biblioteca); sem, o que o Mestre usa na história
-      const data = campaign.ruleset.abilityNaming ? made.data : { ...made.data, name: name.trim() };
-      return (
-        (await findLibrary(campaign, "ability", data.name)) ??
-        (await saveLibrary(campaign, "ability", data, made.canon)) ??
-        (await findLibrary(campaign, "ability", data.name))
-      );
-    })()
+    p = create(campaign, "ability", { count: 1, name, focus: brief, canon: campaign.ruleset.canonBased, existing: [] })
+      .then(([made]) => made && (campaign.ruleset.abilityNaming ? made : { ...made, data: { ...made.data, name: name.trim() } }))
       .catch((e) => {
-        console.error(`[ensureAbility ${name}]`, e);
+        console.error(`[makeAbility ${name}]`, e);
         return null;
       })
       .finally(() => inflight.delete(key));
     inflight.set(key, p);
   }
   return p;
+}
+
+/** Grava o que o Criador fez; se o nome (oficial) já existe no mundo, devolve a que existe. */
+async function storeMade(campaign: Campaign, made: Made): Promise<LibraryEntry | null> {
+  const { name } = made.data;
+  return (
+    (await findLibrary(campaign, "ability", name)) ??
+    (await saveLibrary(campaign, "ability", made.data, made.canon)) ??
+    (await findLibrary(campaign, "ability", name))
+  );
+}
+
+/** Entrada do mundo para a habilidade: a da biblioteca ou, se não existir, criada agora pelo Criador (e guardada). */
+export async function ensureAbility(campaign: Campaign, name: string, brief?: string): Promise<LibraryEntry | null> {
+  const hit = await findLibrary(campaign, "ability", name);
+  if (hit) return hit;
+  const made = await makeAbility(campaign, name, brief);
+  return made && storeMade(campaign, made);
 }
 
 export const BATCH = 6;

@@ -8,6 +8,7 @@
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { DEFAULT_AGENTS } from "../src/lib/agents";
 import { runTurn } from "../src/lib/engine";
@@ -85,9 +86,10 @@ async function main() {
   assert.ok(turn.includes("note_objective") && !ooc.includes("note_objective"));
   assert.ok(["set_time", "train", "create_npc", "use_ability", "set_scene"].every((n) => turn.includes(n)));
 
+  const world = `test-${randomUUID()}`;
   const { rows: [c] } = await real.query(
     `INSERT INTO campaigns (name, style, ruleset, state) VALUES ('[teste-escrivão]', 'open', $1, '{"clock":{"minutes":480}}') RETURNING id`,
-    [JSON.stringify(rs)]
+    [JSON.stringify({ ...rs, world })] // mundo próprio: add_item não lê nem a biblioteca real
   );
   const id: string = c.id;
   const db = async <T>(sql: string) => (await real.query(sql, [id])).rows as T[];
@@ -175,6 +177,7 @@ async function main() {
   } finally {
     await new Promise((r) => setTimeout(r, 300)); // o índice do histórico roda depois do done
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);
+    await real.query(`DELETE FROM library WHERE world = $1`, [world]);
     await real.end();
   }
 }

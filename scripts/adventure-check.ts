@@ -10,6 +10,7 @@ import { pool, q } from "../src/lib/db";
 import { draftIssues, draftProgress, mergeDraft, parseReply, type Draft } from "../src/lib/adventure";
 import { blankSheet, normalizeRuleset, startingKit } from "../src/lib/ruleset";
 import { DELETE, GET, POST } from "../src/app/api/adventures/route";
+import type { Ability } from "../src/lib/types";
 
 const naruto = JSON.parse(fs.readFileSync("naruto-ruleset.json", "utf-8")) as Draft;
 const req = (url: string, body?: unknown) =>
@@ -56,12 +57,13 @@ async function main() {
     resources: [{ key: "hp", label: "Vida", defaultMax: 0, color: "red" }],
     ranks: [{ key: "a", label: "A", xpRequired: 10 }, { key: "a", label: "B", xpRequired: 5 }],
     abilityTypes: [...naruto.abilityTypes!, { key: "pocoes", label: "Poções" }],
-    startingAbilities: { genin: [{ name: "Raio", type: "voo", rank: "Z", cost: { resource: "mana", amount: 2 } }] },
+    // cost não existe mais (vem do rank): o rascunho que ainda o traz é cobrado
+    startingAbilities: { genin: [{ name: "Raio", type: "voo", rank: "Z", costFree: "sim", cost: { resource: "mana", amount: 2 } } as unknown as Ability] },
   };
   const issues = draftIssues(broken).join("\n");
   for (const re of [/theme/, /key inválida "Magia"/, /Magia.*min <= default/s, /hp: defaultMax/, /hp: color/, /ranks: key repetida/,
     /ranks: xpRequired/, /abilityCosts: \{resource/, /tipo "pocoes" sem atributo/, /falta o kit do primeiro cargo "a"/,
-    /"genin" não é key de ranks/, /type "voo"/, /rank "Z"/, /Raio: cost/])
+    /"genin" não é key de ranks/, /type "voo"/, /rank "Z"/, /genin\.Raio: costFree é true ou false/, /genin\.Raio: sem cost/])
     assert.match(issues, re);
 
   // o que passa na validação vira campanha: ficha e kit inicial
