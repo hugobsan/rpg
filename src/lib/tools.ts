@@ -343,7 +343,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "npc_message",
       description:
-        "O NPC chama o jogador para conversar em particular: a mensagem chega à caixa de entrada do jogador, que decide se abre e responde (a conversa segue com o agente do NPC). Com parcimônia, só quando o NPC tem um motivo real: algo a contar, um pedido, um aviso, um segredo, aprofundar a relação. Coerente com a cena e o relógio: NPC por perto chama de lado ou fala baixo; NPC longe manda recado, mensageiro, pássaro, rádio, holo... conforme o cenário. Nunca para despejar exposição nem empurrar a trama. Na narração, no máximo sinalize a chegada, sem repetir o conteúdo.",
+        "O NPC chama o jogador para conversar em particular (caixa de entrada; o jogador decide se responde, e a conversa segue com o agente do NPC). Com parcimônia, só com motivo real (algo a contar, pedido, aviso, segredo, relação), nunca para exposição ou empurrar a trama. Meio coerente com a distância e o cenário (de lado, recado, mensageiro, rádio...). Na narração, no máximo sinalize a chegada.",
       parameters: S(
         {
           npc: { type: "string", description: "nome exato do NPC registrado" },

@@ -20,31 +20,22 @@ export async function PUT(
   if (!src) return NextResponse.json({ error: `A fonte "${source}" não existe. Escolha outra fonte.` }, { status: 400 });
   const agentParams: Record<string, unknown> = { ...(body.params ?? current.params) };
   if (!isClaude(src as Source, model)) delete agentParams.cache; // cache de prompt só nos modelos da Anthropic
-  if (or) delete agentParams.catalogCost; // o OpenRouter já informa o custo real
+  delete agentParams.catalogCost; // opção antiga: o custo das outras fontes agora é sempre estimado pelo catálogo
   if (!model) return NextResponse.json({ error: "Informe o modelo." }, { status: 400 });
-  // no OpenRouter, valida o modelo no catálogo e guarda o preço atual; outras fontes não informam preço,
-  // a não ser que o agente peça o custo estimado pelo catálogo do OpenRouter (params.catalogCost)
-  const estimate = !!agentParams.catalogCost;
+  // guarda o preço atual do catálogo do OpenRouter: no OpenRouter valida o modelo; nas outras fontes é o preço
+  // do mesmo modelo, base do custo estimado de cada chamada (modelo fora do catálogo, como um local: sem preço)
   let pricing = null;
-  if (or || estimate) {
-    try {
-      pricing = await getModelPricing(model, estimate);
-    } catch (e) {
+  try {
+    pricing = await getModelPricing(model, !or);
+  } catch (e) {
+    if (or)
       return NextResponse.json(
         { error: `Não foi possível consultar o catálogo do OpenRouter: ${e instanceof Error ? e.message : e}` },
         { status: 502 }
       );
-    }
-    if (!pricing)
-      return NextResponse.json(
-        {
-          error: or
-            ? `Modelo "${model}" não existe no catálogo do OpenRouter. Escolha um id da lista.`
-            : `Não achei "${model}" no catálogo do OpenRouter para estimar o custo. Confira o id ou desligue o custo pelo preço do OpenRouter.`,
-        },
-        { status: 400 }
-      );
   }
+  if (or && !pricing)
+    return NextResponse.json({ error: `Modelo "${model}" não existe no catálogo do OpenRouter. Escolha um id da lista.` }, { status: 400 });
   // agente Voz: as vozes padrão precisam existir no modelo escolhido (quando o catálogo lista as vozes)
   if (id === "voice") {
     const voices = await modelVoices(model, source).catch(() => null);

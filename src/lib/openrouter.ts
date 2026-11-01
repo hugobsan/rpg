@@ -11,6 +11,8 @@ export interface ChatMessage {
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   name?: string;
+  /** ponto de cache entre turnos (Claude): fim do histórico, antes do contexto do turno; não vai no corpo da API */
+  cache?: boolean;
 }
 
 export interface ContentPart {
@@ -138,24 +140,32 @@ export function mergeSystem(messages: ChatMessage[]): ChatMessage[] {
   return out;
 }
 
+// 1 h no que dura entre turnos (o jogador pensa mais de 5 min, e cada modelo do Mestre tem o seu cache);
+// 5 min no fim da conversa, que só as rodadas do mesmo turno leem. O mais longo vem antes, como a API exige.
+export const CACHE_LONG = { type: "ephemeral", ttl: "1h" } as const;
+export const CACHE_SHORT = { type: "ephemeral" } as const;
+
 /**
  * URL, cabeçalhos e corpo da chamada. Fora do OpenRouter vai só o formato OpenAI: sem :online, reasoning e cabeçalhos de app.
- * cache (Claude no OpenRouter): cache automático no fim da conversa e um ponto fixo no fim da 1ª mensagem de sistema.
+ * cache (Claude no OpenRouter): cache automático no fim da conversa e pontos de 1 h no fim da 1ª mensagem de sistema
+ * e na mensagem marcada com cache (fim do histórico).
  */
 export function chatRequest(opts: ChatOptions, src: Source, cache = false) {
   const or = src.id === OPENROUTER;
+  const messages = opts.messages.map(({ cache: _, ...m }) => m);
   const body: Record<string, unknown> = {
     model: or && opts.webSearch ? `${opts.model}:online` : opts.model,
-    messages: opts.messages,
+    messages,
     max_tokens: opts.max_tokens ?? 2048,
   };
   if (or && cache) {
-    body.cache_control = { type: "ephemeral" };
-    const i = opts.messages.findIndex((m) => m.role === "system" && typeof m.content === "string");
-    if (i >= 0)
-      body.messages = opts.messages.map((m, j) =>
-        j === i ? { ...m, content: [{ type: "text", text: m.content, cache_control: { type: "ephemeral" } }] } : m
-      );
+    body.cache_control = CACHE_SHORT;
+    const sys = opts.messages.findIndex((m) => m.role === "system" && typeof m.content === "string");
+    body.messages = messages.map((m, j) =>
+      (j === sys || opts.messages[j].cache) && typeof m.content === "string"
+        ? { ...m, content: [{ type: "text", text: m.content, cache_control: CACHE_LONG }] }
+        : m
+    );
   }
   if (!presetOf(src.kind)?.noTemperature) body.temperature = opts.temperature ?? 0.8;
   if (opts.tools?.length) body.tools = opts.tools;
@@ -336,8 +346,8 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       completionTokens: usage?.completion_tokens,
       durationMs: Date.now() - started,
       error,
-      // USD real do OpenRouter (já com cache/busca/raciocínio); outras fontes não informam: estimado pelo catálogo se o agente pedir
-      cost: src.id === OPENROUTER ? usage?.cost : agent?.params?.catalogCost && usage ? await estimateCost(opts.model, usage) : null,
+      // USD real do OpenRouter (já com cache/busca/raciocínio); outras fontes não informam: estimado pelo preço do catálogo
+      cost: src.id === OPENROUTER ? usage?.cost : usage ? await estimateCost(opts.model, usage) : null,
     });
   }
 }
@@ -423,7 +433,7 @@ export type ModelPricing = {
 };
 
 /** Opções do agente (params) que chat() lê a cada chamada. */
-type AgentFlags = { cache?: boolean; catalogCost?: boolean } | null;
+type AgentFlags = { cache?: boolean } | null;
 
 /** usage como vem do OpenRouter (e como anthropicApi e readStream montam): cache lido e gravado em prompt_tokens_details. */
 export type Usage = {
@@ -541,7 +551,10 @@ export async function getModelPricing(id: string, other = false) {
   };
 }
 
-/** Estimativa grosseira de tokens (~3.5 chars/token para pt-BR). */
+// medido num turno do Mestre em pt-BR: ~2,2 caracteres por token no Claude; o GPT rende um pouco mais por token
+export const CHARS_PER_TOKEN = 2.5;
+
+/** Estimativa grosseira de tokens em pt-BR. */
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 3.5);
+  return Math.ceil(text.length / CHARS_PER_TOKEN);
 }

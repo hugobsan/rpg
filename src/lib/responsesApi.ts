@@ -81,7 +81,7 @@ type Event = {
   response?: {
     id?: string; model?: string; error?: RespError | null;
     incomplete_details?: { reason?: string } | null;
-    usage?: { input_tokens?: number; output_tokens?: number };
+    usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } };
   };
   error?: RespError;
 } & RespError;
@@ -111,7 +111,13 @@ export async function readResponses(stream: ReadableStream<Uint8Array>, onDelta:
       completed = true;
       out.id = r?.id;
       out.model = r?.model;
-      if (r?.usage) out.usage = { prompt_tokens: r.usage.input_tokens, completion_tokens: r.usage.output_tokens };
+      // cache automático da OpenAI (prefixo igual ao da chamada anterior), no nome que o resto do app lê
+      if (r?.usage)
+        out.usage = {
+          prompt_tokens: r.usage.input_tokens,
+          completion_tokens: r.usage.output_tokens,
+          prompt_tokens_details: { cached_tokens: r.usage.input_tokens_details?.cached_tokens ?? 0 },
+        };
     } else if (e.type === "response.failed") out.error = { code: r?.error?.code, message: chatgptError(r?.error || {}) };
     else if (e.type === "response.incomplete") out.error = { message: `a resposta veio incompleta (${r?.incomplete_details?.reason || "sem motivo"})` };
     else if (e.type === "error") out.error = { code: (e.error ?? e).code, message: chatgptError(e.error ?? e) };

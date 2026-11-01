@@ -5,6 +5,7 @@
 import assert from "node:assert";
 import { catalogCost, catalogMatch, chat, chatRequest, mergeSystem, type ChatOptions, type Source } from "../src/lib/openrouter";
 import { anthropicParams, toChatJson } from "../src/lib/anthropicApi";
+import { windowStart } from "../src/lib/engine";
 import type Anthropic from "@anthropic-ai/sdk";
 
 const ANT: Source = { id: "anthropic", name: "Anthropic", url: "https://api.anthropic.com/v1", apiKey: "sk-ant-test-0001", kind: "anthropic" };
@@ -78,6 +79,8 @@ const GM: ChatOptions = {
   messages: [
     { role: "system", content: "FIXO" },
     { role: "system", content: "TURNO" },
+    { role: "user", content: "entro na vila" },
+    { role: "assistant", content: "A vila está quieta.", cache: true }, // fim do histórico
     { role: "user", content: "abro a porta" },
     { role: "assistant", content: null, tool_calls: [
       { id: "c1", type: "function", function: { name: "roll_dice", arguments: "{\"expr\":\"1d20\"}" } },
@@ -91,19 +94,24 @@ const GM: ChatOptions = {
 };
 
 async function main() {
-  // 1. tradução para a API nativa e os três pontos de cache
+  // 1. tradução para a API nativa e os quatro pontos de cache (1 h nos que duram entre turnos, 5 min no fim)
   const p = anthropicParams(GM);
   assert.deepEqual(p.cache_control, { type: "ephemeral" }, "cache automático no fim da conversa");
   const system = p.system as Anthropic.TextBlockParam[];
   assert.deepEqual(system.map((b) => b.text), ["FIXO", "TURNO"], "cada mensagem de sistema vira um bloco, na ordem");
-  assert.deepEqual(system[0].cache_control, { type: "ephemeral" }, "ponto de cache no fim do prefixo fixo");
+  const LONG = { type: "ephemeral", ttl: "1h" };
+  assert.deepEqual(system[0].cache_control, LONG, "ponto de cache de 1 h no fim do prefixo fixo");
   assert.equal(system[1].cache_control, undefined);
-  assert.deepEqual(p.tools!.map((t) => ("cache_control" in t ? t.cache_control : undefined)), [undefined, { type: "ephemeral" }], "ponto de cache na última tool");
+  assert.deepEqual(p.tools!.map((t) => ("cache_control" in t ? t.cache_control : undefined)), [undefined, LONG], "ponto de cache de 1 h na última tool");
   assert.equal((p.tools![0] as Anthropic.Tool).input_schema.type, "object");
   assert.ok(!("temperature" in p) && !("thinking" in p), "sem temperature nem thinking, como na camada compatível");
   assert.equal(p.max_tokens, 3000);
-  assert.deepEqual(p.messages.map((m) => m.role), ["user", "assistant", "user"], "tool_result e o aviso seguinte numa mensagem só de user; assistant vazio some");
-  const [, asst, results] = p.messages as unknown as { content: Record<string, unknown>[] }[];
+  assert.deepEqual(p.messages.map((m) => m.role), ["user", "assistant", "user", "assistant", "user"], "tool_result e o aviso seguinte numa mensagem só de user; assistant vazio some");
+  const hist = p.messages[1].content as Anthropic.TextBlockParam[];
+  assert.deepEqual(hist[0].cache_control, LONG, "ponto de cache de 1 h no fim do histórico");
+  const marks = JSON.stringify(p).split("cache_control").length - 1;
+  assert.equal(marks, 4, "quatro pontos, o limite da API");
+  const [, , , asst, results] = p.messages as unknown as { content: Record<string, unknown>[] }[];
   assert.deepEqual(asst.content.map((b) => [b.type, b.input]), [["tool_use", { expr: "1d20" }], ["tool_use", {}]], "argumento quebrado vira {}");
   assert.deepEqual(results.content.map((b) => b.type), ["tool_result", "tool_result", "text"]);
   assert.equal(results.content[0].tool_use_id, "c1");
@@ -134,14 +142,17 @@ async function main() {
   const orGm = { ...GM, model: "anthropic/claude-sonnet-5.5" };
   const c = chatRequest(orGm, OR, true).body as { cache_control: unknown; messages: { content: unknown }[] };
   assert.deepEqual(c.cache_control, { type: "ephemeral" });
-  assert.deepEqual(c.messages[0].content, [{ type: "text", text: "FIXO", cache_control: { type: "ephemeral" } }]);
+  assert.deepEqual(c.messages[0].content, [{ type: "text", text: "FIXO", cache_control: { type: "ephemeral", ttl: "1h" } }]);
   assert.equal(c.messages[1].content, "TURNO");
+  assert.deepEqual(c.messages[3].content, [{ type: "text", text: "A vila está quieta.", cache_control: { type: "ephemeral", ttl: "1h" } }], "fim do histórico");
+  assert.ok(c.messages.every((m) => !("cache" in m)), "a marca não vai no corpo da API");
   const off = chatRequest(orGm, OR).body;
-  assert.ok(!("cache_control" in off) && off.messages === orGm.messages, "sem cache, nada muda");
+  assert.ok(!("cache_control" in off), "sem cache, sem ponto automático");
+  assert.deepEqual(off.messages, orGm.messages.map(({ cache: _, ...m }) => m), "sem cache, as mensagens vão como vieram (sem a marca)");
   assert.ok(!("cache_control" in chatRequest(GM, ANT, true).body), "fora do OpenRouter o cache não entra no corpo OpenAI");
 
   // 4. sem cache, as mensagens de sistema seguidas voltam a ser uma só (o texto de antes)
-  assert.deepEqual(mergeSystem(GM.messages).slice(0, 2).map((m) => [m.role, m.content]), [["system", "FIXO\nTURNO"], ["user", "abro a porta"]]);
+  assert.deepEqual(mergeSystem(GM.messages).slice(0, 2).map((m) => [m.role, m.content]), [["system", "FIXO\nTURNO"], ["user", "entro na vila"]]);
   assert.equal(mergeSystem([{ role: "user", content: "a" }, { role: "user", content: "b" }]).length, 2, "só junta sistema");
 
   // 5. modelo de outra fonte no catálogo e a conta do custo
@@ -158,7 +169,7 @@ async function main() {
   assert.equal(catalogCost({ prompt: "-1", completion: "-1" }, usage), null, "preço variável não estima");
 
   // 6. chat() de ponta a ponta na fonte Anthropic com cache: API nativa em streaming, custo pelo catálogo
-  state.params = { cache: true, catalogCost: true };
+  state.params = { cache: true };
   const deltas: string[] = [];
   const r = await chat({ ...GM, onDelta: (t) => deltas.push(t) });
   const nat = sent.filter((x) => x.url === "https://api.anthropic.com/v1/messages");
@@ -175,13 +186,13 @@ async function main() {
   assert.equal(log.request.cache, true);
   near(log.cost, (100 * 2 + 9000 * 0.1 + 400 * 2.5 + 50 * 10) / 1e6);
 
-  // 7. mesma fonte sem cache e sem custo estimado: camada compatível, sistema juntado, custo nulo
+  // 7. mesma fonte sem cache: camada compatível, sistema juntado, custo ainda estimado pelo catálogo
   state.params = {};
   sent.length = 0;
   await chat(GM);
   assert.deepEqual(sent.map((x) => x.url), ["https://api.anthropic.com/v1/chat/completions"]);
   assert.equal((sent[0].body.messages as unknown[]).length, GM.messages.length - 1, "duas mensagens de sistema viraram uma");
-  assert.equal(lastLog().cost, null);
+  near(lastLog().cost, (3 * 2 + 1 * 10) / 1e6);
   assert.equal(lastLog().request.cache, undefined);
 
   // 8. cache ligado num modelo que não é da Anthropic no OpenRouter: ignorado
@@ -193,6 +204,20 @@ async function main() {
   assert.equal(lastLog().cost, 0.5, "OpenRouter: custo real");
   await chat(orGm);
   assert.deepEqual(sent[1].body.cache_control, { type: "ephemeral" }, "anthropic/* no OpenRouter leva o cache");
+
+  // 9. janela do histórico: começo estável por vários turnos, cabe no orçamento e anda em saltos
+  const lens = [400, 300, 500, 200, 600, 300, 400];
+  for (let n = 1; n <= lens.length; n++) {
+    const part = lens.slice(0, n);
+    const i = windowStart(part, 1000);
+    const tail = part.slice(i).reduce((a, x) => a + x, 0);
+    assert.ok(tail <= 1000, `janela cabe no orçamento (${tail})`);
+  }
+  assert.equal(windowStart([400, 300], 1000), 0, "cabe tudo: começa do início");
+  assert.equal(windowStart([400, 300, 500], 1000), 2, "passou: pula meio orçamento de uma vez");
+  assert.equal(windowStart([400, 300, 500, 200], 1000), 2, "o começo fica no turno seguinte");
+  assert.equal(windowStart([400, 300, 500, 200, 100], 1000), 2, "e no outro");
+  assert.equal(windowStart([400, 300, 500, 200, 100, 200], 1000), 3, "passou de novo: outro salto");
 
   console.log("cache-check ok");
 }

@@ -1,7 +1,7 @@
 import { q } from "./db";
 import { type Advanced, getAdvanced } from "./advanced";
 import { getAgent } from "./agents";
-import { chat, ChatMessage, estimateTokens } from "./openrouter";
+import { chat, ChatMessage, CHARS_PER_TOKEN, estimateTokens } from "./openrouter";
 import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
 import {
   activeDirectives,
@@ -162,6 +162,9 @@ async function buildGmSystem(
     STYLE_INSTRUCTIONS[campaign.style] || STYLE_INSTRUCTIONS.hybrid,
     `\n--- MECÂNICA ---\n${rulesetPromptSummary(campaign.ruleset)}`,
     "Biblioteca do mundo: técnicas e itens já criados (search_library). add_ability só precisa de personagem, nome e brief: a técnica vem da biblioteca ou o Criador de habilidades a cria completa (tipo, rank, custo, efeito, dano, marcos); não invente esses números.",
+    "Ao abrir cena nova ou mudar de local (set_scene), informe present com todos os NPCs que estão lá: quem ficar de fora sai de cena.",
+    "search_history busca no chat inteiro da campanha (turnos e conversas com NPCs, com dia, hora e local): use para lembrar exatamente o que alguém disse ou fez, ou detalhes antigos que não viraram memória.",
+    "O estado do turno (cena, hora, personagens, memórias) chega numa mensagem de contexto logo antes da ação do jogador.",
   ];
   const parts = [
     tablePromptBlock(getTable(campaign.state)),
@@ -182,7 +185,6 @@ async function buildGmSystem(
     inactiveNames.length
       ? `NPCs conhecidos fora de cena (não interagem; reative com set_npc_active): ${inactiveNames.join(", ")}`
       : "",
-    "Ao abrir cena nova ou mudar de local (set_scene), informe present com todos os NPCs que estão lá: quem ficar de fora sai de cena.",
     activeArc
       ? `\n--- ROTEIRO: ARCO ATIVO ---\n${activeArc.title}: ${activeArc.summary}\nEventos canônicos deste arco: ${activeArc.canonEvents.join(" | ") || "-"}\nGanchos: ${activeArc.hooks.join(" | ") || "-"}\nNotas: ${activeArc.notes.slice(-5).join(" | ") || "-"}\n(roteiro completo via get_script)`
       : "",
@@ -191,7 +193,6 @@ async function buildGmSystem(
           .map((m) => `[${m.kind}${m.subject ? `/${m.subject}` : ""}] ${m.content}`)
           .join("\n")}`
       : "",
-    "search_history busca no chat inteiro da campanha (turnos e conversas com NPCs, com dia, hora e local): use para lembrar exatamente o que alguém disse ou fez, ou detalhes antigos que não viraram memória.",
     past ? `\n--- TRECHOS ANTIGOS DO CHAT (lembrados para esta ação) ---\n${past}` : "",
     directives.length
       ? `\n--- DIRETRIZES DO JOGADOR (fora do jogo) — siga ---\n${directives
@@ -224,32 +225,36 @@ function webSources(raw: unknown): string {
     .join("\n");
 }
 
-/** Janela de histórico recente dentro do orçamento de tokens. */
-async function historyWindow(
-  campaignId: string,
-  sceneId: string,
-  budgetTokens: number
-): Promise<ChatMessage[]> {
-  const rows = await q<GameMessage & { scene_id: string }>(
-    `SELECT id, role, speaker, content, meta, created_at::text, scene_id
-     FROM messages
+/**
+ * Onde começa a janela de histórico (tamanhos em caracteres, do mais antigo ao mais novo). O começo só anda em
+ * saltos de meio orçamento, contados desde a 1ª mensagem: fica igual por vários turnos, e o cache do histórico vale
+ * de um turno para o outro (uma janela que perde a mais antiga a cada turno muda o começo e regrava tudo).
+ * O que sobra fica entre metade do orçamento (menos uma mensagem) e o orçamento inteiro.
+ */
+export function windowStart(lengths: number[], budget: number): number {
+  const total = lengths.reduce((a, n) => a + n, 0);
+  const step = Math.max(Math.round(budget / 2), 1);
+  const cut = Math.ceil(Math.max(total - budget, 0) / step) * step;
+  let before = 0;
+  for (let i = 0; i < lengths.length; i++) {
+    if (before >= cut) return i;
+    before += lengths[i];
+  }
+  return lengths.length;
+}
+
+/** Histórico recente não compactado dentro do orçamento de tokens, começando numa fala do jogador. */
+async function historyWindow(campaignId: string, budgetTokens: number): Promise<ChatMessage[]> {
+  // a compactação do Cronista mantém poucas mensagens não compactadas; elas vêm todas para o começo ser estável
+  const rows = await q<Pick<GameMessage, "role" | "content">>(
+    `SELECT role, content FROM messages
      WHERE campaign_id = $1 AND role IN ('player','gm','system') AND NOT compacted
-     ORDER BY id DESC LIMIT 60`,
+     ORDER BY id`,
     [campaignId]
   );
-  const out: ChatMessage[] = [];
-  let used = 0;
-  for (const m of rows) {
-    const t = estimateTokens(m.content);
-    if (used + t > budgetTokens && out.length > 4) break;
-    used += t;
-    out.unshift(
-      m.role === "player"
-        ? { role: "user", content: m.content }
-        : { role: "assistant", content: m.content }
-    );
-  }
-  return out;
+  let i = windowStart(rows.map((m) => m.content.length), budgetTokens * CHARS_PER_TOKEN);
+  while (i < rows.length && rows[i].role !== "player") i++; // a API da Anthropic quer o 1º turno do usuário
+  return rows.slice(i).map((m) => ({ role: m.role === "player" ? "user" : "assistant", content: m.content }));
 }
 
 // ---------- persistência de mensagens ----------
@@ -330,7 +335,7 @@ export async function runTurn(
   await saveMessage(campaignId, scene.id, "player", playerInput);
 
   const [history, candidates, pastHits] = await Promise.all([
-    historyWindow(campaignId, scene.id, params.historyBudgetTokens ?? 9000),
+    historyWindow(campaignId, params.historyBudgetTokens ?? 9000),
     candidatesP,
     pastP,
   ]);
@@ -374,15 +379,19 @@ export async function runTurn(
     past.length ? formatHistory(past, playerInput, adv.history.excerptChars) : "",
     gm.system_prompt
   );
-  // a última mensagem do histórico já é o input do jogador recém-salvo? Não: janela foi lida após salvar.
-  // duas mensagens de sistema: chat() junta de volta no texto de antes, menos com o cache ligado (a 1ª é o prefixo fixo)
-  const messages: ChatMessage[] = [{ role: "system", content: fixed }, { role: "system", content: turn }, ...history];
-  if (
-    !history.length ||
-    history[history.length - 1].role !== "user" ||
-    history[history.length - 1].content !== playerInput
-  )
-    messages.push({ role: "user", content: playerInput });
+  // a janela foi lida depois de salvar a ação: ela sai do fim e volta depois do contexto do turno
+  const tail = history[history.length - 1];
+  if (tail?.role === "user" && tail.content === playerInput) history.pop();
+  if (history.length) history[history.length - 1] = { ...history[history.length - 1], cache: true };
+  // ordem para o cache (Claude e OpenAI reaproveitam o começo igual ao da chamada anterior): o que não muda na
+  // campanha, o histórico (só cresce no fim; o ponto de cache dele é lido no próximo turno) e, por último, o
+  // contexto do turno, que muda a cada ação. Antes o contexto vinha antes do histórico e o regravava todo turno.
+  const messages: ChatMessage[] = [
+    { role: "system", content: fixed },
+    ...history,
+    { role: "user", content: `(Contexto do turno, montado pelo sistema; não é fala do jogador)\n${turn}` },
+    { role: "user", content: playerInput },
+  ];
   if (regen) {
     // nota fora do jogo só no prompt; a mensagem salva continua sendo a ação original
     const last = messages[messages.length - 1];

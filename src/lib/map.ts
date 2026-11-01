@@ -417,7 +417,7 @@ export const MAP_TOOLS: ToolDef[] = [
     function: {
       name: "update_map",
       description:
-        "Enriquece o mapa do mundo, que o jogador vê em 3D. Os locais já entram sozinhos pelo set_scene (com a rota a partir do anterior); use isto para dar tipo, descrição curta, o local que contém (parent), outros nomes, a posição em relação a outro local (from + direction + distance) e rotas com tempo de viagem. Também registra um local conhecido e ainda não visitado (destino de missão, lugar citado). Um local por chamada; várias chamadas na mesma rodada se precisar.",
+        "Enriquece o mapa do mundo (3D para o jogador). Os locais visitados já entram pelo set_scene; use para detalhar um local (tipo, descrição, parent, outros nomes, posição e rota a partir de outro) ou registrar um conhecido e não visitado. Um local por chamada.",
       parameters: obj(
         {
           place: { type: "string", description: "nome do local (cria se não existir)" },
@@ -449,7 +449,7 @@ export const MAP_TOOLS: ToolDef[] = [
     function: {
       name: "set_stage",
       description:
-        "Palco da cena: as zonas do lugar atual e onde cada personagem está em relação ao jogador (distância, postura, cobertura, elevação). O jogador vê o palco no painel do mapa. ESSENCIAL EM BATALHA: monte no começo do combate e atualize a cada movimento relevante (aproximar, recuar, buscar cobertura, subir, cair), para alcance e posição ficarem coerentes entre os turnos. Fora de batalha, use quando a disposição importar (emboscada, perseguição, negociação tensa). Muda só os atores informados; o jogador fica no centro (inclua-o só para marcar a zona ou a cobertura dele); clear=true quando a situação acabar.",
+        "Palco da cena (o jogador vê no mapa): zonas do lugar e onde cada personagem está em relação ao jogador. ESSENCIAL EM BATALHA: monte no começo e atualize a cada movimento relevante, para alcance e posição ficarem coerentes entre turnos. Fora de batalha, só quando a disposição importar (emboscada, perseguição). Muda só os atores informados; o jogador é o centro (inclua-o só para zona ou cobertura); clear=true quando acabar.",
       parameters: obj({
         zones: {
           type: "array",

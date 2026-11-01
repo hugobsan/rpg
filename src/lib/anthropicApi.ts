@@ -4,9 +4,8 @@
 // usage no formato do OpenRouter), então chat(), o log e Custos e uso não mudam.
 // Doc: https://platform.claude.com/docs/en/build-with-claude/prompt-caching
 import Anthropic from "@anthropic-ai/sdk";
-import type { ChatMessage, ChatOptions, Source, ToolCall } from "./openrouter";
+import { CACHE_LONG, CACHE_SHORT, type ChatMessage, type ChatOptions, type Source, type ToolCall } from "./openrouter";
 
-const EPHEMERAL = { type: "ephemeral" } as const; // 5 min, renovados a cada leitura
 const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
 // ponytail: só texto (parte de imagem vira nada), como em responsesApi; nenhum chamador manda imagem para chat() hoje
@@ -21,16 +20,16 @@ function input(args: string): Record<string, unknown> {
 }
 
 /**
- * Corpo de messages.create. Com cache, três pontos: fim das tools, fim da 1ª mensagem de sistema (o prefixo fixo
- * do agente; as tools vêm antes e entram junto) e o automático no fim da conversa, que cada rodada de ferramentas
- * lê da anterior. Sem temperature (Claude 4.7+ recusa) nem thinking (os 5.x pensam por padrão, e o Opus 5.5 recusa
+ * Corpo de messages.create. Com cache, até quatro pontos (o limite da API): fim das tools e fim da 1ª mensagem de
+ * sistema (o prefixo fixo do agente), fim da mensagem marcada com cache (o histórico, que o próximo turno lê),
+ * todos de 1 h, e o automático de 5 min no fim da conversa, que cada rodada de ferramentas lê da anterior. Sem temperature (Claude 4.7+ recusa) nem thinking (os 5.x pensam por padrão, e o Opus 5.5 recusa
  * desligar); a profundidade vai em output_config.effort. Os blocos de raciocínio não voltam no histórico.
  */
 export function anthropicParams(opts: ChatOptions, cache = true): Anthropic.MessageCreateParamsNonStreaming {
   const system: Anthropic.TextBlockParam[] = opts.messages
     .filter((m) => m.role === "system")
     .map((m) => ({ type: "text", text: text(m.content) }));
-  if (cache && system[0]) system[0].cache_control = EPHEMERAL;
+  if (cache && system[0]) system[0].cache_control = CACHE_LONG;
 
   const messages: Anthropic.MessageParam[] = [];
   const push = (role: "user" | "assistant", blocks: Anthropic.ContentBlockParam[]) => {
@@ -48,7 +47,9 @@ export function anthropicParams(opts: ChatOptions, cache = true): Anthropic.Mess
     const blocks: Anthropic.ContentBlockParam[] = [];
     if (text(m.content)) blocks.push({ type: "text", text: text(m.content) });
     for (const t of m.tool_calls || []) blocks.push({ type: "tool_use", id: t.id, name: t.function.name, input: input(t.function.arguments) });
-    if (blocks.length) push(m.role, blocks); // texto vazio é recusado pela API
+    if (!blocks.length) continue; // texto vazio é recusado pela API
+    push(m.role, blocks);
+    if (cache && m.cache) (blocks[blocks.length - 1] as Anthropic.TextBlockParam | Anthropic.ToolUseBlockParam).cache_control = CACHE_LONG;
   }
 
   const params: Anthropic.MessageCreateParamsNonStreaming = {
@@ -57,7 +58,7 @@ export function anthropicParams(opts: ChatOptions, cache = true): Anthropic.Mess
     system,
     messages,
   };
-  if (cache) params.cache_control = EPHEMERAL;
+  if (cache) params.cache_control = CACHE_SHORT;
   const effort = opts.reasoning?.effort;
   // effort do OpenRouter fora da escala da Anthropic ("minimal", "none") fica de fora: vale o padrão do modelo
   if (typeof effort === "string" && EFFORTS.has(effort))
@@ -68,7 +69,7 @@ export function anthropicParams(opts: ChatOptions, cache = true): Anthropic.Mess
       description: f.description,
       input_schema: f.parameters as Anthropic.Tool.InputSchema,
     }));
-    if (cache) params.tools[params.tools.length - 1].cache_control = EPHEMERAL;
+    if (cache) params.tools[params.tools.length - 1].cache_control = CACHE_LONG;
   }
   return params;
 }

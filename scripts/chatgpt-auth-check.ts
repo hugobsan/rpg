@@ -294,7 +294,7 @@ async function main() {
     assert.equal(deltas.join(""), out.choices[0].message.content);
     assert.deepEqual(out.choices[0].message.tool_calls, [{ id: "call_z", type: "function", function: { name: "roll_dice", arguments: '{"notation":"2d6"}' } }]);
     assert.equal(out.choices[0].finish_reason, "tool_calls");
-    assert.deepEqual(out.usage, { prompt_tokens: 120, completion_tokens: 30 });
+    assert.deepEqual(out.usage, { prompt_tokens: 120, completion_tokens: 30, prompt_tokens_details: { cached_tokens: 0 } });
     assert.equal(out.model, "gpt-6.1-sol");
     // ida e volta: a chamada devolvida entra de novo no histórico com o mesmo call_id
     if (size === 1e6) {

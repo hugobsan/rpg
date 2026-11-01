@@ -198,7 +198,7 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose
             {agent.source !== "openrouter" && " (preço do OpenRouter, para estimar o custo)"}
           </span>
         ) : agent.source !== "openrouter" ? (
-          <span className={s.price}>Sem preço: a fonte não informa custo (em Custos e uso ficam os tokens). Para estimar, ligue o custo pelo preço do OpenRouter.</span>
+          <span className={s.price}>Sem preço: o modelo não está no catálogo do OpenRouter, então o custo não é estimado (em Custos e uso ficam os tokens).</span>
         ) : (
           <span className={s.price}>Preço ainda não consultado: salve o agente para buscar no catálogo.</span>
         )}
@@ -264,11 +264,7 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose
               </label>}
               {claude && <label className={`${s.check} ${s.full}`}>
                 <input type="checkbox" checked={!!form.params.cache} onChange={(e) => setParam("cache", e.target.checked)} />
-                Cache de prompt: o começo que se repete (ferramentas, prompt do agente, rodadas anteriores do turno) sai por 5 a 10% do preço de entrada. Gravar custa 25% a mais e o cache dura 5 minutos: compensa em quem chama várias vezes seguidas, como o Mestre
-              </label>}
-              {!or && <label className={`${s.check} ${s.full}`}>
-                <input type="checkbox" checked={!!form.params.catalogCost} onChange={(e) => setParam("catalogCost", e.target.checked)} />
-                Custo pelo preço do OpenRouter: esta fonte não informa custo; cada chamada é estimada com o preço do mesmo modelo no catálogo do OpenRouter e entra em Custos e uso
+                Cache de prompt: o começo que se repete (ferramentas, prompt do agente, histórico, rodadas anteriores do turno) sai por 5 a 10% do preço de entrada. Gravar custa mais (2x no que dura 1 hora entre turnos, 1,25x no fim da conversa): compensa em quem chama várias vezes seguidas, como o Mestre
               </label>}
             </>}
             {agent.id === "gm" && (

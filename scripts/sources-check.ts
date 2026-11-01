@@ -49,7 +49,8 @@ globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
   if (url.endsWith("/embeddings")) return Response.json({ data: [{ index: 0, embedding: [0.1, 0.2] }] });
   return new Response("não achei", { status: 404 });
 }) as typeof fetch;
-const last = () => calls[calls.length - 1];
+// a consulta ao catálogo (custo estimado das outras fontes) vai depois da chamada: fica fora de last()
+const last = () => calls.filter((c) => !c.url.includes("/models?")).at(-1)!;
 const tick = () => new Promise((r) => setTimeout(r, 20)); // o log da Voz é gravado depois, sem segurar a fala
 
 const base: ChatOptions = { model: "m-1", messages: [{ role: "user", content: "oi" }], agentId: "gm", purpose: "check" };
@@ -111,7 +112,7 @@ async function main() {
   assert.equal(last().headers.Authorization, `Bearer ${POD.apiKey}`);
   assert.equal(last().body?.model, "m-1");
   assert.equal(r.content, "ok");
-  assert.deepEqual(lastLog(), { agent: "gm", model: "m-1", cost: null, provider: "pod" }, "custo só do OpenRouter");
+  assert.deepEqual(lastLog(), { agent: "gm", model: "m-1", cost: null, provider: "pod" }, "modelo fora do catálogo do OpenRouter: sem custo estimado");
 
   const img = await chat({ ...base, agentId: "image", modalities: ["image", "text"] });
   assert.equal(last().url, "http://pod:8000/v1/chat/completions");
