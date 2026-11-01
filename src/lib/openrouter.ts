@@ -248,6 +248,9 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   const src = await getSource(agent?.source ?? OPENROUTER);
   const cache = !!agent?.params?.cache && isClaude(src, opts.model);
   if (!cache) opts = { ...opts, messages: mergeSystem(opts.messages) };
+  // modelo que só gera imagem recusa pedir texto junto: no OpenRouter, o catálogo diz quem é
+  if (src.id === OPENROUTER && opts.modalities?.includes("image") && catalogMatch(opts.model, await catalogModels())?.imageOnly)
+    opts = { ...opts, modalities: ["image"] };
   // a camada compatível da Anthropic não faz cache e ignora reasoning_effort: com um dos dois vai pela API nativa
   const native = src.kind === "anthropic" && (cache || !!opts.reasoning?.effort);
   const resp = src.auth === "chatgpt"; // Login com ChatGPT: Responses API, sempre em streaming
@@ -475,14 +478,18 @@ export function catalogCost(p: ModelPricing, u: Usage): number | null {
   return fresh * input + read * price(p.input_cache_read, input) + write * price(p.input_cache_write, input) + (u.completion_tokens ?? 0) * price(p.completion, 0);
 }
 
-// catálogo guardado no processo por 6 h: o custo estimado de cada chamada não vai à rede toda vez
+// catálogo guardado no processo por 6 h: o custo estimado e o tipo de saída de cada chamada não vão à rede toda vez
 let catalog: { at: number; list: ReturnType<typeof listModels> } | null = null;
+
+/** Catálogo do OpenRouter em cache; vazio se a rede falhar (nunca lança). */
+async function catalogModels(): Promise<Awaited<ReturnType<typeof listModels>>> {
+  if (!catalog || Date.now() - catalog.at > 6 * 3600_000) catalog = { at: Date.now(), list: listModels() };
+  return catalog.list.catch(() => ((catalog = null), []));
+}
 
 /** Custo estimado de uma chamada de outra fonte pelo preço do OpenRouter; null se o modelo não está no catálogo (nunca lança). */
 export async function estimateCost(model: string, usage: Usage): Promise<number | null> {
-  if (!catalog || Date.now() - catalog.at > 6 * 3600_000) catalog = { at: Date.now(), list: listModels() };
-  const list = await catalog.list.catch(() => ((catalog = null), []));
-  const m = catalogMatch(model, list);
+  const m = catalogMatch(model, await catalogModels());
   return m ? catalogCost(m.pricing, usage) : null;
 }
 
@@ -491,6 +498,7 @@ export async function listModels(): Promise<
   {
     id: string; slug: string; name: string; context: number; pricing: ModelPricing;
     speech: boolean; // modelo de fala (TTS)
+    imageOnly: boolean; // gera imagem e nenhum texto (FLUX, Recraft...): o pedido vai com modalities ["image"]
     voices: string[] | null; // vozes aceitas (null = o catálogo não lista)
   }[]
 > {
@@ -519,6 +527,7 @@ export async function listModels(): Promise<
       context: m.context_length,
       pricing: m.pricing,
       speech: !!m.architecture?.output_modalities?.includes("speech"),
+      imageOnly: !!m.architecture?.output_modalities?.includes("image") && !m.architecture.output_modalities.includes("text"),
       voices: m.supported_voices?.length ? m.supported_voices : null,
     }))
     .sort((a, b) => a.id.localeCompare(b.id));

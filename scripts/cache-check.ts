@@ -6,6 +6,7 @@ import assert from "node:assert";
 import { catalogCost, catalogMatch, chat, chatRequest, mergeSystem, type ChatOptions, type Source } from "../src/lib/openrouter";
 import { anthropicParams, toChatJson } from "../src/lib/anthropicApi";
 import { windowStart } from "../src/lib/engine";
+import { imageFromDataUrl } from "../src/lib/portrait";
 import type Anthropic from "@anthropic-ai/sdk";
 
 const ANT: Source = { id: "anthropic", name: "Anthropic", url: "https://api.anthropic.com/v1", apiKey: "sk-ant-test-0001", kind: "anthropic" };
@@ -45,6 +46,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     return Response.json({ data: [
       { id: "anthropic/claude-sonnet-5.5", name: "Claude Sonnet 5.5", context_length: 1e6, pricing: SONNET },
       { id: "anthropic/claude-sonnet-5.5:batch", name: "batch", context_length: 1e6, pricing: { prompt: "1", completion: "1" } },
+      { id: "black-forest-labs/flux-3-image-klein", name: "FLUX klein", context_length: 0, pricing: { prompt: "0", completion: "0" }, architecture: { output_modalities: ["image"] } },
     ] });
   if (url === "https://api.anthropic.com/v1/messages")
     return sse([
@@ -221,6 +223,22 @@ async function main() {
   assert.equal(bodies.length, 2, "uma repetição");
   assert.ok("temperature" in bodies[0] && !("temperature" in bodies[1]), "a repetição vai sem temperature");
   assert.equal(lastLog().error, null);
+
+  // 11. modelo que só gera imagem (pelo catálogo): o pedido vai só com image; os outros seguem com image + text
+  state.source = "openrouter";
+  sent.length = 0;
+  await chat({ ...GM, model: "black-forest-labs/flux-3-image-klein", tools: undefined, modalities: ["image", "text"] });
+  await chat({ ...GM, model: "google/gemini-3.1-flash-lite-image", tools: undefined, modalities: ["image", "text"] });
+  const chats = sent.filter((x) => x.url.endsWith("/chat/completions"));
+  assert.deepEqual(chats.map((x) => x.body.modalities), [["image"], ["image", "text"]]);
+
+  // 12. imagem em data URL: png e svg (base64 ou texto) valem; outro tipo não (viraria página no nosso domínio)
+  assert.equal(imageFromDataUrl("data:image/png;base64,iVBORw0KGgo=")?.mime, "image/png");
+  const svg = "<svg xmlns='http://www.w3.org/2000/svg'/>";
+  assert.equal(imageFromDataUrl(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`)?.data.toString(), svg);
+  assert.equal(imageFromDataUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`)?.data.toString(), svg);
+  assert.equal(imageFromDataUrl(`data:image/svg+xml,${svg} 100%`)?.data.toString(), `${svg} 100%`, "% solto não quebra");
+  assert.equal(imageFromDataUrl("data:text/html,<script>alert(1)</script>"), null);
 
   // 9. janela do histórico: começo estável por vários turnos, cabe no orçamento e anda em saltos
   const lens = [400, 300, 500, 200, 600, 300, 400];

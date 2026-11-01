@@ -33,6 +33,46 @@ export function describe(campaign: Pick<Campaign, "ruleset">, c: Pick<Character,
     .join("\n");
 }
 
+/**
+ * data URL de imagem (png, jpeg, webp, gif ou svg; em base64 ou em texto) → tipo e bytes; null se não for imagem.
+ * Só esses tipos: as rotas servem os bytes com o tipo daqui, e um data:text/html viraria página no nosso domínio.
+ */
+export function imageFromDataUrl(url: string): { mime: string; data: Buffer } | null {
+  const m = url.match(/^data:(image\/(?:png|jpeg|webp|gif|svg\+xml))((?:;[^;,]+)*),(.*)$/s);
+  if (!m) return null;
+  if (/;base64/i.test(m[2])) return { mime: m[1], data: Buffer.from(m[3], "base64") };
+  let text = m[3];
+  try {
+    text = decodeURIComponent(text);
+  } catch {} // SVG cru com % solto: vale como veio
+  return { mime: m[1], data: Buffer.from(text) };
+}
+
+const REWRITE = `Reescreva o pedido de ilustração abaixo como um prompt para um modelo de geração de imagem, em inglês, com até 80 palavras. Mantenha o estilo pedido (ex.: pixel art 16-bit, anime cinematográfico), o enquadramento e o formato; descreva só o que se vê: quem aparece e sua aparência concreta, roupa, expressão, o lugar, a luz e o clima. Nomes de personagens e obras conhecidos podem ficar. Sem texto na imagem. Responda só o prompt.`;
+
+/**
+ * Prompt do Ilustrador. Com params.promptModel (modelo de texto da mesma fonte), ele é reescrito curto e em inglês antes:
+ * os modelos de difusão (FLUX, Recraft...) rendem mais assim do que com a narração longa em português. Falhou = o original.
+ */
+export async function imagePrompt(agent: Awaited<ReturnType<typeof getAgent>>, prompt: string, campaignId: string): Promise<string> {
+  const model = String(agent.params.promptModel ?? "").trim();
+  if (!model) return prompt;
+  try {
+    const r = await chat({
+      model,
+      messages: [{ role: "system", content: REWRITE }, { role: "user", content: prompt }],
+      max_tokens: 2000, // modelo que raciocina gasta antes da resposta curta
+      temperature: 0.3,
+      agentId: "image",
+      campaignId,
+      purpose: "prompt da imagem (reescrita)",
+    });
+    return r.content.trim() || prompt;
+  } catch {
+    return prompt;
+  }
+}
+
 /** Grava (ou troca) o retrato; cada troca sobe a versão, que vai na URL. */
 export async function savePortrait(characterId: string, mime: string, data: Buffer): Promise<void> {
   await q(
@@ -56,7 +96,11 @@ export async function drawPortrait(campaignId: string, characterId: string): Pro
     model: agent.model,
     messages: [{
       role: "user",
-      content: `Retrato de busto de personagem de RPG em pixel art (estilo 16-bit, pixels grandes e nítidos, paleta limitada, contorno escuro), formato quadrado, rosto e ombros centralizados, fundo liso de uma cor só, sem texto e sem moldura. Roupa, cabelo e acessórios coerentes com o cenário e a época do mundo.\n\n${describe(campaign, c)}`,
+      content: await imagePrompt(
+        agent,
+        `Retrato de busto de personagem de RPG em pixel art (estilo 16-bit, pixels grandes e nítidos, paleta limitada, contorno escuro), formato quadrado, rosto e ombros centralizados, fundo liso de uma cor só, sem texto e sem moldura. Roupa, cabelo e acessórios coerentes com o cenário e a época do mundo.\n\n${describe(campaign, c)}`,
+        campaignId
+      ),
     }],
     modalities: ["image", "text"],
     max_tokens: agent.max_tokens,
@@ -65,9 +109,9 @@ export async function drawPortrait(campaignId: string, characterId: string): Pro
     campaignId,
     purpose: `retrato de ${c.name}`,
   });
-  const m = r.images[0]?.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/s);
-  if (!m) throw new Error("O Ilustrador não devolveu imagem.");
-  await savePortrait(c.id, m[1], Buffer.from(m[2], "base64"));
+  const img = r.images[0] ? imageFromDataUrl(r.images[0]) : null;
+  if (!img) throw new Error("O Ilustrador não devolveu imagem.");
+  await savePortrait(c.id, img.mime, img.data);
 }
 
 /** Gera (ou regera, com force) o retrato em segundo plano (lib/jobs.ts). Não bloqueia; lança com a geração desligada. */

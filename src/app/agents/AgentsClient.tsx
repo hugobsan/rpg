@@ -275,6 +275,14 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose
                   onChange={(e) => setForm({ ...form, params: { ...form.params, complexModel: e.target.value } })} />
               </label>
             )}
+            {agent.id === "image" && (
+              <label className={`field ${s.full}`}>
+                <span>Reescrever o prompt antes de gerar: modelo de texto na mesma fonte que o deixa curto e em inglês, como os modelos de difusão (FLUX, Recraft...) preferem (vazio = manda o prompt como está)</span>
+                <input type="text" spellCheck={false} placeholder="ex.: google/gemini-3.8-flash"
+                  value={String(form.params.promptModel ?? "")}
+                  onChange={(e) => setForm({ ...form, params: { ...form.params, promptModel: e.target.value } })} />
+              </label>
+            )}
             {agent.id === "voice" && ([["maleVoice", "Voz masculina padrão"], ["femaleVoice", "Voz feminina padrão"]] as const).map(([k, label]) => (
               <label key={k} className="field">
                 <span>{label}</span>

@@ -4,6 +4,7 @@ import { getAgent } from "@/lib/agents";
 import { chat } from "@/lib/openrouter";
 import { getCampaign, getCurrentScene } from "@/lib/engine";
 import { getClock, period } from "@/lib/clock";
+import { imageFromDataUrl, imagePrompt } from "@/lib/portrait";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -39,7 +40,7 @@ export async function POST(
 
     const result = await chat({
       model: agent.model,
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content: await imagePrompt(agent, prompt, id) }],
       modalities: ["image", "text"],
       max_tokens: agent.max_tokens,
       temperature: agent.temperature,
@@ -47,9 +48,9 @@ export async function POST(
       campaignId: id,
       purpose: "imagem da cena",
     });
-    if (!result.images.length)
+    if (!result.images.length || !imageFromDataUrl(result.images[0]))
       return NextResponse.json(
-        { error: "O modelo não retornou imagem. Verifique o modelo do agente Ilustrador." },
+        { error: "O modelo não retornou imagem (PNG, JPEG, WebP, GIF ou SVG). Verifique o modelo do agente Ilustrador." },
         { status: 502 }
       );
     const rows = await q<{ id: number }>(
