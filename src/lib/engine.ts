@@ -167,6 +167,12 @@ async function buildGmSystem(
   const activeArc = campaign.script?.arcs.find((a) => a.status === "active");
   const clock = getClock(campaign.state);
   const directives = await activeDirectives(campaign.id);
+  // o que o Escrivão gravou depois da narração anterior (meta.notes da última mensagem do Mestre)
+  const [last] = await q<{ notes: string[] | null }>(
+    `SELECT meta->'notes' AS notes FROM messages WHERE campaign_id = $1 AND role = 'gm' ORDER BY id DESC LIMIT 1`,
+    [campaign.id]
+  );
+  const lastNotes = Array.isArray(last?.notes) ? last.notes : [];
 
   // o que não muda de um turno para outro na campanha: com o cache ligado no Mestre, é o ponto de cache entre turnos
   const fixed = [
@@ -209,6 +215,9 @@ async function buildGmSystem(
           .join("\n")}`
       : "",
     past ? `\n--- TRECHOS ANTIGOS DO CHAT (lembrados para esta ação) ---\n${past}` : "",
+    lastNotes.length
+      ? `\n--- O ESCRIVÃO REGISTROU DEPOIS DA SUA ÚLTIMA NARRAÇÃO (já está nas fichas; reconheça na história se for marcante, como um marco de domínio ou nível novo) ---\n${lastNotes.map((n) => `- ${n}`).join("\n")}`
+      : "",
     directives.length
       ? `\n--- DIRETRIZES DO JOGADOR (fora do jogo) — siga ---\n${directives
           .map((d) => `- ${d.content}${d.subject === "proxima_cena" ? " (vale nesta cena e na próxima)" : ""}`)
@@ -566,6 +575,10 @@ export async function runTurn(
     // Escrivão depois do relógio: prazo relativo de missão conta da hora nova e as gravações de objetivos não se cruzam
     (timeMoved ? Promise.resolve() : fallbackClock(campaignId, campaign, scene, playerInput, narration, emit).catch(() => {}))
       .then(() => runScribe(campaignId, toolCtx, playerInput, narration, done, briefs))
+      // junto da narração: o próximo turno mostra ao Mestre; o "gerar novamente" apaga com a mensagem
+      .then(async (notes) => {
+        if (notes.length) await q(`UPDATE messages SET meta = meta || jsonb_build_object('notes', $1::jsonb) WHERE id = $2`, [JSON.stringify(notes), msgId]);
+      })
       .catch((e) => console.warn("[escrivão]", e)),
     // local antes do elenco: quem continua na cena é julgado já no lugar novo
     fallbackPlace(campaignId, toolCtx, playerInput, narration)
@@ -712,7 +725,8 @@ async function runScribe(
   narration: string,
   done: string[],
   briefs: string[]
-): Promise<void> {
+): Promise<string[]> {
+  const applied: string[] = []; // o que gravou, para o Mestre saber no próximo turno
   const [agent, campaign, chars] = await Promise.all([getAgent("scribe"), getCampaign(campaignId), getCharacters(campaignId)]);
   const clock = getClock(campaign.state);
   const sheet = (c: Character) =>
@@ -749,7 +763,7 @@ async function runScribe(
       campaignId,
       purpose: round ? "anotações do turno (correção)" : "anotações do turno",
     });
-    if (!r.toolCalls.length) return;
+    if (!r.toolCalls.length) return applied;
     messages.push({ role: "assistant", content: r.content || null, tool_calls: r.toolCalls });
     let failed = false;
     for (const call of r.toolCalls) {
@@ -757,10 +771,12 @@ async function runScribe(
         ? await executeGmTool(call.function.name, argsOf(call), tctx).catch((e) => `Erro: ${e instanceof Error ? e.message : String(e)}`)
         : `Erro: ${call.function.name} não é ferramenta do Escrivão.`;
       if (/^Erro|não existe|precisa/.test(out)) failed = true;
+      else applied.push(`${call.function.name} ${call.function.arguments} → ${out}`.slice(0, 240));
       messages.push({ role: "tool", content: out, tool_call_id: call.id, name: call.function.name });
     }
-    if (!failed) return;
+    if (!failed) return applied;
   }
+  return applied;
 }
 
 function toolSummary(name: string, args: Record<string, unknown>): string {

@@ -145,6 +145,8 @@ async function main() {
     assert.equal(scribeLogs.length, 1, "o Escrivão entra em api_logs");
     assert.equal(scribeLogs[0][1], id);
     assert.equal(scribeLogs[0][3], "anotações do turno");
+    const [gmMsg] = await db<{ meta: { notes?: string[] } }>(`SELECT meta FROM messages WHERE campaign_id = $1 AND role = 'gm' ORDER BY id DESC LIMIT 1`);
+    assert.ok(gmMsg.meta.notes?.some((n) => /^update_resource .*→ Hugo agora tem hp/.test(n)), "o que o Escrivão gravou fica junto da narração");
 
     // 2. rodada mista sem texto: o dado roda, a anotação responde "Anotado" e espera a narração da rodada seguinte
     gmScript.push(
@@ -157,6 +159,8 @@ async function main() {
     const results = gmReqs[2].messages.filter((m) => m.role === "tool");
     assert.match(String(results.find((m) => m.name === "roll_dice")?.content), /TOTAL/);
     assert.equal(results.find((m) => m.name === "set_npc_active")?.content, "Anotado: será aplicado depois da narração.");
+    const ctx2 = gmReqs[1].messages.map((m) => String(m.content ?? "")).join("\n");
+    assert.match(ctx2, /O ESCRIVÃO REGISTROU DEPOIS DA SUA ÚLTIMA NARRAÇÃO[^\n]*\n(- .*\n)*- add_item .*Pergaminho selado/, "o Mestre vê no turno seguinte o que o Escrivão gravou");
     const narr2 = at((e) => e.type === "narration");
     const out = at((e) => e.type === "tool" && e.summary === "Iruka saiu de cena");
     assert.ok(narr2 >= 0 && out > narr2 && at((e) => e.type === "done") > out, "set_npc_active depois da narração e antes do done");
