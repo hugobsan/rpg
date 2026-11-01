@@ -1,8 +1,8 @@
-import { getSetting, q } from "./db";
+import { getSetting, q, setSetting } from "./db";
 import type { SourceView } from "./types";
 import { presetOf } from "./sourcePresets";
 import { chatgptAccessToken } from "./chatgptAuth";
-import { readResponses, responsesHttpError, responsesRequest } from "./responsesApi";
+import { codexLimits, readResponses, responsesHttpError, responsesRequest } from "./responsesApi";
 import { anthropicChat } from "./anthropicApi";
 
 export interface ChatMessage {
@@ -249,6 +249,8 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   let error: string | null = null;
   try {
     const res = native ? null : await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    const limits = resp && res && codexLimits(res.headers); // vale também no 429 (limite atingido)
+    if (limits) setSetting("chatgptLimits", limits).catch(() => {});
     if (!res) responseJson = await anthropicChat(opts, src, cache);
     else if (!img && (opts.onDelta || resp) && res.ok && res.body)
       responseJson = await (resp ? readResponses : readStream)(res.body, opts.onDelta ?? (() => {}));

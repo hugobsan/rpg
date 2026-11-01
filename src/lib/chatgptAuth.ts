@@ -3,7 +3,7 @@
 // Os tokens ficam só no servidor, em settings.chatgpt: nunca vão para o cliente, para URL nem para log.
 import { createHash, createPublicKey, randomBytes, randomUUID, verify, type JsonWebKey } from "node:crypto";
 import { getSetting, setSetting } from "./db";
-import type { ChatgptStatus } from "./types";
+import type { ChatgptLimits, ChatgptStatus } from "./types";
 
 const ISSUER = "https://auth.openai.com";
 const AUTHORIZE = `${ISSUER}/api/accounts/authorize`;
@@ -163,6 +163,7 @@ export async function logout(): Promise<{ revoked: boolean }> {
       .then((r) => r.ok, () => false);
   }
   await save({ hostId: c.hostId, clientId: c.clientId, sub: c.sub, email: c.email });
+  await setSetting("chatgptLimits", null); // os limites eram da conta que saiu
   return { revoked };
 }
 
@@ -174,6 +175,7 @@ export async function chatgptStatus(): Promise<ChatgptStatus> {
     email: c.email ?? null,
     expiresAt: c.refreshToken && c.expiresAt ? new Date(c.expiresAt).toISOString() : null,
     sessionUntil: c.refreshToken && c.savedAt ? new Date(c.savedAt + SESSION_MS).toISOString() : null,
+    limits: c.refreshToken ? await getSetting<ChatgptLimits | null>("chatgptLimits", null) : null,
   };
 }
 
