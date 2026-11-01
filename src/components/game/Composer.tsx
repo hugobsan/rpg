@@ -7,7 +7,7 @@ import s from "./Composer.module.css";
 export interface ComposerHandle {
   /** Põe o texto no campo (substitui) e foca no fim, para o jogador ajustar antes de enviar. */
   fill: (text: string) => void;
-  /** Técnica ou item da ficha: com o campo vazio começa a frase; senão acrescenta ao que já está escrito. */
+  /** Técnica ou item da ficha: põe só o nome no campo (no fim do que já está escrito). */
   use: (name: string) => void;
 }
 
@@ -37,7 +37,7 @@ export default function Composer({ ref, onSend, busy, placeholder, onSuggest, su
     });
   useImperativeHandle(ref, () => ({
     fill: (t) => { setText(t); focusEnd(); },
-    use: (name) => { setText((t) => (t.trim() ? `${t.trimEnd()} usando ${name} ` : `Uso ${name} `)); focusEnd(); },
+    use: (name) => { setText((t) => (t.trim() ? `${t.trimEnd()} ${name} ` : `${name} `)); focusEnd(); },
   }), []);
 
   const send = () => {
