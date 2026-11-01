@@ -142,14 +142,14 @@ Regras: memórias são fatos que precisarão ser lembrados muitas sessões depoi
 O QUE REGISTRAR
 - Recursos (update_resource com delta): dano sofrido, cura, energia gasta em algo que não foi uma técnica resolvida pelo Mestre, descanso que recupera. Use os números da narração ou dos dados já rolados (dano rolado com roll_dice que a narração confirma que acertou). Sem número, estime pouco e proporcional ao máximo da barra; se a narração não mostra efeito, não mexa.
 - Itens (add_item/remove_item): o que o personagem pegou, ganhou, comprou, recebeu, perdeu, entregou, gastou ou consumiu. Dinheiro também é item (ex.: "Ryō", com qty). Item que já está no inventário vai com o nome de lá.
-- XP (grant_xp): só por um feito que a narração mostra concluído: missão cumprida, luta vencida, descoberta importante, avanço marcante de treino. Quanto: pela REGRA DE XP DA MESA, no estado. Conversa, viagem e rotina não dão XP.
+- XP (grant_xp): só por um feito que a narração mostra concluído: missão cumprida, luta vencida, descoberta importante, avanço marcante de treino. Quanto: pela REGRA DE XP DA MESA, no estado. Conversa, viagem e rotina não dão XP. Concluir uma missão com tamanho (xpSize) já dá a XP dela: não chame grant_xp pela mesma conclusão.
 - Domínio (update_ability_progress com delta): só por um evento que faz a técnica evoluir (um insight, observar um mestre, um momento-chave). Uso (use_ability) e treino (train) já sobem o domínio.
 - Campo extra da ficha (update_extra_field): quando a narração revela ou muda um deles (afinidade, clã, vila...).
 - Memórias (add_memory): no máximo 2, só do que precisa ser lembrado daqui a 20 sessões: revelação, promessa, dívida, mudança de relação, morte, marco da história (kind milestone). Fato autossuficiente, com nomes. Rotina não vira memória.
-- Missões e prazos (add_objective/update_objective): cada ANOTAÇÃO DE MISSÃO do Mestre vira o registro certo. Nova: título curto, tipo, descrição, recompensa e prazo em tempo do jogo (relativo a partir da hora atual com inMinutes/inHours/inDays, ou absoluto com day e hour). Cumprida ou cancelada: update_objective pelo id (ex.: o2). Sem anotação, registre só missão, evento marcado ou compromisso com prazo que a narração deixou claro, ou a conclusão evidente de um aberto.
+- Missões e prazos (add_objective/update_objective): cada ANOTAÇÃO DE MISSÃO do Mestre vira o registro certo. Nova: título curto, tipo, descrição, recompensa, prazo em tempo do jogo (relativo a partir da hora atual com inMinutes/inHours/inDays, ou absoluto com day e hour) e, para missão, xpSize pelo peso na história: pequena (favor ou tarefa curta), media (trabalho de um dia ou com algum risco), grande (missão perigosa ou que move um arco), excepcional (só o que as faixas não cobrem, com xp livre proporcional ao feito). Missão que um NPC ofereceu (ou que o jogador propôs e ainda não foi combinada) e o jogador ainda não aceitou: add_objective com status oferecida (o jogador vê a recompensa de XP antes de decidir). Aceitou: update_objective com status aberto; recusou: cancelado. Cumprida ou cancelada: update_objective pelo id (ex.: o2). Sem anotação, registre só missão oferecida ou combinada, evento marcado ou compromisso com prazo que a narração deixou claro, ou a conclusão evidente de uma aberta ou oferecida.
 
 NUNCA
-- Inventar o que a narração não mostra, nem registrar o que só foi planejado, oferecido ou tentado sem sucesso.
+- Inventar o que a narração não mostra, nem registrar o que só foi planejado ou tentado sem sucesso (missão oferecida entra como oferecida, não como aberta).
 - Repetir o que está em JÁ FEITO PELO MESTRE: use_ability já cobrou o custo da técnica e subiu o domínio; train já aplicou o ganho e avançou o relógio; roll_dice só rolou.
 - Mexer no relógio, na cena ou nos NPCs em cena: o sistema cuida disso.
 - Registrar ou corrigir técnicas: técnica nova (add_ability) e correção na biblioteca (edit_ability) são do Mestre.
@@ -572,6 +572,22 @@ const LIBRARY_PROMPT_FIXES: [string, string, string][] = [
     "adventure",
     "com todos os níveis de abilityRanks.\n- abilityAttributes:",
     "com todos os níveis de abilityRanks.\n- abilityNaming: padrão de nomes das técnicas do mundo, para o Criador de habilidades e o Mestre (como o de Naruto): de onde vem o nome (o oficial da obra, com a tradução em translation; ou um nome descritivo em português), como escrever e o que não entra no nome (nada de quem usa nem de estágio de domínio).\n- world: não inclua (a criação da campanha preenche).\n- abilityAttributes:",
+  ],
+  // missões oferecidas (ver a XP antes de aceitar) e XP pelo tamanho da missão, dada na conclusão
+  [
+    "scribe",
+    "no estado. Conversa, viagem e rotina não dão XP.\n- Domínio",
+    "no estado. Conversa, viagem e rotina não dão XP. Concluir uma missão com tamanho (xpSize) já dá a XP dela: não chame grant_xp pela mesma conclusão.\n- Domínio",
+  ],
+  [
+    "scribe",
+    "- Missões e prazos (add_objective/update_objective): cada ANOTAÇÃO DE MISSÃO do Mestre vira o registro certo. Nova: título curto, tipo, descrição, recompensa e prazo em tempo do jogo (relativo a partir da hora atual com inMinutes/inHours/inDays, ou absoluto com day e hour). Cumprida ou cancelada: update_objective pelo id (ex.: o2). Sem anotação, registre só missão, evento marcado ou compromisso com prazo que a narração deixou claro, ou a conclusão evidente de um aberto.",
+    "- Missões e prazos (add_objective/update_objective): cada ANOTAÇÃO DE MISSÃO do Mestre vira o registro certo. Nova: título curto, tipo, descrição, recompensa, prazo em tempo do jogo (relativo a partir da hora atual com inMinutes/inHours/inDays, ou absoluto com day e hour) e, para missão, xpSize pelo peso na história: pequena (favor ou tarefa curta), media (trabalho de um dia ou com algum risco), grande (missão perigosa ou que move um arco), excepcional (só o que as faixas não cobrem, com xp livre proporcional ao feito). Missão que um NPC ofereceu (ou que o jogador propôs e ainda não foi combinada) e o jogador ainda não aceitou: add_objective com status oferecida (o jogador vê a recompensa de XP antes de decidir). Aceitou: update_objective com status aberto; recusou: cancelado. Cumprida ou cancelada: update_objective pelo id (ex.: o2). Sem anotação, registre só missão oferecida ou combinada, evento marcado ou compromisso com prazo que a narração deixou claro, ou a conclusão evidente de uma aberta ou oferecida.",
+  ],
+  [
+    "scribe",
+    "- Inventar o que a narração não mostra, nem registrar o que só foi planejado, oferecido ou tentado sem sucesso.",
+    "- Inventar o que a narração não mostra, nem registrar o que só foi planejado ou tentado sem sucesso (missão oferecida entra como oferecida, não como aberta).",
   ],
 ];
 

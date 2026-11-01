@@ -23,7 +23,17 @@ import {
   useGain,
 } from "./progression";
 import { clockParts, formatClock, formatDuration, getClock, period, toMinutes } from "./clock";
-import { expireObjectives, formatRemaining, getObjectives, Objective, OBJECTIVE_KIND_LABEL, ObjectiveKind } from "./objectives";
+import {
+  expireObjectives,
+  formatRemaining,
+  getObjectives,
+  Objective,
+  OBJECTIVE_KIND_LABEL,
+  OBJECTIVE_XP_SIZES,
+  ObjectiveKind,
+  objectiveXp,
+  ObjectiveXpSize,
+} from "./objectives";
 import { executeMapTool, recordScenePlace } from "./map";
 import { executeLocalMapTool, executeMapBrief, MAP_BRIEF_TOOL } from "./cartographer";
 import { dcResultText, getTable, tableDc } from "./table";
@@ -443,13 +453,20 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "add_objective",
       description:
-        "Registra uma missão, um evento marcado ou outro compromisso da história, com prazo opcional em tempo do jogo. Prazo absoluto (day + hour/minute; sem day, a próxima vez que der essa hora) ou relativo (inMinutes/inHours/inDays a partir de agora). Quando o relógio passa do prazo, o sistema marca como perdido.",
+        "Registra uma missão, um evento marcado ou outro compromisso da história, com prazo opcional em tempo do jogo. Prazo absoluto (day + hour/minute; sem day, a próxima vez que der essa hora) ou relativo (inMinutes/inHours/inDays a partir de agora). Quando o relógio passa do prazo, o sistema marca como perdido. status oferecida: missão proposta que o jogador ainda não aceitou (não vence; o prazo só conta depois de aceita). xpSize: a XP que a missão dá ao ser concluída, calculada pela regra de XP da mesa.",
       parameters: S(
         {
           title: { type: "string", description: "nome curto (ex: 'Escoltar o Tazuna', 'Exame Chūnin')" },
           kind: { type: "string", enum: ["missao", "evento", "outro"] },
           description: { type: "string", description: "o que precisa ser feito ou o que vai acontecer, e onde" },
           reward: { type: "string", description: "recompensa ou o que está em jogo (opcional)" },
+          status: { type: "string", enum: ["aberto", "oferecida"], description: "oferecida: o jogador ainda não aceitou (padrão aberto)" },
+          xpSize: {
+            type: "string",
+            enum: OBJECTIVE_XP_SIZES,
+            description: "peso na história (XP ao concluir): pequena = favor ou tarefa curta; media = trabalho de um dia ou com algum risco; grande = missão perigosa ou que move um arco; excepcional = só o que as faixas não cobrem (com xp)",
+          },
+          xp: { type: "number", description: "só com xpSize excepcional: XP livre, proporcional ao feito" },
           day: { type: "number", description: "prazo absoluto: dia da campanha" },
           hour: { type: "number", description: "prazo absoluto: hora 0-23 (com day e sem hour: fim do dia)" },
           minute: { type: "number", description: "prazo absoluto: minuto 0-59" },
@@ -466,12 +483,18 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "update_objective",
       description:
-        "Atualiza uma missão/evento registrado: concluir quando cumprido, cancelar quando deixou de valer na história, ou mudar o prazo (mesmos campos de add_objective; noDeadline=true tira o prazo). Um objetivo perdido não volta.",
+        "Atualiza uma missão/evento registrado: concluir quando cumprido (missão com xpSize já dá a XP ao jogador), cancelar quando deixou de valer na história (ou o jogador recusou a oferecida), aberto quando o jogador aceitou a oferecida, ou mudar o prazo e o tamanho (mesmos campos de add_objective; noDeadline=true tira o prazo). Um objetivo perdido não volta.",
       parameters: S(
         {
           objective: { type: "string", description: "id (ex: o2) ou título" },
-          status: { type: "string", enum: ["concluido", "cancelado"] },
+          status: { type: "string", enum: ["aberto", "concluido", "cancelado"] },
           description: { type: "string", description: "nova descrição (opcional)" },
+          xpSize: {
+            type: "string",
+            enum: OBJECTIVE_XP_SIZES,
+            description: "peso na história (XP ao concluir): pequena = favor ou tarefa curta; media = trabalho de um dia ou com algum risco; grande = missão perigosa ou que move um arco; excepcional = só o que as faixas não cobrem (com xp)",
+          },
+          xp: { type: "number", description: "só com xpSize excepcional: XP livre, proporcional ao feito" },
           day: { type: "number" },
           hour: { type: "number" },
           minute: { type: "number" },
@@ -571,8 +594,8 @@ export const GM_TURN_TOOLS: ToolDef[] = [
     function: {
       name: "note_objective",
       description:
-        "Anota numa frase uma missão, evento marcado ou compromisso com prazo que a história criou, mudou, cumpriu ou cancelou (ex.: \"Hokage deu a missão de escoltar o Tazuna até a Vila da Névoa, prazo de 3 dias; recompensa 30 mil ryō\", \"missão do Tazuna concluída\"). O Escrivão registra com o prazo em tempo do jogo depois da narração.",
-      parameters: S({ brief: { type: "string", description: "o que foi combinado, prazo e recompensa, como a história disse" } }, ["brief"]),
+        "Anota numa frase uma missão, evento marcado ou compromisso com prazo que a história criou, mudou, cumpriu ou cancelou (ex.: \"Hokage deu a missão de escoltar o Tazuna até a Vila da Névoa, prazo de 3 dias; recompensa 30 mil ryō\", \"missão do Tazuna concluída\"). Diga o tamanho (pequena, média, grande ou excepcional) e se é só oferecida (o jogador ainda não aceitou). O Escrivão registra com o prazo em tempo do jogo depois da narração.",
+      parameters: S({ brief: { type: "string", description: "o que foi combinado, prazo, recompensa e tamanho, como a história disse" } }, ["brief"]),
     },
   },
 ];
@@ -587,6 +610,8 @@ export interface ToolContext {
   masteryGained?: Set<string>;
   /** é o Escrivão (engine.runScribe); briefs = anotações de missão do Mestre neste turno */
   scribe?: { briefs: number };
+  /** XP que missões concluídas deram neste turno: o grant_xp do Escrivão não repete pela mesma conclusão */
+  missionXp?: { charId: string; title: string; xp: number }[];
 }
 
 // "Evento: Resposta do Hokage" = "resposta do hokage": o modelo repetia missões abertas com prefixo ou pontuação diferente
@@ -701,6 +726,28 @@ async function saveSheet(id: string, sheet: Sheet): Promise<void> {
     JSON.stringify(dehydrateSheet(sheet)),
     id,
   ]);
+}
+
+/** Soma XP na ficha (grant_xp e a conclusão de missão com tamanho), com os chips e o aviso de nível e pontos. */
+async function grantXp(ctx: ToolContext, c: Character, amount: number, reason?: string): Promise<string> {
+  const rs = ctx.campaign.ruleset;
+  const lvlBefore = powerLevel(rs, c.sheet.xp).level;
+  const ptsBefore = attributePoints(rs, c.sheet).earned;
+  c.sheet.xp += amount;
+  await saveSheet(c.id, c.sheet);
+  const { level, next } = powerLevel(rs, c.sheet.xp);
+  const pts = attributePoints(rs, c.sheet);
+  const up = level && level.key !== lvlBefore?.key && level.xpRequired > (lvlBefore?.xpRequired ?? -1);
+  ctx.emit({ type: "state" });
+  ctx.emit({ type: "tool", name: "grant_xp", summary: `${c.name} +${amount} XP (total ${c.sheet.xp})${reason ? ` — ${reason}` : ""}` });
+  if (up) ctx.emit({ type: "tool", name: "grant_xp", summary: `⬆ Nível de poder: ${level!.label}` });
+  if (pts.earned > ptsBefore) ctx.emit({ type: "tool", name: "grant_xp", summary: `+${pts.earned - ptsBefore} ponto(s) livre(s) de atributo` });
+  let msg = `${c.name} agora tem ${c.sheet.xp} XP (nível de poder ${level?.label ?? "-"}${next ? `; próximo, ${next.label}, aos ${next.xpRequired}` : ""}).`;
+  if (up)
+    msg += ` NÍVEL DE PODER SUBIU para ${level!.label}${level!.attributeCap !== undefined ? ` (teto de atributo ${level!.attributeCap})` : ""}. Isso NÃO é promoção de cargo: o cargo só muda por set_rank, se e quando a história levar a isso (exame, cerimônia...).`;
+  if (pts.earned > ptsBefore)
+    msg += ` +${pts.earned - ptsBefore} ponto(s) livre(s) de atributo (${pts.free} livres): o jogador distribui na ficha; não aplique por ele.`;
+  return msg;
 }
 
 /** Executa uma tool do Mestre. Retorna string (resultado para o modelo). */
@@ -969,27 +1016,14 @@ export async function executeGmTool(
       return `Item removido.`;
     }
     case "grant_xp": {
-      const rs = ctx.campaign.ruleset;
       const c = await getChar(cid, String(args.character));
       const amount = Math.round(Number(args.amount));
       if (!Number.isFinite(amount)) return "amount precisa ser um número.";
-      const lvlBefore = powerLevel(rs, c.sheet.xp).level;
-      const ptsBefore = attributePoints(rs, c.sheet).earned;
-      c.sheet.xp += amount;
-      await saveSheet(c.id, c.sheet);
-      const { level, next } = powerLevel(rs, c.sheet.xp);
-      const pts = attributePoints(rs, c.sheet);
-      const up = level && level.key !== lvlBefore?.key && level.xpRequired > (lvlBefore?.xpRequired ?? -1);
-      ctx.emit({ type: "state" });
-      ctx.emit({ type: "tool", name, summary: `${c.name} +${amount} XP (total ${c.sheet.xp})` });
-      if (up) ctx.emit({ type: "tool", name, summary: `⬆ Nível de poder: ${level!.label}` });
-      if (pts.earned > ptsBefore) ctx.emit({ type: "tool", name, summary: `+${pts.earned - ptsBefore} ponto(s) livre(s) de atributo` });
-      let msg = `${c.name} agora tem ${c.sheet.xp} XP (nível de poder ${level?.label ?? "-"}${next ? `; próximo, ${next.label}, aos ${next.xpRequired}` : ""}).`;
-      if (up)
-        msg += ` NÍVEL DE PODER SUBIU para ${level!.label}${level!.attributeCap !== undefined ? ` (teto de atributo ${level!.attributeCap})` : ""}. Isso NÃO é promoção de cargo: o cargo só muda por set_rank, se e quando a história levar a isso (exame, cerimônia...).`;
-      if (pts.earned > ptsBefore)
-        msg += ` +${pts.earned - ptsBefore} ponto(s) livre(s) de atributo (${pts.free} livres): o jogador distribui na ficha; não aplique por ele.`;
-      return msg;
+      // o Escrivão repetia a XP da missão que acabou de concluir (a conclusão com tamanho já deu)
+      const given = ctx.scribe ? ctx.missionXp?.filter((m) => m.charId === c.id) : undefined;
+      if (given?.length)
+        return `Nada mudou: ${given.map((m) => `a missão ${m.title} já deu ${m.xp} XP`).join("; ")} neste turno.`;
+      return grantXp(ctx, c, amount, args.reason ? String(args.reason) : undefined);
     }
     case "set_rank": {
       const c = await getChar(cid, String(args.character));
@@ -1195,13 +1229,26 @@ export async function executeGmTool(
       const list = await loadObjectives(cid);
       const deadline = parseDeadline(args, now);
       if (typeof deadline === "string") return deadline;
+      // xpSize/xp: undefined = não mexe; xp só vale com excepcional
+      const size = args.xpSize === undefined ? undefined : (String(args.xpSize) as ObjectiveXpSize);
+      if (size !== undefined && !OBJECTIVE_XP_SIZES.includes(size)) return `xpSize: use ${OBJECTIVE_XP_SIZES.join(", ")}.`;
+      const xpArg = args.xp === undefined ? undefined : Math.round(Number(args.xp));
+      if (xpArg !== undefined && !(xpArg > 0)) return "xp precisa ser um número positivo (só com xpSize excepcional).";
+      const setSize = (o: Objective): string | null => {
+        if (size !== undefined) o.xpSize = size;
+        if (xpArg !== undefined) o.xp = xpArg;
+        if (o.xpSize !== "excepcional") delete o.xp;
+        else if (!o.xp) return "xpSize excepcional precisa de xp (número positivo, proporcional ao feito).";
+        return null;
+      };
+      const isLive = (x: Objective) => x.status === "aberto" || x.status === "oferecida";
       let o: Objective;
       let chip: string;
       if (name === "add_objective") {
         const title = String(args.title || "").trim();
         if (!title) return "Informe o title.";
-        const same = list.find((x) => x.status === "aberto" && titleKey(x.title) === titleKey(title));
-        if (same) return `Nada mudou: já existe [${same.id}] "${same.title}" em aberto. Para mudar prazo ou descrição, use update_objective nele.`;
+        const same = list.find((x) => isLive(x) && titleKey(x.title) === titleKey(title));
+        if (same) return `Nada mudou: já existe [${same.id}] "${same.title}" ${same.status === "oferecida" ? "oferecida" : "em aberto"}. Para mudar prazo, descrição ou status, use update_objective nele.`;
         const kind = (["missao", "evento", "outro"].includes(String(args.kind)) ? args.kind : "outro") as ObjectiveKind;
         o = {
           id: `o${list.reduce((m, x) => Math.max(m, Number(x.id.slice(1)) || 0), 0) + 1}`,
@@ -1209,45 +1256,63 @@ export async function executeGmTool(
           kind,
           description: String(args.description || ""),
           deadlineMinutes: deadline,
-          status: "aberto",
+          status: args.status === "oferecida" ? "oferecida" : "aberto",
           reward: args.reward ? String(args.reward) : undefined,
           createdAt: now ?? 0,
         };
+        const bad = setSize(o);
+        if (bad) return bad;
         list.push(o);
-        chip = `📜 ${OBJECTIVE_KIND_LABEL[kind]}: ${title} (${deadlineText(deadline, now)})`;
+        chip = `📜 ${o.status === "oferecida" ? "Oferecida" : OBJECTIVE_KIND_LABEL[kind]}: ${title} (${deadlineText(deadline, now)})`;
       } else {
         const key = String(args.objective || "").trim().toLowerCase();
         const found =
           list.find((x) => x.id.toLowerCase() === key) ||
-          list.find((x) => x.status === "aberto" && x.title.toLowerCase() === key) ||
+          list.find((x) => isLive(x) && x.title.toLowerCase() === key) ||
           list.find((x) => x.title.toLowerCase() === key);
-        if (!found) return `Objetivo "${args.objective}" não existe. Abertos: ${list.filter((x) => x.status === "aberto").map((x) => `${x.id} ${x.title}`).join(", ") || "nenhum"}.`;
+        if (!found) return `Objetivo "${args.objective}" não existe. Abertos e oferecidos: ${list.filter(isLive).map((x) => `${x.id} ${x.title}`).join(", ") || "nenhum"}.`;
         // perdido agora mesmo (o relógio do mesmo turno passou do prazo antes do Escrivão): a narração deste momento
         // pode mostrar que foi cumprido; quando o relógio anda de novo, a perda vira definitiva
         const lostNow = found.status === "perdido" && args.status === "concluido" && now !== undefined && found.closedAt === now;
-        if (found.status !== "aberto" && !lostNow) return `"${found.title}" já está ${found.status}; não volta a ficar aberto.`;
+        if (!isLive(found) && !lostNow) return `"${found.title}" já está ${found.status}; não volta a ficar aberto.`;
         // o Escrivão tirava o prazo sem a narração pedir; só com uma anotação de missão do Mestre neste turno
         if (args.noDeadline === true && found.deadlineMinutes !== undefined && ctx.scribe && !ctx.scribe.briefs)
           return `Nada mudou: [${found.id}] mantém o prazo. Tirar o prazo só com uma ANOTAÇÃO DE MISSÃO do Mestre neste turno.`;
-        o = found;
+        o = { ...found };
+        const bad = setSize(o);
+        if (bad) return bad;
         const changes: string[] = [];
         if (args.description) o.description = String(args.description);
         if (args.noDeadline === true) (o.deadlineMinutes = undefined), changes.push("sem prazo");
         else if (deadline !== undefined) (o.deadlineMinutes = deadline), changes.push(deadlineText(deadline, now));
+        if (size !== undefined || xpArg !== undefined) changes.push(`tamanho ${o.xpSize}`);
+        const accepted = args.status === "aberto" && found.status === "oferecida";
         if (args.status === "concluido" || args.status === "cancelado") {
           o.status = args.status;
           o.closedAt = now ?? 0;
-        }
+        } else if (accepted) o.status = "aberto";
         chip =
           o.status === "concluido" ? `✅ Concluído: ${o.title}` :
-          o.status === "cancelado" ? `✖ Cancelado: ${o.title}` :
+          o.status === "cancelado" ? `✖ ${found.status === "oferecida" ? "Recusada" : "Cancelado"}: ${o.title}` :
+          accepted ? `📜 Aceita: ${o.title} (${deadlineText(o.deadlineMinutes, now)})` :
           `📜 ${o.title}: ${changes.join(", ") || "atualizado"}`;
+        list[list.indexOf(found)] = o;
       }
+      // missão com tamanho concluída: a XP vai para o personagem do jogador pela mesma soma do grant_xp
+      const [player] =
+        o.status === "concluido" && o.xpSize
+          ? await hydrateSheets(await q<Character>(`SELECT * FROM characters WHERE campaign_id = $1 AND kind = 'player' LIMIT 1`, [cid]))
+          : [];
+      const xp = player ? objectiveXp(o, ctx.campaign.ruleset, getTable(ctx.campaign.state), player.sheet.xp) : null;
+      if (xp) chip += ` (+${xp} XP)`;
       await saveObjectives(cid, list);
       ctx.campaign.state = { ...ctx.campaign.state, objectives: list };
       ctx.emit({ type: "tool", name, summary: chip });
       ctx.emit({ type: "state" });
-      return `${o.id} "${o.title}": ${o.status}, ${deadlineText(o.deadlineMinutes, now)}.`;
+      const done = `${o.id} "${o.title}": ${o.status}, ${deadlineText(o.deadlineMinutes, now)}.`;
+      if (!player || !xp) return done;
+      if (ctx.scribe) (ctx.missionXp ??= []).push({ charId: player.id, title: o.title, xp }); // a trava é só do Escrivão
+      return `${done} A missão deu ${xp} XP: ${await grantXp(ctx, player, xp, `missão: ${o.title}`)}`;
     }
     case "get_character": {
       const c = await getChar(cid, String(args.name));

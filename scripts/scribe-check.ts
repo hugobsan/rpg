@@ -173,7 +173,28 @@ async function main() {
     assert.ok(!/ANOTAÇÕES DE MISSÃO/.test(scribeReqs[1].messages[1].content));
     assert.equal(gmScript.length, 0);
 
-    console.log("scribe-check: ok (anotações depois da narração, rodada mista, Escrivão aplicado e logado, fora do jogo com todas as ferramentas)");
+    // 3. o Escrivão chama grant_xp antes de concluir a missão com tamanho na mesma resposta: a missão dá a XP e o grant_xp não repete
+    await real.query(
+      `UPDATE campaigns SET state = jsonb_set(state, '{objectives}', (state->'objectives') || $2::jsonb) WHERE id = $1`,
+      [id, JSON.stringify([{ id: "o9", title: "Treinar o Konohamaru", kind: "missao", description: "", status: "aberto", xpSize: "pequena", createdAt: 480 }])]
+    );
+    const xp0 = (await db<{ xp: number }>(`SELECT (sheet->>'xp')::int AS xp FROM characters WHERE campaign_id = $1 AND name = 'Hugo'`))[0].xp;
+    gmScript.push({ text: "O Konohamaru finalmente acerta o alvo e agradece.", calls: [] });
+    scribeScript.push({
+      text: "",
+      calls: [
+        { name: "grant_xp", args: { character: "Hugo", amount: 30, reason: "missão cumprida" } },
+        { name: "update_objective", args: { objective: "o9", status: "concluido" } },
+      ],
+    });
+    events = [];
+    await runTurn(id, "ajudo o Konohamaru", (e) => events.push(e));
+    assert.match(scribeReqs[2].messages[1].content, /Treinar o Konohamaru .*≈ \d+ XP/, "o Escrivão vê a XP estimada");
+    const xp1 = (await db<{ xp: number }>(`SELECT (sheet->>'xp')::int AS xp FROM characters WHERE campaign_id = $1 AND name = 'Hugo'`))[0].xp;
+    assert.equal(xp1 - xp0, Math.max(1, Math.round((100 - xp0) * 0.05)), "só a XP da missão (pequena = 5% do que falta)");
+    assert.ok(events.some((e) => e.type === "tool" && /^✅ Concluído: Treinar o Konohamaru \(\+\d+ XP\)$/.test(e.summary)));
+
+    console.log("scribe-check: ok (anotações depois da narração, rodada mista, Escrivão aplicado e logado, missão com tamanho sem XP em dobro, fora do jogo com todas as ferramentas)");
   } finally {
     await new Promise((r) => setTimeout(r, 300)); // o índice do histórico roda depois do done
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);

@@ -1,11 +1,17 @@
 import { formatClock } from "./clock";
+import { powerLevel, powerLevels } from "./progression";
+import { xpRule } from "./table";
+import type { Ruleset, TableRules } from "./types";
 
 /**
  * Missões, eventos e prazos da história (campaigns.state.objectives). Sem relação com os
  * marcos de domínio das habilidades (Ability.milestones). Só funções puras: a tela também usa.
  */
 export type ObjectiveKind = "missao" | "evento" | "outro";
-export type ObjectiveStatus = "aberto" | "concluido" | "perdido" | "cancelado";
+// oferecida: proposta na história, o jogador ainda não aceitou (não vence pelo relógio; o prazo é informativo)
+export type ObjectiveStatus = "oferecida" | "aberto" | "concluido" | "perdido" | "cancelado";
+export type ObjectiveXpSize = "pequena" | "media" | "grande" | "excepcional";
+export const OBJECTIVE_XP_SIZES: ObjectiveXpSize[] = ["pequena", "media", "grande", "excepcional"];
 
 export interface Objective {
   id: string;
@@ -15,6 +21,8 @@ export interface Objective {
   deadlineMinutes?: number; // minutos absolutos do relógio
   status: ObjectiveStatus;
   reward?: string;
+  xpSize?: ObjectiveXpSize; // XP dada ao concluir, pela regra de XP da mesa
+  xp?: number; // só com excepcional: valor livre
   createdAt: number; // minutos do relógio (0 se ainda não havia relógio)
   closedAt?: number;
 }
@@ -23,6 +31,20 @@ export const OBJECTIVE_KIND_LABEL: Record<ObjectiveKind, string> = { missao: "Mi
 
 export function getObjectives(state: Record<string, unknown> | null | undefined): Objective[] {
   return Array.isArray(state?.objectives) ? (state.objectives as Objective[]) : [];
+}
+
+/**
+ * XP da missão ao concluir: pequena/media/grande = min/max/great% do que falta para o próximo nível
+ * (no último nível, do último intervalo entre níveis), arredondado, mínimo 1; excepcional = o.xp; sem tamanho, null.
+ */
+export function objectiveXp(o: Objective, ruleset: Ruleset, table: TableRules, playerXp: number): number | null {
+  if (!o.xpSize) return null;
+  if (o.xpSize === "excepcional") return o.xp ?? null;
+  const { next } = powerLevel(ruleset, playerXp);
+  const levels = powerLevels(ruleset);
+  const base = next ? next.xpRequired - playerXp : levels.length > 1 ? levels.at(-1)!.xpRequired - levels.at(-2)!.xpRequired : 0;
+  const pct = xpRule(table)[o.xpSize === "pequena" ? "min" : o.xpSize === "media" ? "max" : "great"];
+  return Math.max(1, Math.round((base * pct) / 100));
 }
 
 /** "faltam 2 dias e 3 h", "faltam 5 h e 20 min", "vence em 40 min", "venceu". */
@@ -48,19 +70,29 @@ export function expireObjectives(list: Objective[], now: number): { list: Object
   return { list: next, lost };
 }
 
-/** Bloco do contexto do Mestre: abertos com o tempo restante e perdidos nos últimos 3 dias. */
-export function objectivesPromptBlock(list: Objective[], now: number | null): string {
+/**
+ * Bloco do contexto do Mestre: oferecidas, abertos com o tempo restante e perdidos nos últimos 3 dias.
+ * xpOf (objectiveXp com ruleset, mesa e XP do jogador) põe a XP estimada na recompensa.
+ */
+export function objectivesPromptBlock(list: Objective[], now: number | null, xpOf?: (o: Objective) => number | null): string {
+  const offered = list.filter((o) => o.status === "oferecida");
   const open = list.filter((o) => o.status === "aberto");
   const lost = list.filter((o) => o.status === "perdido" && now !== null && (o.closedAt ?? 0) >= now - 3 * 1440);
-  if (!open.length && !lost.length) return "";
+  if (!offered.length && !open.length && !lost.length) return "";
+  const reward = (o: Objective) => {
+    const xp = xpOf?.(o);
+    const r = [o.reward, xp != null && `≈ ${xp} XP`].filter(Boolean).join(" + ");
+    return r ? ` | recompensa: ${r}` : "";
+  };
   const line = (o: Objective) =>
     `[${o.id}] ${OBJECTIVE_KIND_LABEL[o.kind] || o.kind}: ${o.title}${o.description ? ` — ${o.description}` : ""}${
       o.deadlineMinutes !== undefined
         ? ` | prazo: ${formatClock(o.deadlineMinutes)}${now !== null ? ` (${formatRemaining(o.deadlineMinutes - now)})` : ""}`
         : " | sem prazo"
-    }${o.reward ? ` | recompensa: ${o.reward}` : ""}`;
+    }${reward(o)}`;
   return [
-    "\n--- MISSÕES E PRAZOS (update_objective para concluir, cancelar ou mudar o prazo) ---",
+    "\n--- MISSÕES E PRAZOS (update_objective para concluir, cancelar ou mudar o prazo; oferecida: aberto quando o jogador aceitar, cancelado se recusar) ---",
+    ...offered.map((o) => `OFERECIDA, o jogador ainda não aceitou: ${line(o)}`),
     ...open.map(line),
     ...lost.map(
       (o) =>

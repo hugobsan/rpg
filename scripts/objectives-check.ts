@@ -5,9 +5,11 @@
 import assert from "node:assert/strict";
 import { pool, q } from "../src/lib/db";
 import { executeGmTool, GM_TOOLS, ToolContext } from "../src/lib/tools";
-import { formatRemaining, getObjectives, objectivesPromptBlock } from "../src/lib/objectives";
+import { formatRemaining, getObjectives, Objective, objectivesPromptBlock, objectiveXp } from "../src/lib/objectives";
+import { DEFAULT_TABLE } from "../src/lib/table";
 import { restoreSnapshot, takeSnapshot } from "../src/lib/turnSnapshot";
-import { toMinutes } from "../src/lib/clock";
+import { getClock, toMinutes } from "../src/lib/clock";
+const getClockMin = (st: Record<string, unknown>) => getClock(st)?.minutes ?? null;
 import type { Campaign, Scene, TurnEvent } from "../src/lib/types";
 
 async function main() {
@@ -107,7 +109,69 @@ async function main() {
       assert.equal((await byTitle("Recado")).status, "perdido", "treino longo perde o prazo");
     } else console.log("(train ainda não existe: caso do treino pulado)");
 
-    console.log("ok: prazos relativo/absoluto, vencer ao avançar, concluir, contexto e gerar novamente");
+    // ---- XP pelo tamanho da missão e missão oferecida ----
+    const { blankSheet, normalizeRuleset } = await import("../src/lib/ruleset");
+    const fs = await import("node:fs");
+    const rs = normalizeRuleset(JSON.parse(fs.readFileSync("naruto-ruleset.json", "utf8"))); // genin 100, ..., jounin 3000, kage 8000
+    const sized = (xpSize: Objective["xpSize"], xp?: number) => ({ xpSize, xp }) as Objective;
+    assert.equal(objectiveXp(sized("pequena"), rs, DEFAULT_TABLE, 0), 5, "pequena = min% (normal 5) de 100");
+    assert.equal(objectiveXp(sized("media"), rs, DEFAULT_TABLE, 0), 10, "media = max%");
+    assert.equal(objectiveXp(sized("grande"), rs, DEFAULT_TABLE, 40), 15, "grande = great% (25) dos 60 que faltam");
+    assert.equal(objectiveXp(sized("excepcional", 700), rs, DEFAULT_TABLE, 0), 700, "excepcional = valor livre");
+    assert.equal(objectiveXp({} as Objective, rs, DEFAULT_TABLE, 0), null, "sem tamanho, sem XP");
+    assert.equal(objectiveXp(sized("pequena"), rs, DEFAULT_TABLE, 9000), 250, "último nível: 5% do último intervalo (8000 - 3000)");
+    assert.equal(objectiveXp(sized("pequena"), rs, { ...DEFAULT_TABLE, xp: { min: 2, max: 5, great: 12 } }, 90), 1, "mínimo 1");
+
+    const [hasPlayer] = await q(`SELECT 1 FROM characters WHERE campaign_id = $1 AND kind = 'player'`, [id]);
+    if (!hasPlayer) await q(`INSERT INTO characters (campaign_id, kind, name, sheet) VALUES ($1, 'player', 'Hugo', $2)`, [id, JSON.stringify(blankSheet(rs))]);
+    await q(`UPDATE characters SET sheet = jsonb_set(sheet, '{xp}', '0') WHERE campaign_id = $1 AND kind = 'player'`, [id]);
+    const playerXp = async () => (await q<{ xp: number }>(`SELECT (sheet->>'xp')::int AS xp FROM characters WHERE campaign_id = $1 AND kind = 'player'`, [id]))[0].xp;
+    ctx.campaign = { ...ctx.campaign, ruleset: rs, state: await state() };
+
+    // oferecida não vence pelo relógio; o título repetido também vale contra ela
+    assert.match(await run("add_objective", { title: "Caçar o gato Tora", kind: "missao", description: "achar o gato da esposa do daimyō", status: "oferecida", xpSize: "media", inHours: 1 }), /oferecida/);
+    assert.match(await run("add_objective", { title: "Missão: caçar o gato tora", kind: "missao", description: "dup" }), /já existe .* oferecida/);
+    assert.match(await run("add_objective", { title: "Pergaminho proibido", kind: "missao", description: "x", xpSize: "excepcional" }), /precisa de xp/);
+    await run("add_objective", { title: "Escoltar o Tazuna", kind: "missao", description: "até a Névoa", status: "oferecida", xpSize: "grande" });
+    await run("add_objective", { title: "Entregar a carta", kind: "missao", description: "para o Iruka", status: "oferecida", xpSize: "pequena" });
+    let block2 = objectivesPromptBlock(getObjectives(await state()), getClockMin(await state()), (o) => objectiveXp(o, rs, DEFAULT_TABLE, 0));
+    assert.match(block2, /OFERECIDA, o jogador ainda não aceitou: \[o\d+\] Missão: Caçar o gato Tora .* \| recompensa: ≈ 10 XP/);
+    assert.match(block2, /Escoltar o Tazuna .*≈ 25 XP/);
+    out = await run("advance_time", { minutes: 120, reason: "espera" });
+    assert.doesNotMatch(out, /Caçar o gato/);
+    assert.equal((await byTitle("Caçar o gato Tora")).status, "oferecida", "oferecida não vence");
+
+    // aceitar, recusar, concluir direto
+    assert.match(await run("update_objective", { objective: "Caçar o gato Tora", status: "aberto", inHours: 5 }), /aberto/);
+    assert.equal((await byTitle("Caçar o gato Tora")).status, "aberto");
+    assert.match(await run("update_objective", { objective: "Escoltar o Tazuna", status: "cancelado" }), /cancelado/);
+    events.length = 0;
+    out = await run("update_objective", { objective: "Entregar a carta", status: "concluido" });
+    assert.match(out, /deu 5 XP/, out);
+    assert.equal(await playerXp(), 5, "concluir direto a oferecida dá a XP");
+    assert.ok(events.some((e) => e.type === "tool" && e.summary === "✅ Concluído: Entregar a carta (+5 XP)"));
+    assert.ok(events.some((e) => e.type === "tool" && e.summary.includes("+5 XP (total 5) — missão: Entregar a carta")));
+
+    // conclusão com tamanho pelo Escrivão: o grant_xp no mesmo turno é recusado; em outro turno vale
+    const sctx: ToolContext = { ...ctx, scribe: { briefs: 0 } };
+    out = await executeGmTool("update_objective", { objective: "Caçar o gato Tora", status: "concluido" }, sctx);
+    assert.match(out, /deu 10 XP/, out); // 10% dos 95 que faltam = 9,5 → 10
+    assert.equal(await playerXp(), 15);
+    assert.match(await executeGmTool("grant_xp", { character: "Hugo", amount: 10, reason: "missão" }, sctx), /^Nada mudou: a missão Caçar o gato Tora já deu 10 XP neste turno/);
+    assert.equal(await playerXp(), 15, "sem XP em dobro");
+    assert.match(await executeGmTool("grant_xp", { character: "Hugo", amount: 3 }, { ...ctx, scribe: { briefs: 0 } }), /18 XP/, "outro turno vale");
+    assert.match(await run("grant_xp", { character: "Hugo", amount: 2 }), /20 XP/, "fora do jogo vale");
+
+    // excepcional: xp livre; mudar o tamanho pelo update; perdido no instante atual concluído também dá a XP
+    await run("add_objective", { title: "Derrotar o Zabuza", kind: "missao", description: "na ponte", xpSize: "pequena", inMinutes: 10 });
+    assert.match(await run("update_objective", { objective: "Derrotar o Zabuza", xpSize: "excepcional", xp: 400 }), /aberto/);
+    assert.equal((await byTitle("Derrotar o Zabuza")).xp, 400);
+    assert.match(await run("advance_time", { minutes: 30, reason: "luta" }), /PRAZO PERDIDO: "Derrotar o Zabuza"/);
+    assert.match(await run("update_objective", { objective: "Derrotar o Zabuza", status: "concluido" }), /deu 400 XP/);
+    assert.equal(await playerXp(), 420);
+    assert.equal(objectivesPromptBlock([{ ...(await byTitle("Derrotar o Zabuza")), status: "aberto" }], 0, (o) => objectiveXp(o, rs, DEFAULT_TABLE, 0)).includes("≈ 400 XP"), true);
+
+    console.log("ok: prazos relativo/absoluto, vencer ao avançar, concluir, contexto e gerar novamente; XP por tamanho, oferecida, sem XP em dobro");
   } finally {
     await q(`DELETE FROM campaigns WHERE id = $1`, [id]);
     await pool().end();

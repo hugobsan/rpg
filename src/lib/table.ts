@@ -40,7 +40,7 @@ export const XP_PACES = [
 export const xpRule = (t: TableRules) => t.xp ?? XP_PACES[1].xp;
 export const xpRuleText = (t: TableRules) => {
   const x = xpRule(t);
-  return `de ${x.min} a ${x.max}% do que falta para o próximo nível num feito comum, até ${x.great}% num grande`;
+  return `de ${x.min} a ${x.max}% do que falta para o próximo nível num feito comum, até ${x.great}% num grande; feito excepcional (só o que as faixas acima não cobrem, como derrotar um vilão principal ou salvar a vila): valor livre, proporcional ao feito, que pode subir mais de um nível`;
 };
 
 const preset = (d: Difficulty) => DIFFICULTIES.find((x) => x.key === d) ?? DIFFICULTIES[2];

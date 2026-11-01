@@ -235,6 +235,8 @@ export default function TableRulesPanel({ campaign, onChange }: { campaign: Camp
         <p className={s.tone}>
           O Escrivão dá XP só por feito que a narração mostra concluído (missão, luta vencida, descoberta, avanço de treino),
           em % do que falta para o próximo nível. Conversa, viagem e rotina não dão XP.
+          Feito excepcional (derrotar um vilão principal, salvar a vila) foge das faixas: XP livre, que pode subir mais de um nível.
+          Missão com tamanho dá a XP ao ser concluída: pequena = mínimo, média = máximo, grande = feito grande.
         </p>
         {/* cada passo respeita min ≤ max ≤ grande, então nunca manda uma regra inválida */}
         {([

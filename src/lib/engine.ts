@@ -19,7 +19,7 @@ import { decideCast, decideElapsed, decideMoved, decideTurn, scoreImportance } f
 import { attributeCap, attributePoints, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
 import { hydrateSheets } from "./library";
-import { getObjectives, objectivesPromptBlock } from "./objectives";
+import { getObjectives, objectivesPromptBlock, objectiveXp } from "./objectives";
 import { getStage, loadMap, mapPromptBlock, normName } from "./map";
 import { getTable, modeHint, tablePromptBlock, xpRuleText } from "./table";
 import { takeSnapshot } from "./turnSnapshot";
@@ -191,7 +191,9 @@ async function buildGmSystem(
         ? `Hora na história: ${formatClock(clock.minutes)} (${period(clock.minutes)})`
         : "Hora na história: AINDA NÃO DEFINIDA. Chame set_time neste turno com uma hora coerente com a história até aqui."
     }\nMODO DA CENA (${scene.mode}): ${modeHint(getTable(campaign.state), scene.mode)}${scene.summary ? `\nResumo do que já aconteceu nesta cena (compactado): ${scene.summary}` : ""}`,
-    objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null),
+    objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null, (o) =>
+      objectiveXp(o, campaign.ruleset, getTable(campaign.state), player?.sheet.xp ?? 0)
+    ),
     // só local, rotas e palco: o resto do mapa (mapas 3D, locais distantes, regras) vai ao Topógrafo pelo map_brief
     mapPromptBlock(await loadMap(campaign.id, campaign.state), getStage(scene.state), scene.mode),
     player
@@ -750,7 +752,9 @@ async function runScribe(
   const player = chars.find((c) => c.kind === "player");
   const state = [
     `Hora na história: ${clock ? `${formatClock(clock.minutes)} (${period(clock.minutes)})` : "não definida (missão só sem prazo)"}`,
-    objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null),
+    objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null, (o) =>
+      objectiveXp(o, campaign.ruleset, getTable(campaign.state), player?.sheet.xp ?? 0)
+    ),
     `REGRA DE XP DA MESA: ${xpRuleText(getTable(campaign.state))}.`,
     player ? `\n--- JOGADOR ---\n${sheet(player)}` : "",
     npcs.length ? `\n--- NPCs EM CENA ---\n${npcs.map(sheet).join("\n")}` : "",
@@ -781,10 +785,17 @@ async function runScribe(
     if (!r.toolCalls.length) return applied;
     messages.push({ role: "assistant", content: r.content || null, tool_calls: r.toolCalls });
     let failed = false;
+    // grant_xp por último: a conclusão de missão com tamanho dá a XP e o grant_xp da mesma resposta vê isso (não dá em dobro)
+    const outs = new Map<string, string>();
+    for (const call of [...r.toolCalls].sort((a, b) => Number(a.function.name === "grant_xp") - Number(b.function.name === "grant_xp")))
+      outs.set(
+        call.id,
+        SCRIBE_TOOLS.has(call.function.name)
+          ? await executeGmTool(call.function.name, argsOf(call), tctx).catch((e) => `Erro: ${e instanceof Error ? e.message : String(e)}`)
+          : `Erro: ${call.function.name} não é ferramenta do Escrivão.`
+      );
     for (const call of r.toolCalls) {
-      const out = SCRIBE_TOOLS.has(call.function.name)
-        ? await executeGmTool(call.function.name, argsOf(call), tctx).catch((e) => `Erro: ${e instanceof Error ? e.message : String(e)}`)
-        : `Erro: ${call.function.name} não é ferramenta do Escrivão.`;
+      const out = outs.get(call.id)!;
       if (/^Erro|não existe|precisa/.test(out)) failed = true;
       else applied.push(`${call.function.name} ${call.function.arguments} → ${out}`.slice(0, 240));
       messages.push({ role: "tool", content: out, tool_call_id: call.id, name: call.function.name });

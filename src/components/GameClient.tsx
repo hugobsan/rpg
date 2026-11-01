@@ -318,7 +318,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
       case "library":
         return <LibraryView campaignId={campaignId} ruleset={campaign.ruleset} jobs={jobs} onChange={reloadState} />;
       case "objectives":
-        return <ObjectivesView state={campaign.state} />;
+        return <ObjectivesView state={campaign.state} ruleset={campaign.ruleset} playerXp={player?.sheet.xp ?? 0} />;
       case "npcs":
         return <NpcList npcs={npcs} onOpen={setOpenNpc} inbox={state.inbox} onSetActive={setNpcActive} />;
       case "map":

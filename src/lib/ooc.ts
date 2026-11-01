@@ -2,7 +2,7 @@ import { q } from "./db";
 import { getAgent } from "./agents";
 import { chat, ChatMessage, ToolDef } from "./openrouter";
 import { formatClock, getClock, period } from "./clock";
-import { getObjectives, objectivesPromptBlock } from "./objectives";
+import { getObjectives, objectivesPromptBlock, objectiveXp } from "./objectives";
 import { activeDirectives, addMemory } from "./retrieval";
 import { getCampaign, getCharacters, getCurrentScene, sheetSummary } from "./engine";
 import { executeGmTool, GM_TOOLS, saveTable } from "./tools";
@@ -246,7 +246,9 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
     `--- CENA ATUAL ---\nModo: ${scene.mode} | Local: ${scene.location || "?"} | Título: ${scene.title || "-"}\nHora na história: ${
       clock ? `${formatClock(clock.minutes)} (${period(clock.minutes)})` : "ainda não definida"
     }\nNPCs em cena: ${npcs.join(", ") || "nenhum"}${scene.summary ? `\nResumo da cena: ${scene.summary}` : ""}`,
-    objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null),
+    objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null, (o) =>
+      objectiveXp(o, campaign.ruleset, getTable(campaign.state), player?.sheet.xp ?? 0)
+    ),
     tablePromptBlock(getTable(campaign.state)),
     // o texto atual de cada modo, para reescrever a pedido (set_table_rules modes)
     `\n--- MODOS DE CENA (como o Mestre conduz cada um; ajustáveis em modes) ---\n${(Object.keys(MODE_HINTS) as SceneMode[]).map((k) => `${k}: ${modeHint(getTable(campaign.state), k)}`).join("\n")}`,

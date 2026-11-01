@@ -1,9 +1,12 @@
 "use client";
 import { formatClock, getClock } from "@/lib/clock";
-import { formatRemaining, getObjectives, Objective, OBJECTIVE_KIND_LABEL } from "@/lib/objectives";
+import { formatRemaining, getObjectives, Objective, OBJECTIVE_KIND_LABEL, objectiveXp } from "@/lib/objectives";
+import { getTable } from "@/lib/table";
+import type { Ruleset } from "@/lib/types";
 import s from "./SidePanels.module.css";
 
-const STATUS_LABEL = { concluido: "concluído", perdido: "perdido", cancelado: "cancelado", aberto: "aberto" };
+const STATUS_LABEL = { concluido: "concluído", perdido: "perdido", cancelado: "cancelado", aberto: "aberto", oferecida: "oferecida" };
+const SIZE_LABEL = { pequena: "missão pequena", media: "missão média", grande: "missão grande", excepcional: "feito excepcional" };
 
 const FlagIcon = ({ size = 18 }: { size?: number }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -20,30 +23,38 @@ const StarIcon = () => (
 const urgency = (left: number | null) => (left === null ? "" : left < 6 * 60 ? "danger" : left < 24 * 60 ? "warn" : "");
 
 /** Aba "Missões": missões, eventos e prazos que o Mestre registra conforme a história. */
-export default function ObjectivesView({ state }: { state: Record<string, unknown> }) {
+export default function ObjectivesView({ state, ruleset, playerXp }: { state: Record<string, unknown>; ruleset: Ruleset; playerXp: number }) {
   const now = getClock(state)?.minutes;
   const all = getObjectives(state);
+  const table = getTable(state);
   // prazo mais próximo primeiro; sem prazo no fim
-  const open = all
-    .filter((o) => o.status === "aberto")
-    .sort((a, b) => (a.deadlineMinutes ?? Infinity) - (b.deadlineMinutes ?? Infinity));
-  const closed = all.filter((o) => o.status !== "aberto").reverse();
+  const byDeadline = (a: Objective, b: Objective) => (a.deadlineMinutes ?? Infinity) - (b.deadlineMinutes ?? Infinity);
+  const offered = all.filter((o) => o.status === "oferecida").sort(byDeadline);
+  const open = all.filter((o) => o.status === "aberto").sort(byDeadline);
+  const closed = all.filter((o) => o.status !== "aberto" && o.status !== "oferecida").reverse();
 
   const item = (o: Objective, n: number) => {
     const isOpen = o.status === "aberto";
+    const isOffer = o.status === "oferecida";
+    const xp = isOpen || isOffer ? objectiveXp(o, ruleset, table, playerXp) : null;
     const left = isOpen && o.deadlineMinutes !== undefined && now !== undefined ? o.deadlineMinutes - now : null;
     const u = urgency(left);
     // quanto do prazo já passou, desde que a missão surgiu
     const span = o.deadlineMinutes !== undefined ? o.deadlineMinutes - o.createdAt : 0;
     const used = left !== null && span > 0 ? Math.max(0, Math.min(1, 1 - left / span)) : null;
     return (
-      <div key={o.id} className={`${s.card} ${s.quest}${u ? ` ${s[u]}` : ""}${isOpen ? "" : ` ${s.closed}`}`}
+      <div key={o.id} className={`${s.card} ${s.quest}${u ? ` ${s[u]}` : ""}${isOffer ? ` ${s.offered}` : isOpen ? "" : ` ${s.closed}`}`}
         style={{ animationDelay: `${Math.min(n, 8) * 25}ms` }}>
         <div className={s.row} style={{ alignItems: "flex-start" }}>
           <div className={s.grow}>
             <div className={s.title}>{o.title}</div>
           </div>
-          {isOpen ? (
+          {xp !== null && (
+            <span className={`${s.chip} ${s.xp}`} data-tip={`XP ao concluir (${SIZE_LABEL[o.xpSize!]}, pela regra de XP da mesa)`}>
+              {o.xpSize === "excepcional" ? "" : "≈ "}{xp} XP
+            </span>
+          )}
+          {isOpen || isOffer ? (
             <span className={s.chip}>{OBJECTIVE_KIND_LABEL[o.kind] || o.kind}</span>
           ) : (
             <span className={`${s.chip} ${o.status === "concluido" ? s.ok : o.status === "perdido" ? s.bad : ""}`}>{STATUS_LABEL[o.status]}</span>
@@ -51,6 +62,9 @@ export default function ObjectivesView({ state }: { state: Record<string, unknow
         </div>
         {o.description && <div className={s.sub}>{o.description}</div>}
         {o.reward && <span className={s.reward}><StarIcon /> {o.reward}</span>}
+        {isOffer && o.deadlineMinutes !== undefined && (
+          <div className={s.deadline}><span>prazo se aceitar: até {formatClock(o.deadlineMinutes)}</span></div>
+        )}
         {isOpen && (
           <>
             <div className={s.deadline}>
@@ -71,10 +85,18 @@ export default function ObjectivesView({ state }: { state: Record<string, unknow
         <p>
           O Mestre registra missões, eventos marcados e compromissos quando surgem na história e marca quando são cumpridos.
           Prazos correm no tempo do jogo: treinar, viajar ou descansar demais faz o prazo passar, e a missão é perdida.
+          Missão oferecida ainda não foi aceita: o prazo só corre depois que você aceitar. A XP mostrada vem pela regra de
+          XP da mesa e entra na ficha quando a missão é concluída.
         </p>
       </details>
+      {offered.length > 0 && (
+        <>
+          <div className={s.head}><h4>Oferecidas</h4><span className={s.count}>{offered.length}</span></div>
+          {offered.map(item)}
+        </>
+      )}
       {!open.length ? (
-        <div className={s.empty}>
+        !offered.length && <div className={s.empty}>
           <FlagIcon size={26} />
           <b>Nada em aberto agora</b>
           Quando alguém te der uma missão ou marcar um encontro, ela aparece aqui com o tempo que falta.

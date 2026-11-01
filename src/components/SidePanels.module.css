@@ -55,6 +55,8 @@
 .quest.danger::before { background: var(--danger); box-shadow: 0 0 10px -1px var(--danger); }
 .quest.warn { border-color: color-mix(in srgb, var(--warn) 35%, var(--border)); }
 .quest.danger { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.offered { border-style: dashed; }
+.xp { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .closed { opacity: 0.72; }
 .closed .title { text-decoration: line-through; text-decoration-color: var(--text-faint); }
 .deadline { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); margin-top: 4px; font-size: 11.5px; color: var(--text-dim); }
