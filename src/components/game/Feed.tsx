@@ -23,7 +23,7 @@ const signed = (n: number) => (n > 0 ? `+${n}` : `−${-n}`);
 function SpeakButton({ cast, npc, line }: { cast: Cast; npc: Character; line: string }) {
   const [loading, setLoading] = useState(false);
   return (
-    <button className={s.speak} title="Ouvir a fala" aria-label={`Ouvir ${npc.name}`} disabled={loading}
+    <button className={s.speak} data-tip="Ouvir a fala" aria-label={`Ouvir ${npc.name}`} disabled={loading}
       onClick={() => {
         setLoading(true);
         playLine(cast.campaignId, npc, line).finally(() => setLoading(false));
@@ -225,7 +225,7 @@ export function Choices({ choices, onPick, onEdit }: { choices: string[]; onPick
             {i < 9 && <kbd className={s.key}>{i + 1}</kbd>}
             <span>{c}</span>
           </button>
-          <button className={s.choiceEdit} onClick={() => onEdit(c)} title="Editar antes de enviar" aria-label="Editar esta opção antes de enviar">
+          <button className={s.choiceEdit} onClick={() => onEdit(c)} data-tip="Editar antes de enviar" data-tip-align="end" aria-label="Editar esta opção antes de enviar">
             <Icon name="edit" size={15} />
           </button>
         </div>

@@ -139,7 +139,7 @@ export default function OocModal({
                       {d.content}
                       {d.subject === "proxima_cena" && <span className={s.scope}>vale nesta cena e na próxima</span>}
                     </span>
-                    <button className={s.remove} title="Desativar esta diretriz" aria-label={`Desativar: ${d.content}`}
+                    <button className={s.remove} data-tip="Desativar esta diretriz" data-tip-align="end" aria-label={`Desativar: ${d.content}`}
                       onClick={() => removeDirective(d.id)}>
                       <Svg d="M6 6l12 12M18 6 6 18" size={14} />
                     </button>

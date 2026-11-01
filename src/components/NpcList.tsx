@@ -82,7 +82,7 @@ export default function NpcList({
         </button>
         {canEdit && (
           <button type="button" className={s.quick}
-            title={n.active ? "Tirar de cena" : "Trazer para a cena"} aria-label={n.active ? `Tirar ${n.name} de cena` : `Trazer ${n.name} para a cena`}
+            data-tip={n.active ? "Tirar de cena" : "Trazer para a cena"} data-tip-align="end" aria-label={n.active ? `Tirar ${n.name} de cena` : `Trazer ${n.name} para a cena`}
             onClick={() => setActive([n], !n.active)}>
             {n.active ? <Exit /> : <Enter />}
           </button>

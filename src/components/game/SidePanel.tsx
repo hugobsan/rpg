@@ -159,7 +159,7 @@ export default function SidePanel<K extends string>({ tabs, active, onSelect, co
             title="Arraste para ajustar a largura · duplo clique volta ao padrão" />
           <header className={s.head}>
             <h2 className={s.title}>{current.label}</h2>
-            <button className={s.close} onClick={() => onCollapse(true)} aria-label="Recolher painel" title="Recolher painel">
+            <button className={s.close} onClick={() => onCollapse(true)} aria-label="Recolher painel" data-tip="Recolher painel" data-tip-pos="below" data-tip-align="end">
               <Icon name="chevron" size={18} />
             </button>
           </header>

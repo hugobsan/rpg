@@ -179,7 +179,7 @@ export default function TableRulesPanel({ campaign, onChange }: { campaign: Camp
                 <span className={s.to}>CD {tableDc(table, 15, c.key).dc}</span>
                 <Stepper label={`Ajuste de ${c.label}`} value={c.offset}
                   onChange={(v) => setCats(cats.map((x, j) => (j === i ? { ...x, offset: v } : x)))} />
-                <button type="button" className={s.remove} aria-label={`Remover ${c.label}`} title="Remover"
+                <button type="button" className={s.remove} aria-label={`Remover ${c.label}`} data-tip="Remover" data-tip-align="end"
                   onClick={() => setCats(cats.filter((_, j) => j !== i))}>
                   <Svg d="M6 6l12 12M18 6 6 18" />
                 </button>

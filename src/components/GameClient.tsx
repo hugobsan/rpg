@@ -383,7 +383,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
                     <FeedLine item={g.item} cast={cast} />
                     {idle && (
                       <button className={`${s.regen} ${s.editLast}`} onClick={() => setEditing(true)}
-                        data-tip="Editar mensagem" aria-label="Editar sua última mensagem">
+                        data-tip="Editar mensagem" data-tip-align="end" aria-label="Editar sua última mensagem">
                         <Icon name="edit" size={14} />
                       </button>
                     )}
@@ -404,7 +404,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
               {idle && !editing && lastPlayer && (
                 <div className={s.turnActions}>
                   <button className={s.regen} onClick={() => { setRegenReason(""); setRegenOpen(true); }}
-                    data-tip="Gerar novamente" aria-label="Gerar novamente">
+                    data-tip="Gerar novamente" data-tip-align="start" aria-label="Gerar novamente">
                     <Icon name="regen" size={14} />
                   </button>
                   <button className={s.regen} onClick={() => sendTurn(CONTINUE_INPUT)}

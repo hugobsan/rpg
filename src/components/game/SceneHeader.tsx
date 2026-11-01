@@ -31,11 +31,12 @@ function SkyDial({ minutes }: { minutes: number }) {
   );
 }
 
-function Action({ icon, label, onClick, busy, disabled, className = "" }: {
-  icon: IconName; label: string; onClick: () => void; busy?: boolean; disabled?: boolean; className?: string;
+function Action({ icon, label, onClick, busy, disabled, className = "", end }: {
+  icon: IconName; label: string; onClick: () => void; busy?: boolean; disabled?: boolean; className?: string; end?: boolean;
 }) {
   return (
-    <button className={`${s.action} ${className}`} onClick={onClick} disabled={disabled || busy} title={label} aria-label={label}>
+    <button className={`${s.action} ${className}`} onClick={onClick} disabled={disabled || busy} aria-label={label}
+      data-tip={label} data-tip-pos="below" data-tip-align={end ? "end" : undefined}>
       {busy ? <Loader size={16} label="Pintando o ambiente" /> : <Icon name={icon} />}
       <span className={s.actionLabel}>{label}</span>
     </button>
@@ -97,13 +98,13 @@ export default function SceneHeader({ scene, clock, image, onOoc, onMap, onTable
         {image && <Action icon="landscape" label="Ambiente" onClick={image.onClick} busy={image.busy} />}
         {onMap && <Action icon="map" label="Mapa" onClick={onMap} className={s.wide} />}
         {onTable && (
-          <button className={`${s.action} ${s.wide}`} onClick={onTable} title="Mesa: dificuldade e dados" aria-label="Mesa: dificuldade e dados">
+          <button className={`${s.action} ${s.wide}`} onClick={onTable} data-tip="Mesa: dificuldade e dados" data-tip-pos="below" aria-label="Mesa: dificuldade e dados">
             <Icon name="sliders" />
             <span className={s.actionLabel}>Mesa</span>
             {tableHint && <span className={s.hint}>{tableHint}</span>}
           </button>
         )}
-        <Action icon="chat" label="Fora do jogo" onClick={onOoc} className={s.ooc} />
+        <Action icon="chat" label="Fora do jogo" onClick={onOoc} className={s.ooc} end />
       </nav>
     </header>
   );

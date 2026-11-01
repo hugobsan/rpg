@@ -407,6 +407,12 @@ hr { border: none; height: 1px; background: var(--border); margin: var(--s-5) 0;
   box-shadow: var(--shadow-2); pointer-events: none; animation: pop var(--dur) var(--ease-out);
 }
 
+/* posição: data-tip-pos="below" abre embaixo (topo de painel/modal); data-tip-align="start|end" encosta
+   a dica na borda do botão (botão perto da borda do contêiner, para não ser cortada) */
+[data-tip-pos="below"]:hover::after, [data-tip-pos="below"]:focus-visible::after { bottom: auto; top: calc(100% + 8px); }
+[data-tip-align="start"]:hover::after, [data-tip-align="start"]:focus-visible::after { left: 0; transform: none; }
+[data-tip-align="end"]:hover::after, [data-tip-align="end"]:focus-visible::after { left: auto; right: 0; transform: none; }
+
 /* drawer (painel deslizante) + scrim: base para a lateral do jogo no celular */
 .scrim { position: fixed; inset: 0; z-index: var(--z-drawer); background: rgb(0 0 0 / 0.55); backdrop-filter: blur(2px); animation: fade var(--dur) var(--ease-out); }
 .drawer {

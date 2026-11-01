@@ -261,7 +261,7 @@ export default function NpcModal({
             </div>
             <div className={s.portraitAction}><PortraitButton char={npc} onChange={onChanged} /></div>
           </div>
-          <button className={s.icon} onClick={toggleActive} title={npc.active ? "Tirar de cena" : "Trazer para a cena"}
+          <button className={s.icon} onClick={toggleActive} data-tip={npc.active ? "Tirar de cena" : "Trazer para a cena"} data-tip-pos="below"
             aria-label={npc.active ? `Tirar ${npc.name} de cena` : `Trazer ${npc.name} para a cena`}>
             <Svg d={npc.active ? "M14 4h5v16h-5M10 8l-4 4 4 4M6 12h9" : "M14 4h5v16h-5M9 8l4 4-4 4M13 12H4"} />
           </button>
@@ -296,7 +296,7 @@ export default function NpcModal({
                 <div key={i} className={`${s.line} ${s[m.role]}${m.refused ? ` ${s.refused}` : ""}`}>
                   <div className={s.bubble}>{m.content}</div>
                   {m.role === "npc" && !m.refused && (
-                    <button className={`${s.speak}${speaking === i ? ` ${s.busy}` : ""}`} title="Ouvir" aria-label={`Ouvir ${npc.name}`}
+                    <button className={`${s.speak}${speaking === i ? ` ${s.busy}` : ""}`} data-tip="Ouvir a fala" aria-label={`Ouvir ${npc.name}`}
                       disabled={speaking !== null} onClick={() => speak(m.content, i)}>
                       {speaking === i ? <Loader size={16} label="Gerando a voz" /> : <Svg d={SPEAKER} size={15} />}
                     </button>
@@ -436,7 +436,7 @@ function FxSlider({ label, min, max, step, value, show, onChange, onCommit, onRe
         <input type="range" min={min} max={max} step={step} value={value}
           onChange={(e) => onChange(Number(e.target.value))}
           onPointerUp={onCommit} onKeyUp={onCommit} />
-        <button type="button" className="btn ghost small" title="Voltar ao padrão" aria-label="Voltar ao padrão" onClick={onReset}>
+        <button type="button" className="btn ghost small" data-tip="Voltar ao padrão" data-tip-align="end" aria-label="Voltar ao padrão" onClick={onReset}>
           <Svg d="M4 12a8 8 0 1 0 3-6.3M4 4v4h4" size={15} />
         </button>
       </div>
