@@ -42,7 +42,7 @@ REGRAS DE OURO
 CENAS E RITMO
 - A cena atual tem um modo (exploration, dialogue, battle, training ou downtime), que você troca com set_scene. Como conduzir o modo atual vem no contexto do turno, em MODO DA CENA (a mesa da campanha pode ajustar): siga essa instrução.
 - Use set_scene para mudar modo/local/título quando a fita da história virar. Em batalha, mantenha o placar honesto: a energia do poder acaba, ferimentos pesam.
-- NPC com nome só fala ou age DEPOIS de registrado. ANTES de escrever a narração, chame create_npc para todo personagem com nome que aparece pela primeira vez (inclusive os do cânone, com canon=true), mesmo que ele diga uma frase só, com um brief de quem é e do que já foi estabelecido (o Criador de personagens monta perfil e ficha em segundo plano), e set_npc_active para quem já existe e entra em cena. Figurante sem nome (um guarda, um aluno) não precisa. O sistema confere: fala de personagem com nome que não está registrado devolve a narração para você registrar e reescrever. Tire de cena (active=false) quem se afastou — NPC inativo não interage.
+- NPC com nome só fala ou age DEPOIS de registrado. ANTES de escrever a narração, chame create_npc para todo personagem com nome que aparece pela primeira vez (inclusive os do cânone, com canon=true), mesmo que ele diga uma frase só, com um brief de quem é e do que já foi estabelecido (o Criador de personagens monta perfil e ficha em segundo plano), e set_npc_active para quem já existe e entra em cena. Figurante sem nome (um guarda, um aluno) não precisa. Se esquecer, o Escrivão registra depois da narração, mas só com o que ela mostrou. Tire de cena (active=false) quem se afastou — NPC inativo não interage.
 
 CÂNONE (quando o cenário é baseado em obra)
 - Consulte get_script para saber em que ponto da linha do tempo a campanha está e o que vem a seguir. Marque progresso com update_script.
@@ -469,6 +469,10 @@ FORMATO: responda APENAS com JSON válido, sem markdown nem comentários. Campo 
 // prompt do Mestre já gravado no banco: as ferramentas que foram para o Escrivão (e o advance_time) saem das regras.
 // Troca só o texto exato de antes; trecho editado à mão fica como está
 const GM_PROMPT_FIXES: [string, string][] = [
+  [
+    "O sistema confere: fala de personagem com nome que não está registrado devolve a narração para você registrar e reescrever.",
+    "Se esquecer, o Escrivão registra depois da narração, mas só com o que ela mostrou.",
+  ],
   [
     "3. Toda mudança mecânica passa por ferramentas: dano/cura/gasto de recurso (update_resource), atributos (update_attribute, aumentos só até o teto do nível de poder), habilidades novas (add_ability), uso de técnica da ficha (use_ability), treino (train), progresso de uma habilidade (update_ability_progress), itens (add_item/remove_item), XP (grant_xp), rank (set_rank). Nunca apenas \"diga\" que a ficha mudou.",
     "3. Mudanças mecânicas: atributos (update_attribute, aumentos só até o teto do nível de poder), habilidades novas (add_ability), uso de técnica da ficha (use_ability), treino (train), rank (set_rank). Dano, cura e gasto de recurso, itens ganhos ou perdidos, XP, domínio por evento e memórias o Escrivão registra sozinho depois da narração, pelo que ela mostra: narre com números claros (quem perdeu quanto, o que pegou ou entregou).",

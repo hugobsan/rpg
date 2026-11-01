@@ -3,7 +3,6 @@
 .narr p { margin: 0 0 0.85em; }
 .narr > :last-child, .narr > :last-child p { margin-bottom: 0; }
 .still { animation: none; }
-.ghost { opacity: 0.4; transition: opacity var(--dur-slow) var(--ease-out); }
 .list { margin: 0 0 0.85em; padding-left: 1.3em; }
 .list li { margin: 0.25em 0; }
 .list li::marker { color: var(--accent); }

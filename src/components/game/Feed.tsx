@@ -83,15 +83,12 @@ function Narration({ text, cast, cursor }: { text: string; cast: Cast; cursor?: 
 // texto do último rascunho: a narração final que o substitui não repete a animação de entrada
 let lastDraft = "";
 
-/**
- * Narração chegando em streaming, com cursor. Fica fora do feed memoizado (muda a cada pedaço).
- * ghost: rascunho descartado (o Mestre parou para usar ferramenta), esmaecido até o novo texto chegar.
- */
-export function Draft({ text, cast, ghost }: { text: string; cast: Cast; ghost?: boolean }) {
-  if (!ghost) lastDraft = text;
+/** Narração chegando em streaming, com cursor. Fica fora do feed memoizado (muda a cada pedaço). */
+export function Draft({ text, cast }: { text: string; cast: Cast }) {
+  lastDraft = text;
   return (
-    <div className={`msg-gm ${s.narr} ${ghost ? s.ghost : ""}`} aria-busy="true">
-      <Narration text={draftSafe(text)} cast={cast} cursor={!ghost} />
+    <div className={`msg-gm ${s.narr}`} aria-busy="true">
+      <Narration text={draftSafe(text)} cast={cast} cursor />
     </div>
   );
 }

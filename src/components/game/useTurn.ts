@@ -19,8 +19,8 @@ import { diceText } from "../DiceRoller";
  *   feed           mensagens salvas (key "m<id>") + eventos ao vivo do turno (key "k<n>"):
  *                  player | gm | chip (ferramenta; name = nome dela) | dice (dice = DiceResult;
  *                  outcome ok/fail quando há CD). name e dice só nos eventos ao vivo, não nas salvas
- *   draft          narração chegando em streaming ("" = nenhuma). Vem de narration_delta, zera em
- *                  narration_reset; o narration final entra no feed e zera o rascunho.
+ *   draft          narração chegando em streaming ("" = nenhuma). Vem de narration_delta; o narration
+ *                  final entra no feed e zera o rascunho.
  *                  Renderize o rascunho num componente à parte e os itens do feed com React.memo:
  *                  cada pedaço do streaming re-renderiza quem usa o hook.
  *   choices        opções do último turno (setChoices: troca pelas das Ações rápidas)
@@ -46,7 +46,7 @@ import { diceText } from "../DiceRoller";
  *   feedRef, hasMore, loadingOlder, loadOlder()
  *
  * onEvent(ev): cada evento do turno no momento em que ele acontece na tela. Os de conteúdo
- * (tool, dice, narration, narration_delta, narration_reset, choices, time e qualquer tipo novo,
+ * (tool, dice, narration, narration_delta, choices, time e qualquer tipo novo,
  * como npc_message) chegam depois de liberados pela rolagem; status, scene, state, error e done
  * chegam na hora. Serve para a tela reagir (toast, som, mapa) sem mexer no hook.
  */
@@ -185,7 +185,6 @@ export function useTurn(
         },
       ]);
     else if (ev.type === "narration_delta") setDraft((d) => d + ev.text);
-    else if (ev.type === "narration_reset") setDraft("");
     else if (ev.type === "narration") {
       setDraft("");
       setFeed((f) => [...f, { key: nextKey(), kind: "gm", content: ev.content }]);

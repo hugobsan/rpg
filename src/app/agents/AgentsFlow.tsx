@@ -208,7 +208,7 @@ const NODES: (FlowNode | LaneNode)[] = [
   n("t_gm", X[4], 60, "gm", "Mestre", "narra e arbitra", {
     oque: "Narra o mundo, arbitra as regras, controla o relógio e altera o jogo por ferramentas. Usa o modelo escolhido pelo Jev, mantido em todas as rodadas do turno. A narração vai ao jogador em streaming. No Continuar, segue a cena sem o personagem agir (ou, se a narração anterior esperava algo dele, responde só com uma linha curta de que a cena aguarda).",
     quando: "Em cada turno do jogador, em loop com as ferramentas.",
-    freq: "1 a 9 chamadas por turno. Termina quando responde só com texto, ou com a narração e só anotações (relógio, cena, elenco, cargo, roteiro, missão, mapa), que rodam depois dela sem outra chamada. Fala de NPC com nome não registrado devolve a narração uma vez para ele registrar (create_npc) e reescrever.",
+    freq: "1 a 9 chamadas por turno. Termina quando responde só com texto, ou com a narração e só anotações (relógio, cena, elenco, cargo, roteiro, missão, mapa), que rodam depois dela sem outra chamada.",
     custo: "O mais caro: cada rodada reenvia prompt, ficha, memórias, histórico (até ≈9 mil tokens) e as definições das ferramentas. A busca web (:online) vale só na 1ª rodada e é cobrada por busca.",
   }),
   n("t_tools", X[5], 60, "code", "Ferramentas", "dados, ficha, cena, delegações", {
@@ -227,7 +227,7 @@ const NODES: (FlowNode | LaneNode)[] = [
     custo: "Baixo: modelo barato, mas lê de uma vez todo o trecho antigo (≈11 mil tokens de entrada).",
   }),
   n("t_scribe", X[1], 230, "scribe", "Escrivão", "registra o que a narração mostrou", {
-    oque: "Lê a ação, a narração, o que as ferramentas do Mestre já fizeram, as fichas, a hora, as missões e a regra de XP da mesa (Mesa > Ganho de XP), e registra só o que a narração estabeleceu: dano, cura e gasto, itens, XP, domínio por evento, campos da ficha, memórias e missões (as anotações de missão do Mestre viram objetivos com o prazo certo). Uma chamada com as ferramentas em paralelo. O que gravou fica junto da narração (meta.notes) e entra no contexto do turno seguinte, para o Mestre reconhecer na história o que for marcante (marco de domínio, nível novo); o “gerar novamente” apaga junto.",
+    oque: "Lê a ação, a narração, o que as ferramentas do Mestre já fizeram, as fichas, a hora, as missões e a regra de XP da mesa (Mesa > Ganho de XP), e registra só o que a narração estabeleceu: dano, cura e gasto, itens, XP, domínio por evento, campos da ficha, memórias e missões (as anotações de missão do Mestre viram objetivos com o prazo certo). Quem fala na narração (**Nome:**) sem estar registrado chega a ele numa lista: registra com create_npc quem é personagem com nome e ignora título, cabeçalho ou cargo genérico; a narração nunca volta ao Mestre. Uma chamada com as ferramentas em paralelo. O que gravou fica junto da narração (meta.notes) e entra no contexto do turno seguinte, para o Mestre reconhecer na história o que for marcante (marco de domínio, nível novo); o “gerar novamente” apaga junto.",
     quando: "Depois de cada narração, logo depois do relógio (do Jev, quando é ele quem anda com o tempo), antes do fim do turno.",
     freq: "1 chamada por turno (2 se alguma ferramenta deu erro).",
     custo: "Baixo: modelo barato e rápido, ≈3 mil tokens de entrada; ~US$ 0,001 e 1 a 3 s.",
@@ -291,7 +291,7 @@ const NODES: (FlowNode | LaneNode)[] = [
 
   // --- criação em segundo plano ---
   n("c_gm", X[0], 760, "gm", "Mestre: create_npc", "nome, sexo, canon e brief", {
-    oque: "O Mestre só registra quem entrou na história: nome, sexo, se é do cânone e um brief (quem é, papel, o que já foi narrado). Não escreve a ficha.",
+    oque: "O Mestre só registra quem entrou na história (se esquecer, o Escrivão registra depois da narração): nome, sexo, se é do cânone e um brief (quem é, papel, o que já foi narrado). Não escreve a ficha.",
     quando: "Antes de narrar, quando um personagem com nome aparece pela primeira vez.",
   }),
   n("c_reg", X[1], 760, "code", "NPC registrado na hora", "ativo na cena, o turno segue", {

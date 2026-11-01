@@ -457,20 +457,13 @@ export async function runTurn(
   let keptChoices: string[] = [];
   let finalChoices: string[] = [];
   let timeMoved = false; // o Mestre chamou advance_time/set_time/train neste turno
-  let npcGate = false; // a narração já voltou uma vez por NPC sem registro
   const deferred: ToolCall[] = []; // anotações do Mestre (DEFERRED_TOOLS), aplicadas depois da narração
   const done: string[] = []; // o que as ferramentas do Mestre já fizeram, para o Escrivão não repetir
 
   for (let round = 0; round <= maxRounds; round++) {
-    // narração em streaming: o texto da rodada vai ao jogador enquanto chega, depois do que já ficou;
-    // só o portão de NPC descarta tudo (narration_reset) e pede a narração inteira de novo
+    // narração em streaming: o texto da rodada vai ao jogador enquanto chega, depois do que já ficou; nunca é descartado
     let roundText = "";
     let streamed = 0;
-    const discardDraft = () => {
-      if (streamed || kept) emit({ type: "narration_reset" });
-      kept = "";
-      keptChoices = [];
-    };
     signal?.throwIfAborted();
     emit({ type: "status", text: "O Mestre está pensando..." });
     // :online só na 1ª rodada: o plugin cobra por requisição e repetiria a mesma busca a cada rodada
@@ -504,22 +497,7 @@ export async function runTurn(
       deferred.push(...result.toolCalls.filter((c) => DEFERRED_TOOLS.has(c.function.name)));
       finalText = [kept, told.clean].filter(Boolean).join("\n\n");
       finalChoices = told.choices.length ? told.choices : keptChoices;
-      // NPC com nome falando sem estar registrado: devolve uma vez para o Mestre registrar e reescrever
-      const missing = !npcGate && round < maxRounds ? unregisteredSpeakers(finalText, await getCharacters(campaignId)) : [];
-      if (!missing.length) break;
-      npcGate = true;
-      discardDraft();
-      const gate = `(Sistema, fora do jogo: ${missing.join(", ")} fala${missing.length > 1 ? "m" : ""} na narração mas não está${missing.length > 1 ? "ão" : ""} registrado${missing.length > 1 ? "s" : ""}. Chame create_npc agora para cada um (canon=true se for da obra; se já existir com outro nome, use set_npc_active nesse nome) e então escreva de novo a narração inteira deste turno, completa (inclusive o que escreveu antes das ferramentas). Se for figurante sem nome, só repita a narração inteira.)`;
-      if (notesOnly) {
-        // as anotações já estão na fila: a resposta delas leva o aviso (a API quer o resultado de cada ferramenta)
-        messages.push({ role: "assistant", content: result.content || null, tool_calls: result.toolCalls });
-        for (const call of result.toolCalls) messages.push({ role: "tool", content: NOTED, tool_call_id: call.id, name: call.function.name });
-        messages[messages.length - 1].content += `\n\n${gate}`;
-      } else {
-        messages.push({ role: "assistant", content: result.content || "" });
-        messages.push({ role: "user", content: gate });
-      }
-      continue;
+      break;
     }
     // texto junto das ferramentas: o jogador já leu, então fica (as opções valem se a próxima rodada não trouxer outras)
     if (told.clean) kept = [kept, told.clean].filter(Boolean).join("\n\n");
@@ -728,6 +706,7 @@ async function fallbackClock(
 }
 
 const SCRIBE_TOOL_DEFS = GM_TOOLS.filter((t) => SCRIBE_TOOLS.has(t.function.name));
+const CREATE_NPC_DEF = GM_TOOLS.find((t) => t.function.name === "create_npc")!;
 
 /**
  * Escrivão: depois da narração, registra nas fichas o que a ação e a narração estabeleceram (recursos, itens, XP,
@@ -751,6 +730,8 @@ async function runScribe(
     (c.sheet.inventory.length ? `\n  inventário: ${c.sheet.inventory.map((i) => `${i.qty}x ${i.name}`).join(", ")}` : "");
   const npcs = chars.filter((c) => c.kind === "npc" && c.active);
   const player = chars.find((c) => c.kind === "player");
+  // quem fala no formato **Nome:** sem registro: o Escrivão julga se é personagem e registra (a narração não volta ao Mestre)
+  const unregistered = unregisteredSpeakers(narration, chars);
   const state = [
     `Hora na história: ${clock ? `${formatClock(clock.minutes)} (${period(clock.minutes)})` : "não definida (missão só sem prazo)"}`,
     objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null, (o) =>
@@ -766,7 +747,11 @@ async function runScribe(
       role: "user",
       content: `--- ESTADO ---\n${state.filter(Boolean).join("\n")}\n\n--- AÇÃO DO JOGADOR ---\n${playerInput}\n\n--- NARRAÇÃO DO MESTRE ---\n${narration}\n\n--- JÁ FEITO PELO MESTRE NESTE TURNO (não repita) ---\n${
         done.join("\n") || "(nada)"
-      }${briefs.length ? `\n\n--- ANOTAÇÕES DE MISSÃO DO MESTRE ---\n${briefs.map((b) => `- ${b}`).join("\n")}` : ""}`,
+      }${briefs.length ? `\n\n--- ANOTAÇÕES DE MISSÃO DO MESTRE ---\n${briefs.map((b) => `- ${b}`).join("\n")}` : ""}${
+        unregistered.length
+          ? `\n\n--- FALAM SEM REGISTRO ---\n${unregistered.join(", ")}\nPara cada personagem com nome aqui, chame create_npc (canon=true se for da obra; brief com quem é e o que a narração mostrou). Ignore o que não é personagem (título, cabeçalho como "Resultado do treino", cargo genérico como "Funcionária") e quem já está registrado com outro nome.`
+          : ""
+      }`,
     },
   ];
   // estado novo: relógio já andado e fichas depois das ferramentas do Mestre; scribe: as ferramentas sabem quem chama
@@ -778,7 +763,7 @@ async function runScribe(
       temperature: agent.temperature,
       max_tokens: agent.max_tokens,
       reasoning: agent.params.reasoning as Record<string, unknown> | undefined,
-      tools: SCRIBE_TOOL_DEFS,
+      tools: unregistered.length ? [...SCRIBE_TOOL_DEFS, CREATE_NPC_DEF] : SCRIBE_TOOL_DEFS,
       agentId: "scribe",
       campaignId,
       purpose: round ? "anotações do turno (correção)" : "anotações do turno",
@@ -791,7 +776,7 @@ async function runScribe(
     for (const call of [...r.toolCalls].sort((a, b) => Number(a.function.name === "grant_xp") - Number(b.function.name === "grant_xp")))
       outs.set(
         call.id,
-        SCRIBE_TOOLS.has(call.function.name)
+        SCRIBE_TOOLS.has(call.function.name) || (unregistered.length && call.function.name === "create_npc")
           ? await executeGmTool(call.function.name, argsOf(call), tctx).catch((e) => `Erro: ${e instanceof Error ? e.message : String(e)}`)
           : `Erro: ${call.function.name} não é ferramenta do Escrivão.`
       );

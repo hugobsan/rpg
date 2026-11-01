@@ -60,16 +60,12 @@ const recapKey = (id: string) => `chronicle.recap.${id}`;
 
 export default function GameClient({ campaignId, initial }: { campaignId: string; initial?: CampaignView | null }) {
   const [phases, setPhases] = useState<Phase[]>([]);
-  const [ghost, setGhost] = useState(""); // rascunho descartado (narration_reset): fica esmaecido até o novo chegar
   const [openNpc, setOpenNpc] = useState<Character | null>(null);
-  const draftRef = useRef("");
   const stateRef = useRef<CampaignView | null>(null);
 
   const onEvent = (ev: TurnEvent) => {
     const p = phaseOf(ev);
     if (p) setPhases((ps) => (ps[ps.length - 1] === p ? ps : [...ps.filter((x) => x !== p), p]));
-    if (ev.type === "narration_reset") setGhost(draftRef.current);
-    else if (ev.type === "narration_delta" || ev.type === "narration" || ev.type === "done" || ev.type === "error") setGhost("");
     if (ev.type === "npc_message")
       toast(ev.preview ? `“${ev.preview}”` : "Abra a conversa para ler.", {
         title: `${ev.name} quer falar com você`,
@@ -89,7 +85,6 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
     pendingDice, rolling, roll, releaseDice,
     feedRef, hasMore, loadingOlder, loadOlder,
   } = useTurn(campaignId, { initial, onEvent });
-  draftRef.current = draft;
   stateRef.current = state;
 
   // retratos, mapas 3D, biblioteca, perfis de NPC: ao terminar, relê a campanha e avisa
@@ -205,7 +200,6 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
 
   const turnStarted = () => {
     setPhases([]);
-    setGhost("");
     if (recap) closeRecap();
   };
   const sendTurn = (text: string) => {
@@ -388,7 +382,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
                     )}
                   </Fragment>
                 ))}
-              {draft ? <Draft text={draft} cast={cast} /> : ghost && busy ? <Draft text={ghost} cast={cast} ghost /> : null}
+              {draft ? <Draft text={draft} cast={cast} /> : null}
 
               {pendingDice && (
                 <button className={`btn primary ${s.roll}`} onClick={roll}>

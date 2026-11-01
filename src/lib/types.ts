@@ -486,10 +486,8 @@ export type TurnEvent =
   | { type: "tool"; name: string; summary: string }
   | { type: "dice"; result: DiceResult }
   | { type: "narration"; content: string; messageId?: number }
-  // narração em streaming: pedaços do texto enquanto o Mestre escreve; reset = descarte o rascunho
-  // (a rodada virou chamada de ferramenta ou vai ser reescrita). O "narration" final traz o texto inteiro
+  // narração em streaming: pedaços do texto enquanto o Mestre escreve. O "narration" final traz o texto inteiro
   | { type: "narration_delta"; text: string }
-  | { type: "narration_reset" }
   | { type: "choices"; choices: string[] }
   | { type: "scene"; scene: Partial<Scene> }
   | { type: "state" } // fichas mudaram; cliente deve recarregar

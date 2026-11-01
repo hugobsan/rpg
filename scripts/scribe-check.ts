@@ -194,7 +194,22 @@ async function main() {
     assert.equal(xp1 - xp0, Math.max(1, Math.round((100 - xp0) * 0.05)), "só a XP da missão (pequena = 5% do que falta)");
     assert.ok(events.some((e) => e.type === "tool" && /^✅ Concluído: Treinar o Konohamaru \(\+\d+ XP\)$/.test(e.summary)));
 
-    console.log("scribe-check: ok (anotações depois da narração, rodada mista, Escrivão aplicado e logado, missão com tamanho sem XP em dobro, fora do jogo com todas as ferramentas)");
+    // 4. fala sem registro: a narração não volta ao Mestre (uma chamada só, nada apagado); o Escrivão recebe a lista e create_npc
+    const said = `Um chunin aparece no campo.\n\n**Mizuki:** "Treinando até tarde?"\n\n**Resultado do treino:** nada mudou.`;
+    gmScript.push({ text: said, calls: [] });
+    scribeScript.push({ text: "", calls: [{ name: "create_npc", args: { name: "Mizuki", canon: true, brief: "chunin da Academia" } }] });
+    const gmBefore = gmReqs.length;
+    events = [];
+    await runTurn(id, "continuo treinando", (e) => events.push(e));
+    assert.equal(gmReqs.length - gmBefore, 1, "o Mestre não é chamado de novo para reescrever");
+    assert.equal((events.find((e) => e.type === "narration") as { content: string }).content, said, "a narração fica como foi escrita");
+    const sReq = scribeReqs[scribeReqs.length - 1];
+    assert.match(sReq.messages[1].content, /FALAM SEM REGISTRO ---\nMizuki, Resultado do treino/);
+    assert.ok(sReq.tools.includes("create_npc"), "o Escrivão ganha create_npc só quando há fala sem registro");
+    assert.ok(!scribeReqs[2].tools.includes("create_npc"));
+    assert.equal((await db(`SELECT 1 FROM characters WHERE campaign_id = $1 AND name = 'Mizuki'`)).length, 1, "o Escrivão registrou o NPC");
+
+    console.log("scribe-check: ok (anotações depois da narração, rodada mista, Escrivão aplicado e logado, missão com tamanho sem XP em dobro, fala sem registro vai ao Escrivão sem apagar a narração, fora do jogo com todas as ferramentas)");
   } finally {
     await new Promise((r) => setTimeout(r, 300)); // o índice do histórico roda depois do done
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);

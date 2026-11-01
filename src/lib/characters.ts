@@ -10,7 +10,7 @@ import type { Ability, Campaign, Character, Item, LibraryItem, Persona, Ruleset,
 
 /**
  * Criador de personagens: perfil rico e ficha de um NPC, em segundo plano. O create_npc registra na hora
- * (o portão de NPC exige o registro antes da narração) e este job completa depois, sem atropelar o que
+ * (o Mestre registra antes de narrar, ou o Escrivão depois) e este job completa depois, sem atropelar o que
  * o Mestre mudou no meio tempo. No fim pede o retrato (que usa a aparência rica).
  */
 

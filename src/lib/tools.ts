@@ -1187,7 +1187,7 @@ export async function executeGmTool(
       return hits.length ? formatHistory(hits, String(args.query), history.excerptChars) : "Nada encontrado no histórico.";
     }
     case "create_npc": {
-      // registro na hora (o portão de NPC exige antes da narração); perfil e ficha vêm do Criador em segundo plano
+      // registro na hora (pelo Mestre antes de narrar ou pelo Escrivão depois); perfil e ficha vêm do Criador em segundo plano
       const sheet = blankSheet(ctx.campaign.ruleset);
       const said = String(args.rank ?? "").trim().toLowerCase();
       const rank = ctx.campaign.ruleset.ranks.find((k) => said && (k.key === said || k.label.toLowerCase() === said));
