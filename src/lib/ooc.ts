@@ -7,13 +7,18 @@ import { activeDirectives, addMemory } from "./retrieval";
 import { getCampaign, getCharacters, getCurrentScene, sheetSummary } from "./engine";
 import { executeGmTool, GM_TOOLS, saveTable } from "./tools";
 import { generateLibrary, importSheetAbilities } from "./library";
+import { MAP_TOOLS } from "./map";
+import { LOCAL_MAP_TOOLS } from "./cartographer";
 import { DIFFICULTIES, getTable, mergeCategories, normalizeTable, tablePromptBlock, tableSummary } from "./table";
 
 // as ferramentas do turno, menos as que leem o roteiro e os segredos dos NPCs (spoiler) e a mensagem de NPC
-// (é jogada, não conversa fora do jogo), mais remover habilidade
-const HIDDEN = ["get_script", "update_script", "get_character", "npc_message"];
+// (é jogada, não conversa fora do jogo), mais remover habilidade. Mapa: as ferramentas diretas no lugar do
+// map_brief, porque aqui o pedido é uma correção exata ("tira X do mapa", "junta esses dois") e é raro
+const HIDDEN = ["get_script", "update_script", "get_character", "npc_message", "map_brief"];
 const OOC_GAME_TOOLS: ToolDef[] = [
   ...GM_TOOLS.filter((t) => !HIDDEN.includes(t.function.name)),
+  ...MAP_TOOLS,
+  ...LOCAL_MAP_TOOLS,
   {
     type: "function",
     function: {

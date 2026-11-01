@@ -6,8 +6,8 @@ import type { MapPlace, SceneStage, StageActor, WorldMap } from "./types";
 
 /**
  * Mapa do mundo (campaigns.state.map) e palco da cena (scenes.state.stage).
- * O mapa se monta sozinho: set_scene registra o local e a rota desde o anterior; o Mestre
- * enriquece com update_map. As posições saem do código (dica relativa ou encaixe
+ * O mapa se monta sozinho: set_scene registra o local e a rota desde o anterior; o Topógrafo
+ * (map_brief do Mestre) enriquece com update_map e monta o palco. As posições saem do código (dica relativa ou encaixe
  * determinístico), nunca do modelo. O "gerar novamente" volta os dois junto com o estado.
  */
 
@@ -371,8 +371,8 @@ export function relation(a: MapPlace, b: MapPlace): string {
   return `${dir}, ${d < 1.6 ? "colado" : d < 3.6 ? "perto" : d < 6 ? "médio" : d < 10 ? "longe" : "muito longe"}`;
 }
 
-/** Bloco curto do contexto: onde o jogador está, rotas daqui, outros locais por perto e o palco. */
-export function mapPromptBlock(map: WorldMap, stage: SceneStage | null, mode: string): string {
+/** Onde o jogador está e as rotas daqui; com others, também os N locais conhecidos mais perto (o Topógrafo usa). */
+export function placeLines(map: WorldMap, others = 0): string[] {
   const lines: string[] = [];
   const here = byId(map, map.current);
   if (here) {
@@ -392,22 +392,28 @@ export function mapPromptBlock(map: WorldMap, stage: SceneStage | null, mode: st
       .filter(Boolean);
     if (routes.length) lines.push(`Rotas daqui: ${routes.join("; ")}`);
     const dist = (p: MapPlace) => (has(p) && has(here) ? Math.hypot(p.x! - here.x!, p.y! - here.y!) : 99);
-    const others = map.places
+    const near = map.places
       .filter((p) => !linked.has(p.id))
       .sort((a, b) => dist(a) - dist(b))
-      .slice(0, 8)
+      .slice(0, others)
       .map((p) => `${p.name} (${[p.kind, relation(here, p)].filter(Boolean).join(", ")})`);
-    if (others.length) lines.push(`Outros locais conhecidos: ${others.join("; ")}`);
+    if (near.length) lines.push(`Outros locais conhecidos: ${near.join("; ")}`);
   }
+  return lines;
+}
+
+/** Bloco curto do contexto do Mestre: local, rotas daqui e o palco. Mudar mapa ou palco é com o Topógrafo (map_brief). */
+export function mapPromptBlock(map: WorldMap, stage: SceneStage | null, mode: string): string {
+  const lines = placeLines(map);
   if (stage) lines.push(`Palco da cena:\n${stageText(stage)}`);
   else if (mode === "battle")
-    lines.push("BATALHA SEM PALCO: chame set_stage agora (zonas do lugar e posição de cada combatente) antes de resolver as ações.");
+    lines.push("BATALHA SEM PALCO: mande map_brief neste turno com as zonas do lugar e onde cada combatente está.");
   return lines.length
-    ? `\n--- MAPA E PALCO (o jogador vê; mantenha a coerência espacial; update_map e set_stage) ---\n${lines.join("\n")}`
+    ? `\n--- MAPA E PALCO (o jogador vê; mantenha a coerência espacial; mudanças por map_brief) ---\n${lines.join("\n")}`
     : "";
 }
 
-// ---------- ferramentas do Mestre ----------
+// ---------- ferramentas do Topógrafo (e do Mestre fora do jogo) ----------
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object", properties, required });
 

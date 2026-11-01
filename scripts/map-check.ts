@@ -1,9 +1,21 @@
 /**
  * Verificação do mapa e do palco: funções puras (nomes, layout, palco, bloco do prompt) e,
- * numa campanha temporária, set_scene / update_map / set_stage direto (sem IA) e o
- * "gerar novamente" voltando o mapa. Rodar: npx tsx scripts/map-check.ts
+ * numa campanha temporária, set_scene / update_map / set_stage direto (sem IA), o
+ * "gerar novamente" voltando o mapa e o map_brief com o Topógrafo falso (fetch falso, sem rede).
+ * Rodar: npx tsx scripts/map-check.ts
  */
 import assert from "node:assert/strict";
+
+// rede falsa: só o chat/completions do OpenRouter responde (o Topógrafo); qualquer outra chamada falha
+const sent: Record<string, unknown>[] = [];
+let reply: Record<string, unknown> = {};
+globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const url = String(input instanceof Request ? input.url : input);
+  if (!url.endsWith("/chat/completions")) return new Response("sem rede no check", { status: 404 });
+  sent.push(JSON.parse(String(init?.body)));
+  return Response.json(reply);
+}) as typeof fetch;
+const call = (name: string, args: Record<string, unknown>, i: number) => ({ id: `c${i}`, type: "function", function: { name, arguments: JSON.stringify(args) } });
 import { pool, q } from "../src/lib/db";
 import { executeGmTool, GM_TOOLS, ToolContext } from "../src/lib/tools";
 import { applyStage, enterPlace, findPlace, getMap, getStage, guessKind, layoutMap, mapFromLocations, mapPromptBlock, MIN_GAP } from "../src/lib/map";
@@ -73,11 +85,15 @@ async function main() {
   assert.deepEqual(JSON.parse(JSON.stringify(st.actors)), [{ name: "bandido 1", zone: "margem norte", distance: "corpo_a_corpo", stance: "hostil", cover: "parcial" }]);
   assert.equal(st.zones.length, 2);
   assert.equal(applyStage(st, { clear: true }), null);
-  assert.match(mapPromptBlock({ places: [], routes: [] }, null, "battle"), /BATALHA SEM PALCO/);
+  assert.match(mapPromptBlock({ places: [], routes: [] }, null, "battle"), /BATALHA SEM PALCO: mande map_brief/);
   assert.equal(mapPromptBlock({ places: [], routes: [] }, null, "exploration"), "");
 
   // ---------- integração: ferramentas numa campanha temporária ----------
-  assert.ok(GM_TOOLS.some((t) => t.function.name === "update_map") && GM_TOOLS.some((t) => t.function.name === "set_stage"));
+  // no turno o Mestre só tem o map_brief; as ferramentas diretas seguem no executeGmTool (Topógrafo e fora do jogo)
+  const names = GM_TOOLS.map((t) => t.function.name);
+  assert.ok(names.includes("map_brief") && !names.some((n) => ["update_map", "set_stage", "local_map"].includes(n)));
+  // o Topógrafo (agente novo) entra no banco no 1º getAgent; se foi o check que criou, sai no fim (o prompt do código vale depois)
+  const [hadSurveyor] = await q(`SELECT 1 FROM agents WHERE id = 'surveyor'`);
   const [c] = await q<{ id: string }>(
     `INSERT INTO campaigns (name, ruleset, script, state) VALUES ('[teste-mapa]', '{}', '{"arcs":[]}', '{"clock":{"minutes":600},"startingPoint":"Após a formatura"}') RETURNING id`
   );
@@ -142,8 +158,55 @@ async function main() {
     assert.equal(map.current, camp.id);
     assert.equal(findPlace(map, "Floresta da Morte")!.visits, 0);
     assert.equal(getStage(after.ctx.scene.state)?.actors.length, 1);
+
+    // map_brief: o Topógrafo falso responde com chamadas; os executores de verdade mudam palco e mapa
+    reply = {
+      choices: [
+        {
+          message: {
+            content: "",
+            tool_calls: [
+              call("update_map", { place: "Vila da Névoa", kind: "vila", from: "Campo de Treinamento 3", direction: "S", distance: "muito_longe", travel: "2 dias de barco" }, 1),
+              call("set_stage", { zones: [{ name: "ponte" }, { name: "névoa" }], actors: [{ name: "Zabuza", zone: "névoa", distance: "longe", stance: "hostil" }, { name: "Ninja renegado", remove: true }] }, 2),
+              call("local_map", { action: "edit", place: "Vila da Névoa", brief: "a ponte caiu" }, 3),
+              call("roll_dice", { notation: "1d20" }, 4),
+            ],
+          },
+        },
+      ],
+      usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0 },
+    };
+    const brief = "Zabuza recuou para a névoa, longe; o ninja renegado fugiu. O jogador ouviu falar da Vila da Névoa, ao sul, dois dias de barco";
+    const { ctx: bctx, events } = await load();
+    out = await executeGmTool("map_brief", { brief }, bctx);
+    const req = sent.at(-1)!;
+    const msgs = req.messages as { role: string; content: string }[];
+    assert.deepEqual((req.tools as { function: { name: string } }[]).map((t) => t.function.name), ["update_map", "set_stage", "local_map"]);
+    assert.match(msgs[1].content, new RegExp(`BRIEF DO MESTRE: ${brief}`));
+    assert.match(msgs[1].content, /PALCO ATUAL:[\s\S]*Ninja renegado: hostil, perto/, "o Topógrafo recebe o palco atual");
+    assert.match(msgs[1].content, /Aqui: Campo de Treinamento 3/);
+    const now = await load();
+    const stage = getStage(now.ctx.scene.state)!;
+    assert.deepEqual(stage.actors.map((a) => [a.name, a.distance, a.zone]), [["Zabuza", "longe", "névoa"]], "palco pelo set_stage de verdade");
+    assert.deepEqual(stage.zones.map((z) => z.name), ["ponte", "névoa"]);
+    map = getMap(now.ctx.campaign.state)!;
+    const mist = findPlace(map, "Vila da Névoa")!;
+    assert.equal(mist.visits, 0);
+    assert.equal(map.routes.find((r) => r.to === mist.id)?.travel, "2 dias de barco");
+    assert.match(out, /Mapa: Vila da Névoa/);
+    assert.match(out, /ainda não tem mapa 3D|desligou/, "local_map passou pelo executor (sem gerar nada)");
+    assert.match(out, /Ferramenta desconhecida: roll_dice/, "o Topógrafo só usa as ferramentas do mapa");
+    assert.ok(events.some((e) => e.startsWith("⚔ Palco")) && events.includes("🗺 Vila da Névoa"));
+    const [log] = await q<{ purpose: string }>(`SELECT purpose FROM api_logs WHERE campaign_id = $1 AND agent_id = 'surveyor'`, [id]);
+    assert.equal(log?.purpose, "map_brief", "a chamada vai para Custos e uso");
+    // sem chamadas: só avisa
+    reply = { choices: [{ message: { content: "nada" } }] };
+    assert.match(await executeGmTool("map_brief", { brief: "nada mudou" }, (await load()).ctx), /nada a mudar/);
+    assert.equal(await executeGmTool("map_brief", { brief: " " }, (await load()).ctx), "Informe brief.");
     console.log("map-check: ok");
   } finally {
+    await q(`DELETE FROM api_logs WHERE campaign_id = $1`, [id]);
+    if (!hadSurveyor) await q(`DELETE FROM agents WHERE id = 'surveyor'`);
     await q(`DELETE FROM campaigns WHERE id = $1`, [id]);
     await pool().end();
   }

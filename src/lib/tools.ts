@@ -24,8 +24,8 @@ import {
 } from "./progression";
 import { clockParts, formatClock, formatDuration, getClock, period, toMinutes } from "./clock";
 import { expireObjectives, formatRemaining, getObjectives, Objective, OBJECTIVE_KIND_LABEL, ObjectiveKind } from "./objectives";
-import { executeMapTool, MAP_TOOLS, recordScenePlace } from "./map";
-import { executeLocalMapTool, LOCAL_MAP_TOOLS } from "./cartographer";
+import { executeMapTool, recordScenePlace } from "./map";
+import { executeLocalMapTool, executeMapBrief, MAP_BRIEF_TOOL } from "./cartographer";
 import { dcResultText, getTable, tableDc } from "./table";
 import { queueProfile } from "./characters";
 
@@ -526,8 +526,8 @@ export const GM_TOOLS: ToolDef[] = [
       parameters: S({}, []),
     },
   },
-  ...MAP_TOOLS,
-  ...LOCAL_MAP_TOOLS,
+  // mapa e palco: o Mestre só manda o brief; update_map, set_stage e local_map ficam com o Topógrafo (e no fora do jogo)
+  MAP_BRIEF_TOOL,
 ];
 
 export interface ToolContext {
@@ -1216,6 +1216,8 @@ export async function executeGmTool(
       return executeMapTool(name, args, ctx);
     case "local_map":
       return executeLocalMapTool(args, ctx);
+    case "map_brief":
+      return executeMapBrief(args, ctx);
     default:
       return `Ferramenta desconhecida: ${name}`;
   }

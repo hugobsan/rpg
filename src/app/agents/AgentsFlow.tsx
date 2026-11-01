@@ -30,6 +30,7 @@ const COLOR = {
   abil: "#ec5a55",
   items: "#f59e6b",
   carto: "#38bdf8",
+  surv: "#2dd4bf",
   adv: "#e879f9",
 } as const;
 type Who = keyof typeof COLOR;
@@ -49,6 +50,7 @@ const KIND_LABEL: Record<Who, string> = {
   abil: "Criador de habilidades",
   items: "Criador de itens",
   carto: "Cartógrafo",
+  surv: "Topógrafo",
   adv: "Criador de aventuras",
 };
 
@@ -106,7 +108,7 @@ const NODES: (FlowNode | LaneNode)[] = [
   lane("L3", -310, 270, 1300, "3. Sob demanda: Roteirista, Ilustrador e Criador de aventuras"),
   lane("L1", 0, 335, 1570, "1. Turno do jogador"),
   lane("L2", 370, 290, 1570, "2. Conversa particular com um NPC"),
-  lane("L4", 700, 440, 1570, "4. Criação em segundo plano: personagens, retratos, biblioteca e mapas"),
+  lane("L4", 700, 560, 1570, "4. Criação em segundo plano: personagens, retratos, biblioteca e mapas"),
 
   // --- sob demanda ---
   n("s_btn1", X[0], -250, "player", "Criar ou replanejar campanha", "gera o roteiro", {
@@ -306,10 +308,17 @@ const NODES: (FlowNode | LaneNode)[] = [
     fallback: "Se o servidor reinicia no meio, a tarefa vira erro depois de 15 min sem sinal.",
   }),
 
-  n("m_gm", X[0], 1000, "gm", "Mestre: local_map", "gerar, editar, remover", {
-    oque: "Uma ferramenta com três ações. O Mestre pede o mapa quando o jogador chega a um lugar relevante sem mapa ou a cena pede, e edita quando a história muda o lugar (ex.: a ponte foi destruída). Não regera um mapa que já existe. Os pontos de interesse do mapa viram as zonas do palco da cena. A iniciativa do Mestre pode ser desligada nas Configurações; os botões continuam."
+  n("m_gm", X[0], 1000, "gm", "Mestre: map_brief", "o que mudou no espaço", {
+    oque: "No lugar das ferramentas do mapa, o Mestre manda uma frase: começo e movimentos de uma luta (quem está onde, distância, cobertura), um lugar de que o jogador ouviu falar, um lugar que merece mapa 3D. Não espera o resultado para narrar. Os lugares visitados entram no mapa do mundo sozinhos pelo set_scene.",
   }),
-  n("m_btn", X[1], 1000, "player", "Botões da aba Mapa", "gerar, regerar, editar, remover", {
+  n("m_surv", X[1], 1000, "surv", "Topógrafo", "brief → ferramentas do mapa", {
+    oque: "Lê o brief com o estado do mapa (local, rotas, palco, mapas 3D, quem está em cena) e chama as ferramentas: set_stage (zonas e posições do palco), update_map (lugar conhecido, direção, distância, rota) e local_map (pede ao Cartógrafo gerar ou editar o mapa 3D de um lugar; não regera um mapa que já existe, e a iniciativa pode ser desligada nas Configurações). Os pontos de interesse do mapa 3D viram as zonas do palco.",
+    quando: "Quando o Mestre manda um map_brief (em batalha, no começo e a cada movimento relevante).",
+    freq: "1 chamada por brief; poucas por campanha fora de batalha.",
+    custo: "Modelo barato e rápido: ~3 mil tokens de entrada, cerca de US$ 0,002 e poucos segundos por brief. Tira ~1,6 mil tokens de cada chamada do Mestre.",
+    fallback: "Erro em uma ferramenta não derruba o turno; o palco e o mapa ficam como estavam.",
+  }),
+  n("m_btn", X[2], 1120, "player", "Botões da aba Mapa", "gerar, regerar, editar, remover", {
     oque: "O jogador pode pedir o mapa de qualquer lugar por onde passou, regerar, editar com uma instrução ou remover.",
   }),
   n("m_carto", X[2], 1000, "carto", "Cartógrafo", "mapa 3D de um lugar", {
@@ -404,8 +413,9 @@ const EDGES: Edge[] = [
   e("b_player", "sl", "b_abil", "tr", "N com foco"),
   e("b_player", "sr", "b_items", "tl", "N com foco"),
   e("b_items", "sb", "b_lib", "tb"),
-  e("m_gm", "sb", "m_carto", "tb", "tools"),
-  e("m_btn", "sr", "m_carto", "tl", "botões"),
+  e("m_gm", "sr", "m_surv", "tl", "brief"),
+  e("m_surv", "sr", "m_carto", "tl", "local_map"),
+  e("m_btn", "st", "m_carto", "tb", "botões"),
   e("m_carto", "sr", "m_spec", "tl", "JSON"),
   e("m_spec", "sr", "m_view", "tl"),
 ];

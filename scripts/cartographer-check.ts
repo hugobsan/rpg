@@ -107,7 +107,8 @@ async function main() {
   assert.equal(expandSpec(ex).length, LIMITS.extrudes, "teto de contornos");
 
   // ---------- campanha temporária: vínculo, remover, travas, interruptor, prompt ----------
-  assert.ok(GM_TOOLS.some((t) => t.function.name === "local_map"));
+  // no turno o local_map é do Topógrafo (map_brief); o executor continua o mesmo
+  assert.ok(!GM_TOOLS.some((t) => t.function.name === "local_map") && GM_TOOLS.some((t) => t.function.name === "map_brief"));
   const world: WorldMap = {
     places: [
       { id: "l1", name: "Vila da Folha", kind: "vila", visits: 2, x: 0, y: 0 },

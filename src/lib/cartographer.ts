@@ -2,7 +2,7 @@ import { getSetting, q } from "./db";
 import { chat, type ToolDef } from "./openrouter";
 import { getAgent } from "./agents";
 import { startJob } from "./jobs";
-import { findPlace, getStage, loadMap, normName, relation } from "./map";
+import { executeMapTool, findPlace, getStage, loadMap, MAP_TOOLS, normName, placeLines, relation, stageText } from "./map";
 import { formatClock, getClock, period } from "./clock";
 import { campaignTheme } from "./theme";
 import { compactSpec, parseSpecText, type LocalMapInfo, type MapSpec } from "./mapSpec";
@@ -11,7 +11,7 @@ import type { Campaign, MapPlace, Scene, WorldMap } from "./types";
 
 /**
  * Cartógrafo: mapa 3D de um local (tabela maps), gerado, editado e removido em segundo plano
- * pelo Mestre (local_map) ou pelos botões da aba Mapa (POST /api/campaigns/[id]/maps).
+ * pelo Topógrafo (local_map, a partir do map_brief do Mestre) ou pelos botões da aba Mapa (POST /api/campaigns/[id]/maps).
  * O modelo devolve um spec declarativo (lib/mapSpec.ts), que é validado antes de gravar.
  */
 
@@ -185,7 +185,7 @@ async function drawLocalMap(campaignId: string, placeId: string, action: Action,
   await saveLocalMap(campaignId, now, target, spec);
 }
 
-// ---------- Mestre ----------
+// ---------- Topógrafo (e o Mestre fora do jogo) ----------
 
 /** Bloco do contexto: que lugares têm mapa, os pontos do mapa daqui (zonas do palco) e quando gerar. */
 export async function localMapsPromptBlock(campaign: Campaign): Promise<string> {
@@ -239,4 +239,85 @@ export async function executeLocalMapTool(args: Record<string, unknown>, ctx: To
   if (r.ok) ctx.emit({ type: "tool", name: "local_map", summary: action === "remove" ? `🗺 Mapa 3D de ${place.name} removido` : `🗺 Cartógrafo: ${place.name}` });
   if (r.ok) ctx.emit({ type: "state" }); // a tela relê a campanha e acompanha a tarefa
   return r.message;
+}
+
+// ---------- Topógrafo: o Mestre manda um brief, um agente barato chama as ferramentas do mapa ----------
+
+/**
+ * No lugar de update_map, set_stage e local_map no turno (≈4 mil caracteres de esquema em toda chamada
+ * do Mestre, usados poucas vezes). O resultado é só informativo: pode rodar depois da narração.
+ */
+export const MAP_BRIEF_TOOL: ToolDef = {
+  type: "function",
+  function: {
+    name: "map_brief",
+    description:
+      "Conta ao Topógrafo o que mudou no espaço; ele atualiza o palco da cena e os mapas que o jogador vê (não precisa esperar o resultado para narrar). ESSENCIAL EM BATALHA: no começo da luta (zonas do lugar e onde cada um está: distância até o jogador, cobertura, altura), a cada movimento relevante (avançou, recuou, caiu, fugiu) e quando ela acabar. Também: lugar de que o jogador ouviu falar (direção, distância, tempo de viagem), chegada a um lugar relevante que merece mapa 3D, ou a história mudou um lugar. Locais visitados já entram sozinhos pelo set_scene.",
+    parameters: {
+      type: "object",
+      properties: {
+        brief: {
+          type: "string",
+          description: "1 a 3 frases com nomes, ex.: 'Bandido 1 caiu; Zabuza recuou para a névoa, longe'",
+        },
+      },
+      required: ["brief"],
+    },
+  },
+};
+
+/** map_brief: o Topógrafo recebe o brief e o estado do mapa e chama os executores de sempre. */
+export async function executeMapBrief(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+  const brief = String(args.brief ?? "").trim().slice(0, 800);
+  if (!brief) return "Informe brief.";
+  const [agent, world, people, local] = await Promise.all([
+    getAgent("surveyor"),
+    loadMap(ctx.campaign.id, ctx.campaign.state),
+    q<{ name: string; kind: string }>(
+      `SELECT name, kind FROM characters WHERE campaign_id = $1 AND (kind = 'player' OR active) ORDER BY kind DESC, name`,
+      [ctx.campaign.id]
+    ),
+    localMapsPromptBlock(ctx.campaign),
+  ]);
+  const stage = getStage(ctx.scene.state);
+  const input = [
+    `CENA: ${ctx.scene.title || "-"} | modo ${ctx.scene.mode} | local "${ctx.scene.location || "?"}"`,
+    `Em cena: ${people.map((p) => (p.kind === "player" ? `${p.name} (jogador)` : p.name)).join(", ") || "-"}`,
+    ...placeLines(world, 12),
+    stage ? `PALCO ATUAL:\n${stageText(stage)}` : "PALCO ATUAL: vazio",
+    local,
+    `\nBRIEF DO MESTRE: ${brief}`,
+  ];
+  const res = await chat({
+    model: agent.model,
+    messages: [
+      { role: "system", content: agent.system_prompt },
+      { role: "user", content: input.filter(Boolean).join("\n") },
+    ],
+    tools: [...MAP_TOOLS, ...LOCAL_MAP_TOOLS],
+    temperature: agent.temperature,
+    max_tokens: agent.max_tokens,
+    reasoning: agent.params.reasoning as Record<string, unknown> | undefined,
+    agentId: "surveyor",
+    campaignId: ctx.campaign.id,
+    purpose: "map_brief",
+  });
+  // ponytail: uma rodada só (erro não volta ao Topógrafo); basta para o palco e um ou dois locais por brief
+  const out: string[] = [];
+  for (const call of res.toolCalls) {
+    const name = call.function.name;
+    try {
+      const a = JSON.parse(call.function.arguments || "{}");
+      out.push(
+        name === "local_map"
+          ? await executeLocalMapTool(a, ctx)
+          : MAP_TOOLS.some((t) => t.function.name === name)
+            ? await executeMapTool(name, a, ctx)
+            : `Ferramenta desconhecida: ${name}`
+      );
+    } catch (e) {
+      out.push(`${name}: erro: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return out.length ? out.join("\n") : "O Topógrafo não viu nada a mudar no mapa.";
 }

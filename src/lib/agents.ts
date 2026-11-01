@@ -228,7 +228,7 @@ CAMPOS DO RULESET (o exemplo completo de Naruto vem no contexto; siga o mesmo fo
     id: "cartographer",
     name: "Cartógrafo",
     description:
-      "Desenha o mapa 3D de um local (vila, castelo, rua, nave...) como uma descrição declarativa em JSON, nunca código: relevo (colinas, heightmap), contornos extrudados, ruas, rios e muros por polilinha, peças reutilizáveis espalhadas com variação, materiais, água, céu e névoa, e pontos de interesse. O sistema valida, limita e renderiza na aba Mapa, com a luz pela hora da história. Roda em segundo plano quando o Mestre pede (local_map: gerar, editar quando a história muda o lugar, remover) ou pelos botões da aba Mapa. O Mestre só gera por iniciativa própria com o interruptor das Configurações ligado.",
+      "Desenha o mapa 3D de um local (vila, castelo, rua, nave...) como uma descrição declarativa em JSON, nunca código: relevo (colinas, heightmap), contornos extrudados, ruas, rios e muros por polilinha, peças reutilizáveis espalhadas com variação, materiais, água, céu e névoa, e pontos de interesse. O sistema valida, limita e renderiza na aba Mapa, com a luz pela hora da história. Roda em segundo plano quando o Topógrafo pede a partir de um brief do Mestre (local_map: gerar, editar quando a história muda o lugar, remover) ou pelos botões da aba Mapa. Sem pedido do jogador, só gera com o interruptor das Configurações ligado.",
     model: "anthropic/claude-opus-5.5",
     temperature: 0.7,
     max_tokens: 12000,
@@ -282,6 +282,27 @@ COMO DESENHAR
 - Composição: o marco principal perto do centro; caminhos ligando os POIs e saindo pelas bordas na direção dos lugares vizinhos; relevo que conte a geografia (vale, encosta, penhasco, margem); bordas preenchidas (mata, rochas, muros, prédios) para não sobrar chão vazio; luzes (glow) onde há vida à noite.
 
 EDIÇÃO: quando vier MAPA ATUAL com uma instrução, devolva o JSON COMPLETO do mapa novo: mantenha o que não mudou (mesmas coordenadas, peças, itens e POIs) e aplique só a mudança pedida.`,
+  },
+  {
+    id: "surveyor",
+    name: "Topógrafo",
+    description:
+      "Recebe do Mestre um brief curto em linguagem natural (map_brief: começo e movimentos de uma luta, lugar de que o jogador ouviu falar, lugar que merece mapa 3D) e o traduz nas ferramentas do mapa: palco da cena (set_stage), mapa do mundo (update_map) e pedido ao Cartógrafo (local_map). Assim o Mestre não carrega esses esquemas e regras em toda chamada. Modelo barato e rápido.",
+    model: "google/gemini-3.5-flash",
+    temperature: 0.2,
+    max_tokens: 1500,
+    web_search: false,
+    params: { reasoning: { effort: "low" } },
+    system_prompt: `Você é o Topógrafo de uma mesa de RPG narrada por IA. O Mestre narra e, quando algo muda no espaço, manda um BRIEF curto. Você traduz o brief em chamadas de ferramenta com argumentos estruturados, usando o estado atual que vem junto (cena, quem está em cena, local, rotas, palco, mapas 3D). Não escreva texto: só chame ferramentas, várias na mesma resposta se preciso, na ordem em que devem acontecer. Se o brief não pedir mudança, não chame nada.
+
+PALCO (set_stage): onde cada um está na cena, em relação ao jogador (o centro).
+- Começo de luta ou cena tensa sem palco: 2 a 6 zonas do lugar (ex.: "ponte", "margem norte", "telhado"; nota de terreno: cobertura, elevação, perigo) e todos os combatentes com zona, distância até o jogador, postura, cobertura e elevação.
+- Movimento: mande só quem mudou. Caído, escondido, atordoado vai em note; morreu, fugiu ou saiu: remove. Luta acabou: clear.
+- Se o lugar tem mapa 3D, use os pontos dele como zonas (os peões aparecem neles). Nomes como em "Em cena"; inimigos sem nome numerados ("Bandido 1"). O jogador só entra para zona ou cobertura.
+
+MAPA DO MUNDO (update_map): um local por chamada. Locais visitados já entram sozinhos; use para lugar conhecido e não visitado ou para detalhar um (tipo, descrição de uma frase, parent, aka para juntar nomes do mesmo lugar, from + direction + distance, route e travel). Direção, distância e tempo de viagem só quando o brief ou o mundo disserem; não invente.
+
+MAPA 3D (local_map): caro e lento (o Cartógrafo). Siga MAPAS 3D DOS LOCAIS: generate só quando o brief pedir ou o jogador chegar a um lugar relevante sem mapa que vai ser explorado ou palco de luta; edit quando a história mudar um lugar que já tem mapa; nunca regenere. O local precisa estar no mapa do mundo: se não estiver, chame update_map antes, na mesma resposta.`,
   },
   {
     id: "characters",
