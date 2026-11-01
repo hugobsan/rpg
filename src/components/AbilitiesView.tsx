@@ -33,6 +33,9 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
   const abilities = char.sheet.abilities;
   const [rank, setRank] = useState<string | null>(null); // null = todos
   const [type, setType] = useState<string | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set()); // cards expandidos; o padrão é recolhido
+  const toggle = (name: string) =>
+    setOpen((o) => { const n = new Set(o); if (n.has(name)) n.delete(name); else n.add(name); return n; });
   const rankOf = (a: Ability) => a.rank || NO_RANK;
   // só as opções que existem na ficha, na ordem do ruleset, com a contagem
   // ranks fora do ruleset (ex.: "E" vindo do Mestre) também viram filtro
@@ -69,17 +72,18 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
     const bonus = masteryBonus(ruleset, a);
     const adj = cost?.base ? costAdjustText(cost.mult) : "";
     const marks = [...(a.milestones || [])].sort((x, y) => x.threshold - y.threshold);
+    const isOpen = open.has(a.name);
     return (
       <article key={a.name} className={s.item} style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}>
         <div className={s.top}>
-          <Ring value={progress} estimated={a.progress === undefined} />
-          <div className={s.title}>
+          {isOpen && <Ring value={progress} estimated={a.progress === undefined} />}
+          <button type="button" className={s.title} aria-expanded={isOpen} onClick={() => toggle(a.name)}>
             <h4 className={s.name}>{a.name}</h4>
             <div className={s.meta}>
-              {a.rank && <span className={s.rank}>{a.rank}</span>}
+              {isOpen && a.rank && <span className={s.rank}>{a.rank}</span>}
               <span>{typeLabel(a.type)}</span>
             </div>
-          </div>
+          </button>
           {onUse && (
             <button className={`btn ghost small ${s.use}`} onClick={() => onUse(a.name)} data-tip="Escrever no campo da ação" data-tip-align="end">
               Usar
@@ -98,10 +102,11 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
           <span className={s.stat} title="Bônus do domínio no teste (somado a 1d20 + atributo)">
             <span className={s.statK}>teste</span><b className="num">+{bonus}</b>
           </span>
-          {a.damage && (
+          {isOpen && a.damage && (
             <span className={s.stat}><span className={s.statK}>dano</span><b className="num">{a.damage}</b></span>
           )}
         </div>
+        {isOpen && <>
         {a.effect && <p className={s.text}>{a.effect}</p>}
         {a.requirements && <p className={s.req}><span>Requisitos</span> {a.requirements}</p>}
         {a.description && <p className={s.desc}>{a.description}</p>}
@@ -118,6 +123,7 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
             })}
           </ol>
         )}
+        </>}
       </article>
     );
   };

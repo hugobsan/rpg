@@ -26,7 +26,20 @@
 }
 .item:hover { border-color: var(--border-strong); }
 .top { display: flex; align-items: center; gap: var(--s-3); }
-.title { min-width: 0; }
+/* o título expande/recolhe o card (recolhido mostra só nome, tipo, custo e teste) */
+.title {
+  min-width: 0; flex: 1; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  display: grid; grid-template-columns: 1fr auto; grid-template-areas: "name chev" "meta chev"; column-gap: var(--s-2); align-items: center;
+}
+.title .name { grid-area: name; }
+.title .meta { grid-area: meta; }
+.title::after {
+  content: ""; grid-area: chev; width: 6px; height: 6px; margin-right: 4px;
+  border-right: 1.5px solid var(--text-dim); border-bottom: 1.5px solid var(--text-dim);
+  transform: rotate(45deg); transition: transform var(--dur) var(--ease-out);
+}
+.title[aria-expanded="true"]::after { transform: rotate(-135deg); }
+.title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
 .name { margin: 0; font: var(--display-weight) calc(15.5px * var(--display-scale)) / 1.2 var(--font-display); letter-spacing: var(--display-tracking); color: var(--text); }
 .meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 11.5px; color: var(--text-dim); }
 .rank {
