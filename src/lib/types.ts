@@ -325,6 +325,7 @@ export interface TableRules {
   crits: boolean; // 20 natural passa, 1 natural falha (só 1d20 com CD)
   notes?: string; // orientação livre de dificuldade para o Mestre
   xp?: { min: number; max: number; great: number }; // XP por feito, em % do que falta para o próximo nível (o Escrivão aplica)
+  modes?: Partial<Record<SceneMode, string>>; // como conduzir cada modo de cena (só os que diferem do padrão; vai no contexto do turno)
 }
 
 /** Mensagem particular de NPC não lida (sessão aberta pelo NPC com npc_message). */

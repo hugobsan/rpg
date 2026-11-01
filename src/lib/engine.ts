@@ -20,7 +20,7 @@ import { attributeCap, attributePoints, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
 import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { getStage, loadMap, mapPromptBlock, normName } from "./map";
-import { getTable, tablePromptBlock, xpRuleText } from "./table";
+import { getTable, modeHint, tablePromptBlock, xpRuleText } from "./table";
 import { takeSnapshot } from "./turnSnapshot";
 import {
   DEFERRED_TOOLS,
@@ -142,13 +142,6 @@ const STYLE_INSTRUCTIONS: Record<string, string> = {
   guided: `ESTILO DA CAMPANHA: GUIADO. A história é controlada e verossímil: SEMPRE termine com um bloco de 2-4 opções concretas e coerentes com as capacidades do personagem. O jogador escolhe entre elas; só cenários realmente interativos (diálogos) dispensam opções.`,
 };
 
-const MODE_HINTS: Record<string, string> = {
-  exploration: "Cena de EXPLORAÇÃO: descrições sensoriais ricas, ritmo médio, semeie ganchos.",
-  dialogue: "Cena de DIÁLOGO: respostas curtas, foco nas falas e linguagem corporal dos NPCs. Não resuma conversas — interprete-as.",
-  battle: "Cena de BATALHA: turno a turno, tático e tenso. Descreva posições e aberturas, peça a ação do jogador, resolva com rolagens e narre dano e gasto com números claros. Inimigos agem com inteligência coerente.",
-  training: "Cena de TREINAMENTO: resolva com train informando horas realistas (ele avança o relógio e aplica o ganho de domínio ou atributo); respeite a recusa por exaustão. Deixe claros na narração os marcos reais (o Escrivão dá a XP).",
-  downtime: "Cena de DESCANSO: leve e breve; avance o tempo com resumos e cenas curtas de personagem.",
-};
 
 async function buildGmSystem(
   campaign: Campaign,
@@ -193,7 +186,7 @@ async function buildGmSystem(
       clock
         ? `Hora na história: ${formatClock(clock.minutes)} (${period(clock.minutes)})`
         : "Hora na história: AINDA NÃO DEFINIDA. Chame set_time neste turno com uma hora coerente com a história até aqui."
-    }\n${MODE_HINTS[scene.mode] || ""}${scene.summary ? `\nResumo do que já aconteceu nesta cena (compactado): ${scene.summary}` : ""}`,
+    }\nMODO DA CENA (${scene.mode}): ${modeHint(getTable(campaign.state), scene.mode)}${scene.summary ? `\nResumo do que já aconteceu nesta cena (compactado): ${scene.summary}` : ""}`,
     objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null),
     // só local, rotas e palco: o resto do mapa (mapas 3D, locais distantes, regras) vai ao Topógrafo pelo map_brief
     mapPromptBlock(await loadMap(campaign.id, campaign.state), getStage(scene.state), scene.mode),

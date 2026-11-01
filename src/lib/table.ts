@@ -1,6 +1,6 @@
 // Regras da mesa (campaign.state.table): dificuldade e dados ajustáveis durante a campanha.
 // Puro (sem banco): serve ao servidor e à UI.
-import type { DiceResult, Difficulty, TableRules } from "./types";
+import type { DiceResult, Difficulty, SceneMode, TableRules } from "./types";
 
 /** Presets: ajuste padrão da CD e o que o nível significa para o tom do Mestre. */
 export const DIFFICULTIES: { key: Difficulty; label: string; dcOffset: number; tone: string }[] = [
@@ -17,6 +17,19 @@ export const getTable = (state: Record<string, unknown> | null | undefined): Tab
   ...DEFAULT_TABLE,
   ...(state?.table as Partial<TableRules> | undefined),
 });
+
+// como o Mestre conduz cada modo de cena: o texto do modo atual vai no contexto de todo turno; a mesa pode trocar cada um
+export const MODE_HINTS: Record<SceneMode, string> = {
+  exploration: "Cena de EXPLORAÇÃO: descrições sensoriais ricas, ritmo médio, semeie ganchos.",
+  dialogue: "Cena de DIÁLOGO: respostas curtas, foco nas falas e linguagem corporal dos NPCs. Não resuma conversas — interprete-as.",
+  battle: "Cena de BATALHA: turno a turno, tático e tenso. Descreva posições e aberturas, peça a ação do jogador, resolva com rolagens e narre dano e gasto com números claros. Inimigos agem com inteligência coerente.",
+  training: "Cena de TREINAMENTO: resolva com train informando horas realistas (ele avança o relógio e aplica o ganho de domínio ou atributo); respeite a recusa por exaustão. Deixe claros na narração os marcos reais (o Escrivão dá a XP).",
+  downtime: "Cena de DESCANSO: leve e breve; avance o tempo com resumos e cenas curtas de personagem.",
+};
+export const MODE_LABELS: Record<SceneMode, string> = {
+  exploration: "Exploração", dialogue: "Diálogo", battle: "Batalha", training: "Treino", downtime: "Descanso",
+};
+export const modeHint = (t: TableRules, mode: string) => t.modes?.[mode as SceneMode] || MODE_HINTS[mode as SceneMode] || "";
 
 // ritmo de XP: % do que falta para o próximo nível por feito comum (min a max) e por feito grande (até great)
 export const XP_PACES = [
@@ -78,6 +91,20 @@ export function normalizeTable(patch: Record<string, unknown>, current: TableRul
     const notes = String(patch.notes ?? "").trim();
     if (notes.length > 600) return "notes: até 600 caracteres";
     t.notes = notes || undefined;
+  }
+  if (patch.modes !== undefined) {
+    // parcial vale; texto vazio (ou igual ao padrão) volta ao padrão
+    if (!patch.modes || typeof patch.modes !== "object") return "modes: objeto com o texto de cada modo de cena";
+    const modes: Partial<Record<SceneMode, string>> = { ...current.modes };
+    for (const [k, v] of Object.entries(patch.modes as Record<string, unknown>)) {
+      if (!(k in MODE_HINTS)) return `modes: "${k}" não é modo de cena (${Object.keys(MODE_HINTS).join(", ")})`;
+      const mode = k as SceneMode;
+      const text = String(v ?? "").trim();
+      if (text.length > 600) return `modes: o texto de ${mode} vai até 600 caracteres`;
+      if (!text || text === MODE_HINTS[mode]) delete modes[mode];
+      else modes[mode] = text;
+    }
+    t.modes = Object.keys(modes).length ? modes : undefined;
   }
   if (patch.xp !== undefined) {
     // parcial vale (o Mestre fora do jogo manda só o que muda)
@@ -149,6 +176,7 @@ export function tableSummary(t: TableRules): string {
     t.categories.length ? t.categories.map((c) => `${c.label} ${signed(c.offset)}`).join(", ") : "",
     `críticos ${t.crits ? "ligados" : "desligados"}`,
     `XP ${xpRule(t).min}–${xpRule(t).max}% por feito (grande até ${xpRule(t).great}%)`,
+    t.modes ? `modos ajustados: ${(Object.keys(t.modes) as SceneMode[]).map((k) => MODE_LABELS[k]).join(", ")}` : "",
     t.notes ? `nota: ${t.notes}` : "",
   ]
     .filter(Boolean)

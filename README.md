@@ -178,6 +178,8 @@ A dificuldade muda a qualquer momento (`campaigns.state.table`, helpers em `src/
 - **Tipos de ação**: ajuste próprio da CD (Combate +2, Furtividade −1...), livres por campanha. O Mestre informa `category` em `roll_dice`/`use_ability`.
 - **A conta é do servidor**: CD efetiva = CD do Mestre + ajuste geral + ajuste do tipo (mínimo 1). O resultado da ferramenta diz a base, os ajustes e a efetiva (para o Mestre não compensar), e o dado leva `baseDc`/`dcAdjust` para a UI mostrar "CD 15 +2 Difícil = 17".
 - **Críticos** (opcional): em 1d20 com CD, 20 natural passa e 1 natural falha.
+- **Ganho de XP**: Lento, Normal ou Rápido (ou cada número à mão), em % do que falta para o próximo nível; o Escrivão aplica (`xp`).
+- **Modos de cena**: o texto de como o Mestre conduz exploração, diálogo, batalha, treino e descanso, por campanha (`modes`; vazio volta ao padrão de `MODE_HINTS`). O do modo atual vai no contexto de todo turno, em MODO DA CENA; o Mestre fora do jogo também ajusta a pedido.
 - **Notas**: orientação livre de dificuldade para o Mestre.
 
 Tudo entra no bloco REGRAS DA MESA do prompt do turno. Na conversa fora do jogo, "deixa os combates mais difíceis" ou "quero modo história" viram `set_table_rules`, e a resposta mostra o que mudou. O "gerar novamente" não desfaz regra da mesa nem tema. Verificação: `npx tsx scripts/table-check.ts`.

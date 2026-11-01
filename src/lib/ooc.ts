@@ -9,7 +9,8 @@ import { executeGmTool, GM_TOOLS, saveTable } from "./tools";
 import { generateLibrary, importSheetAbilities } from "./library";
 import { MAP_TOOLS } from "./map";
 import { LOCAL_MAP_TOOLS } from "./cartographer";
-import { DIFFICULTIES, getTable, mergeCategories, normalizeTable, tablePromptBlock, tableSummary } from "./table";
+import { DIFFICULTIES, getTable, mergeCategories, MODE_HINTS, modeHint, normalizeTable, tablePromptBlock, tableSummary } from "./table";
+import type { SceneMode } from "./types";
 
 // as ferramentas do turno, menos as que leem o roteiro e os segredos dos NPCs (spoiler) e a mensagem de NPC
 // (é jogada, não conversa fora do jogo), mais remover habilidade. Mapa: as ferramentas diretas no lugar do
@@ -76,7 +77,7 @@ const OOC_PROMPT = `Você é o Mestre desta mesa de RPG, conversando FORA DO JOG
 - Se a fala trouxer uma orientação de como conduzir a mesa daqui para a frente (o que ele quer que aconteça, como o personagem dele deve ser retratado, ritmo, tom, estilo, algo que você deve parar de fazer ou corrigir), chame save_directive uma vez por orientação (uma para o momento atual e outra geral são duas), reescrevendo cada pedido como instrução curta e autossuficiente para você mesmo ler no turno, e confirme na resposta. Pergunta, dúvida, elogio ou comentário não viram diretriz. Não salve de novo o que já está em DIRETRIZES ATIVAS.
 - Se a orientação contrariar a coerência do mundo ou as regras, salve o que der e explique o limite.
 - Habilidade que falta, sobra ou com domínio errado: add_ability (acrescenta ou redefine pelo nome), remove_ability ou update_ability_progress. Se a correção contrariar o momento do cânone, avise em uma frase, mas aplique se ele confirmar ou insistir.
-- Dificuldade e dados são REGRAS DA MESA, não diretriz: "deixa os combates mais difíceis", "quero modo história", "sem críticos", "furtividade mais fácil" vão por set_table_rules: pedido sobre um tipo de ação (combate, furtividade, social...) vai em setCategories, sobre o jogo todo em difficulty/dcOffset; críticos em crits; ritmo de XP ("quero subir de nível mais rápido") em xp. Orientação de dificuldade que não cabe em número ("inimigos mais espertos", "pode matar meu personagem") vai em notes. Diga em números o que mudou.`;
+- Dificuldade e dados são REGRAS DA MESA, não diretriz: "deixa os combates mais difíceis", "quero modo história", "sem críticos", "furtividade mais fácil" vão por set_table_rules: pedido sobre um tipo de ação (combate, furtividade, social...) vai em setCategories, sobre o jogo todo em difficulty/dcOffset; críticos em crits; ritmo de XP ("quero subir de nível mais rápido") em xp; jeito de conduzir um tipo de cena ("diálogos mais descritivos", "batalhas mais cruas") em modes, com o texto inteiro da instrução nova do modo. Orientação de dificuldade que não cabe em número ("inimigos mais espertos", "pode matar meu personagem") vai em notes. Diga em números o que mudou.`;
 
 const TABLE_TOOL: ToolDef = {
   type: "function",
@@ -96,6 +97,11 @@ const TABLE_TOOL: ToolDef = {
           type: "object",
           description: "ritmo de XP por feito, em % do que falta para o próximo nível (mande só o que muda): min e max num feito comum, great num feito grande; inteiros 0-100, min ≤ max ≤ great",
           properties: { min: { type: "number" }, max: { type: "number" }, great: { type: "number" } },
+        },
+        modes: {
+          type: "object",
+          description: "como o Mestre conduz cada modo de cena (o texto inteiro da instrução; mande só os modos que mudam; texto vazio volta ao padrão)",
+          properties: { exploration: { type: "string" }, dialogue: { type: "string" }, battle: { type: "string" }, training: { type: "string" }, downtime: { type: "string" } },
         },
         setCategories: {
           type: "array",
@@ -253,6 +259,8 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
     }\nNPCs em cena: ${npcs.join(", ") || "nenhum"}${scene.summary ? `\nResumo da cena: ${scene.summary}` : ""}`,
     objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null),
     tablePromptBlock(getTable(campaign.state)),
+    // o texto atual de cada modo, para reescrever a pedido (set_table_rules modes)
+    `\n--- MODOS DE CENA (como o Mestre conduz cada um; ajustáveis em modes) ---\n${(Object.keys(MODE_HINTS) as SceneMode[]).map((k) => `${k}: ${modeHint(getTable(campaign.state), k)}`).join("\n")}`,
     player ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset)}` : "",
     story.length
       ? `\n--- ÚLTIMOS TRECHOS DA HISTÓRIA ---\n${story

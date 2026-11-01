@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { pool, q } from "../src/lib/db";
 import { rollDice } from "../src/lib/dice";
 import { executeGmTool, saveTable, ToolContext } from "../src/lib/tools";
-import { DEFAULT_TABLE, getTable, mergeCategories, normalizeTable, tableDc, tablePromptBlock, xpRule, xpRuleText } from "../src/lib/table";
+import { DEFAULT_TABLE, getTable, mergeCategories, normalizeTable, tableDc, tablePromptBlock, xpRule, xpRuleText, MODE_HINTS, modeHint } from "../src/lib/table";
 import { restoreSnapshot, takeSnapshot } from "../src/lib/turnSnapshot";
 import type { Campaign, DiceResult, Scene, TableRules, TurnEvent } from "../src/lib/types";
 
@@ -27,6 +27,14 @@ async function main() {
   assert.equal(typeof normalizeTable({ xp: { min: 12 } }, DEFAULT_TABLE), "string", "min acima do max é recusado");
   assert.equal(typeof normalizeTable({ xp: { great: 101 } }, DEFAULT_TABLE), "string", "acima de 100 é recusado");
   assert.match(xpRuleText({ ...DEFAULT_TABLE, xp: { min: 2, max: 5, great: 12 } }), /de 2 a 5% .* até 12%/);
+  // modos de cena: parcial, texto igual ao padrão ou vazio volta ao padrão, modo desconhecido é recusado
+  const m1 = ok(normalizeTable({ modes: { dialogue: "Diálogos longos e descritivos." } }, DEFAULT_TABLE));
+  assert.equal(modeHint(m1, "dialogue"), "Diálogos longos e descritivos.");
+  assert.equal(modeHint(m1, "battle"), MODE_HINTS.battle, "os outros seguem o padrão");
+  const m2 = ok(normalizeTable({ modes: { battle: "Batalhas cruas." } }, m1));
+  assert.deepEqual(Object.keys(m2.modes ?? {}).sort(), ["battle", "dialogue"], "parcial mantém os outros ajustes");
+  assert.equal(ok(normalizeTable({ modes: { dialogue: "", battle: MODE_HINTS.battle } }, m2)).modes, undefined, "vazio ou igual ao padrão volta ao padrão");
+  assert.equal(typeof normalizeTable({ modes: { stealth: "x" } }, DEFAULT_TABLE), "string", "modo desconhecido é recusado");
   assert.equal(ok(normalizeTable({ crits: true }, hard)).dcOffset, 2, "patch parcial mantém o resto");
 
   // validação

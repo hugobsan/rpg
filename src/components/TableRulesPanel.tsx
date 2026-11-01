@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { Campaign, TableRules } from "@/lib/types";
-import { DIFFICULTIES, getTable, tableDc, XP_PACES, xpRule } from "@/lib/table";
+import type { Campaign, SceneMode, TableRules } from "@/lib/types";
+import { DIFFICULTIES, getTable, MODE_HINTS, MODE_LABELS, modeHint, tableDc, XP_PACES, xpRule } from "@/lib/table";
 import { campaignTheme, inferTheme, THEMES } from "@/lib/theme";
 import s from "./TableRulesPanel.module.css";
 
@@ -23,6 +23,24 @@ function Stepper({ value, onChange, label, min = -10, max = 10, fmt = signed }: 
       <output className={tone} aria-live="polite">{fmt(value)}</output>
       <button type="button" aria-label="Aumentar" disabled={value >= max} onClick={() => onChange(value + 1)}><Svg d="M12 5v14M5 12h14" /></button>
     </span>
+  );
+}
+
+/** Texto de um modo de cena: salva ao sair do campo; "Voltar ao padrão" manda vazio. */
+function ModeField({ mode, value, onSave }: { mode: SceneMode; value: string; onSave: (text: string) => void }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const custom = value !== MODE_HINTS[mode];
+  return (
+    <div className={s.mode}>
+      <div className={s.line}>
+        <span><b>{MODE_LABELS[mode]}</b>{custom && " · ajustado"}</span>
+        {custom && <button type="button" className={s.reset} onClick={() => onSave("")}>Voltar ao padrão</button>}
+      </div>
+      <textarea value={text} maxLength={600} rows={2} aria-label={`Modo ${MODE_LABELS[mode]}`}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => text.trim() !== value && onSave(text.trim())} />
+    </div>
   );
 }
 
@@ -110,7 +128,7 @@ export default function TableRulesPanel({ campaign, onChange }: { campaign: Camp
   return (
     <div className={s.wrap}>
       <p className={s.intro}>
-        Como a mesa joga: o quanto os testes são difíceis, o ritmo de XP e o clima visual. Vale a partir da próxima rolagem.
+        Como a mesa joga: o quanto os testes são difíceis, o ritmo de XP, o jeito de cada tipo de cena e o clima visual. Vale a partir da próxima rolagem.
         Também dá para pedir ao Mestre na <b>conversa fora do jogo</b> (ex.: &quot;deixa o combate mais difícil&quot;).
       </p>
       {error && <div className="error-box">{error}</div>}
@@ -228,6 +246,18 @@ export default function TableRulesPanel({ campaign, onChange }: { campaign: Camp
             <span>{label}</span>
             <Stepper label={label} value={xp[k]} min={lo} max={hi} fmt={(v) => `${v}%`} onChange={(v) => save({ xp: { ...xp, [k]: v } }, "xp")} />
           </div>
+        ))}
+      </section>
+
+      <section className={s.section}>
+        <h4>Modos de cena {tick("modes")}</h4>
+        <p className={s.tone}>
+          Como o Mestre conduz cada tipo de cena: o texto do modo atual vai no contexto de todo turno. Vale só nesta campanha;
+          vazio volta ao padrão.
+        </p>
+        {(Object.keys(MODE_HINTS) as SceneMode[]).map((k) => (
+          <ModeField key={k} mode={k} value={modeHint(table, k)}
+            onSave={(text) => save({ modes: { ...table.modes, [k]: text } }, "modes")} />
         ))}
       </section>
 

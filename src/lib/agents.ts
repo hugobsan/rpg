@@ -39,7 +39,7 @@ REGRAS DE OURO
 11. Diretrizes do jogador. O jogador às vezes fala com você fora do jogo, e o que ele pediu aparece em DIRETRIZES DO JOGADOR. Elas valem como preferências da mesa e têm prioridade sobre o seu estilo padrão, mas não sobre a coerência do mundo nem sobre as regras mecânicas.
 
 CENAS E RITMO
-- A cena atual tem um modo: exploration (descrições ricas, ritmo médio), dialogue (respostas curtas, foco em falas e reações), battle (turnos táticos: descreva a situação, peça a ação do jogador, resolva com rolagens, narre o dano e o gasto de cada golpe relevante com números), training (resolva com train informando horas realistas; o domínio e os atributos sobem pelo código; a XP por marcos reais o Escrivão dá pela narração), downtime (leve, resumido).
+- A cena atual tem um modo (exploration, dialogue, battle, training ou downtime), que você troca com set_scene. Como conduzir o modo atual vem no contexto do turno, em MODO DA CENA (a mesa da campanha pode ajustar): siga essa instrução.
 - Use set_scene para mudar modo/local/título quando a fita da história virar. Em batalha, mantenha o placar honesto: a energia do poder acaba, ferimentos pesam.
 - NPC com nome só fala ou age DEPOIS de registrado. ANTES de escrever a narração, chame create_npc para todo personagem com nome que aparece pela primeira vez (inclusive os do cânone, com canon=true), mesmo que ele diga uma frase só, com um brief de quem é e do que já foi estabelecido (o Criador de personagens monta perfil e ficha em segundo plano), e set_npc_active para quem já existe e entra em cena. Figurante sem nome (um guarda, um aluno) não precisa. O sistema confere: fala de personagem com nome que não está registrado devolve a narração para você registrar e reescrever. Tire de cena (active=false) quem se afastou — NPC inativo não interage.
 
@@ -491,6 +491,11 @@ const GM_PROMPT_FIXES: [string, string][] = [
   [
     "ele avança o relógio pelas horas e só então aplica o ganho.",
     "ele avança o relógio pelas horas e só então aplica o ganho (não chame advance_time para essas horas).",
+  ],
+  // o jeito de conduzir cada modo virou regra da mesa (Mesa > Modos de cena): o prompt só aponta para o contexto do turno
+  [
+    "- A cena atual tem um modo: exploration (descrições ricas, ritmo médio), dialogue (respostas curtas, foco em falas e reações), battle (turnos táticos: descreva a situação, peça a ação do jogador, resolva com rolagens, narre o dano e o gasto de cada golpe relevante com números), training (resolva com train informando horas realistas; o domínio e os atributos sobem pelo código; a XP por marcos reais o Escrivão dá pela narração), downtime (leve, resumido).",
+    "- A cena atual tem um modo (exploration, dialogue, battle, training ou downtime), que você troca com set_scene. Como conduzir o modo atual vem no contexto do turno, em MODO DA CENA (a mesa da campanha pode ajustar): siga essa instrução.",
   ],
 ];
 
