@@ -78,10 +78,20 @@ async function main() {
     assert.equal((await byTitle("Exame")).status, "aberto", "o que não venceu segue aberto");
     assert.equal((await state()).hiddenSheetImageId, 7, "resto do state intacto");
     assert.match(objectivesPromptBlock(getObjectives(await state()), toMinutes(2, 8, 0)), /PERDIDO desde Dia 2 · 07:00: \[o4\] Encontro/);
-    assert.match(await run("update_objective", { objective: "Encontro", status: "concluido" }), /não volta/);
+    await run("advance_time", { minutes: 1, reason: "um instante" });
+    assert.match(await run("update_objective", { objective: "Encontro", status: "concluido" }), /não volta/, "perdido antes do instante atual não volta");
 
     await restoreSnapshot(id);
     assert.equal((await byTitle("Encontro")).status, "aberto", "gerar novamente devolve o objetivo aberto");
+    ctx.campaign = { ...ctx.campaign, state: await state() };
+
+    // perdido no mesmo turno em que foi cumprido: o advance_time (anotação) roda antes do Escrivão e passa do prazo;
+    // o Escrivão ainda conclui, porque a perda é do instante atual
+    await run("add_objective", { title: "Ajudar no fechamento", kind: "outro", description: "limpar os bancos", inMinutes: 15 });
+    out = await run("advance_time", { minutes: 45, reason: "limpeza" });
+    assert.match(out, /PRAZO PERDIDO: "Ajudar no fechamento"/);
+    assert.match(await run("update_objective", { objective: "Ajudar no fechamento", status: "concluido" }), /concluido/);
+    assert.equal((await byTitle("Ajudar no fechamento")).status, "concluido", "cumprido no mesmo turno vale");
 
     // treino longo (ferramenta train do outro agente, se já existir) passa do prazo
     if (GM_TOOLS.some((t) => t.function.name === "train")) {

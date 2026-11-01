@@ -1222,7 +1222,10 @@ export async function executeGmTool(
           list.find((x) => x.status === "aberto" && x.title.toLowerCase() === key) ||
           list.find((x) => x.title.toLowerCase() === key);
         if (!found) return `Objetivo "${args.objective}" não existe. Abertos: ${list.filter((x) => x.status === "aberto").map((x) => `${x.id} ${x.title}`).join(", ") || "nenhum"}.`;
-        if (found.status !== "aberto") return `"${found.title}" já está ${found.status}; não volta a ficar aberto.`;
+        // perdido agora mesmo (o relógio do mesmo turno passou do prazo antes do Escrivão): a narração deste momento
+        // pode mostrar que foi cumprido; quando o relógio anda de novo, a perda vira definitiva
+        const lostNow = found.status === "perdido" && args.status === "concluido" && now !== undefined && found.closedAt === now;
+        if (found.status !== "aberto" && !lostNow) return `"${found.title}" já está ${found.status}; não volta a ficar aberto.`;
         // o Escrivão tirava o prazo sem a narração pedir; só com uma anotação de missão do Mestre neste turno
         if (args.noDeadline === true && found.deadlineMinutes !== undefined && ctx.scribe && !ctx.scribe.briefs)
           return `Nada mudou: [${found.id}] mantém o prazo. Tirar o prazo só com uma ANOTAÇÃO DE MISSÃO do Mestre neste turno.`;
