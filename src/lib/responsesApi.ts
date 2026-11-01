@@ -4,7 +4,6 @@
 // sem temperature, max_output_tokens, top_p, previous_response_id, metadata, user etc.
 // Doc: https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
 import type { ChatMessage, ChatOptions, Source, ToolCall } from "./openrouter";
-import type { ChatgptLimits, ChatgptWindow } from "./types";
 
 export const USAGE_URL = "https://chatgpt.com/settings/usage";
 // o SIWC pede as funções agrupadas num namespace; a chamada volta com o nome curto e namespace "chronicle"
@@ -39,20 +38,6 @@ export function responsesRequest(opts: ChatOptions, src: Source) {
     }];
   if (opts.reasoning?.effort) body.reasoning = { effort: opts.reasoning.effort };
   return { url: `${src.url}/responses`, headers: { "Content-Type": "application/json", Authorization: `Bearer ${src.apiKey}` }, body };
-}
-
-/**
- * Limites da assinatura nos cabeçalhos x-codex-* (o formato que o Codex lê: codex-rs/codex-api/src/rate_limits.rs):
- * primary é a janela de 5 h e secondary a semanal. A doc do SIWC não promete esses cabeçalhos: sem eles, null.
- */
-export function codexLimits(h: Headers): ChatgptLimits | null {
-  const num = (k: string) => (h.get(k) ? Number(h.get(k)) : NaN);
-  const win = (w: string): ChatgptWindow | null => {
-    const used = num(`x-codex-${w}-used-percent`), min = num(`x-codex-${w}-window-minutes`), reset = num(`x-codex-${w}-reset-at`);
-    return isNaN(used) ? null : { usedPercent: used, windowMinutes: isNaN(min) ? null : min, resetsAt: isNaN(reset) ? null : reset };
-  };
-  const primary = win("primary"), secondary = win("secondary");
-  return primary || secondary ? { primary, secondary, seenAt: new Date().toISOString() } : null;
 }
 
 type RespError = { code?: string | null; message?: string; param?: string | null; detail?: string };

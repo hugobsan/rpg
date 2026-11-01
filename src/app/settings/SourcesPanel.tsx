@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import type { ChatgptStatus, ChatgptWindow, SourceView } from "@/lib/types";
+import type { ChatgptStatus, SourceView } from "@/lib/types";
 import { presetOf, SOURCE_PRESETS } from "@/lib/sourcePresets";
 import Loader from "@/components/ui/Loader";
 import { toast } from "@/components/ui/Toast";
@@ -15,9 +15,6 @@ type Test = { ok: boolean; text: string } | "testing";
 type Balance = { limit: number | null; remaining: number | null; usage: number; error?: string } | { error: string } | "loading" | null;
 
 const usd = (n: number) => `US$ ${n.toFixed(2)}`;
-const when = (iso: string | number) => new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
-const win = (name: string, w: ChatgptWindow | null) =>
-  w && `${name}: ${Math.round(w.usedPercent)}% usado${w.resetsAt ? ` (renova ${when(w.resetsAt * 1000)})` : ""}`;
 
 /**
  * Fontes de modelos: o OpenRouter embutido (a chave dele) e as APIs compatíveis com a da OpenAI (adicionar, editar,
@@ -41,7 +38,6 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
   const [orKey, setOrKey] = useState("");
   const [gpt, setGpt] = useState(initialChatgpt);
   const [bal, setBal] = useState<Balance>(null);
-  const [gptBusy, setGptBusy] = useState(false);
   // fontes além do OpenRouter: recolhidas, e abertas viram um carrossel (abre sozinho na volta do Login com ChatGPT)
   const [showAll, setShowAll] = useState(!!notice);
   // carrossel: um cartão por vez, anda só pelos botões (translateX, sem rolagem)
@@ -66,15 +62,6 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
   useEffect(() => {
     if (openrouter.configured) loadBal();
   }, [openrouter.configured]);
-
-  // limites do plano: o servidor guarda os últimos vistos nas respostas do ChatGPT; Atualizar relê
-  const reloadGpt = async () => {
-    setGptBusy(true);
-    const d = await fetch("/api/chatgpt").then((r) => r.json()).catch(() => null);
-    setGptBusy(false);
-    if (d) setGpt(d);
-    else toast("Não foi possível reler os limites do ChatGPT.", { kind: "alerta" });
-  };
 
   const test = async (id: string) => {
     setTests((t) => ({ ...t, [id]: "testing" }));
@@ -259,12 +246,6 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
                   </span>
                   <button className="btn small ghost" disabled={busy} onClick={disconnect}>Desconectar</button>
                   <a href={USAGE} target="_blank" rel="noreferrer">Gerenciar uso</a>
-                  <span className={`${s.srcTest} muted`} role="status">
-                    {gpt.limits
-                      ? <>{[win("Sessão (5 h)", gpt.limits.primary), win("Semana", gpt.limits.secondary)].filter(Boolean).join(" · ")} · visto em {when(gpt.limits.seenAt)}</>
-                      : "Uso do plano: o ChatGPT ainda não informou os limites nas respostas."}
-                    {" "}<button className="btn small ghost" disabled={gptBusy} onClick={reloadGpt}>Atualizar</button>
-                  </span>
                 </>
               ) : (
                 // botão no formato das guidelines do Sign in with ChatGPT ("Continue with ChatGPT", preto ou branco)

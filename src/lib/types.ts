@@ -415,12 +415,7 @@ export interface ChatgptStatus {
   email: string | null;
   expiresAt: string | null; // access token (1 h, renovado sozinho)
   sessionUntil: string | null; // refresh token: 30 dias desde a última renovação
-  limits: ChatgptLimits | null; // últimos limites vistos nas respostas (null: nenhum ainda)
 }
-
-// janela de uso da assinatura: % usada (0-100), duração em minutos e reset em segundos Unix
-export interface ChatgptWindow { usedPercent: number; windowMinutes: number | null; resetsAt: number | null }
-export interface ChatgptLimits { primary: ChatgptWindow | null; secondary: ChatgptWindow | null; seenAt: string }
 
 // ---------- Eventos SSE do turno ----------
 
