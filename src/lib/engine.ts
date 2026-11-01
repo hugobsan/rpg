@@ -764,7 +764,8 @@ async function runScribe(
       }${briefs.length ? `\n\n--- ANOTAÇÕES DE MISSÃO DO MESTRE ---\n${briefs.map((b) => `- ${b}`).join("\n")}` : ""}`,
     },
   ];
-  const tctx: ToolContext = { ...ctx, campaign }; // estado novo: relógio já andado e fichas depois das ferramentas do Mestre
+  // estado novo: relógio já andado e fichas depois das ferramentas do Mestre; scribe: as ferramentas sabem quem chama
+  const tctx: ToolContext = { ...ctx, campaign, scribe: { briefs: briefs.length } };
   for (let round = 0; round < 2; round++) {
     const r = await chat({
       model: agent.model,

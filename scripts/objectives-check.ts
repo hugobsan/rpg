@@ -41,7 +41,13 @@ async function main() {
     await run("add_objective", { title: "Encontro", kind: "evento", description: "ponte", hour: 7 }); // 07:00 já passou → amanhã
     assert.equal((await byTitle("Encontro")).deadlineMinutes, toMinutes(2, 7, 0));
     assert.match(await run("add_objective", { title: "Ontem", kind: "outro", description: "", day: 1, hour: 6 }), /depois de agora/);
-    assert.match(await run("add_objective", { title: "Escolta", kind: "missao", description: "dup" }), /Já existe/);
+    assert.match(await run("add_objective", { title: "Escolta", kind: "missao", description: "dup" }), /já existe \[o2\]/);
+    // a mesma missão com prefixo de tipo ou pontuação diferente também é repetida (o Escrivão criava "Evento: X" ao lado de "X")
+    assert.match(await run("add_objective", { title: "Missão: escolta!", kind: "missao", description: "dup" }), /já existe \[o2\]/);
+    // o Escrivão não tira prazo sem anotação de missão do Mestre no turno; com anotação, ou o Mestre fora do jogo, tira
+    const scribe = (briefs: number) => (n: string, a: Record<string, unknown>) => executeGmTool(n, a, { ...ctx, scribe: { briefs } });
+    assert.match(await scribe(0)("update_objective", { objective: "o2", noDeadline: true }), /^Nada mudou/);
+    assert.equal((await byTitle("Escolta")).deadlineMinutes, 480 + 180, "prazo mantido");
 
     const block = objectivesPromptBlock(getObjectives(await state()), 480);
     assert.match(block, /\[o2\] Missão: Escolta — levar o Tazuna \| prazo: Dia 1 · 11:00 \(faltam 3 h\)/);

@@ -585,7 +585,13 @@ export interface ToolContext {
   castSet?: boolean; // set_scene informou present: o elenco já está certo
   /** habilidades (personagem:ref) que já subiram de domínio neste turno por use_ability ou train: o Escrivão não repete */
   masteryGained?: Set<string>;
+  /** é o Escrivão (engine.runScribe); briefs = anotações de missão do Mestre neste turno */
+  scribe?: { briefs: number };
 }
+
+// "Evento: Resposta do Hokage" = "resposta do hokage": o modelo repetia missões abertas com prefixo ou pontuação diferente
+const titleKey = (s: string) =>
+  s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/^\s*(evento|missao|prazo|objetivo|outro)\s*:\s*/, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 const gainedKey = (c: Character, a: Ability) => `${c.id}:${a.ref ?? a.name.toLowerCase()}`;
 const markGained = (ctx: ToolContext, c: Character, a: Ability) => (ctx.masteryGained ??= new Set()).add(gainedKey(c, a));
@@ -1194,8 +1200,8 @@ export async function executeGmTool(
       if (name === "add_objective") {
         const title = String(args.title || "").trim();
         if (!title) return "Informe o title.";
-        if (list.some((x) => x.status === "aberto" && x.title.toLowerCase() === title.toLowerCase()))
-          return `Já existe "${title}" em aberto: use update_objective.`;
+        const same = list.find((x) => x.status === "aberto" && titleKey(x.title) === titleKey(title));
+        if (same) return `Nada mudou: já existe [${same.id}] "${same.title}" em aberto. Para mudar prazo ou descrição, use update_objective nele.`;
         const kind = (["missao", "evento", "outro"].includes(String(args.kind)) ? args.kind : "outro") as ObjectiveKind;
         o = {
           id: `o${list.reduce((m, x) => Math.max(m, Number(x.id.slice(1)) || 0), 0) + 1}`,
@@ -1217,6 +1223,9 @@ export async function executeGmTool(
           list.find((x) => x.title.toLowerCase() === key);
         if (!found) return `Objetivo "${args.objective}" não existe. Abertos: ${list.filter((x) => x.status === "aberto").map((x) => `${x.id} ${x.title}`).join(", ") || "nenhum"}.`;
         if (found.status !== "aberto") return `"${found.title}" já está ${found.status}; não volta a ficar aberto.`;
+        // o Escrivão tirava o prazo sem a narração pedir; só com uma anotação de missão do Mestre neste turno
+        if (args.noDeadline === true && found.deadlineMinutes !== undefined && ctx.scribe && !ctx.scribe.briefs)
+          return `Nada mudou: [${found.id}] mantém o prazo. Tirar o prazo só com uma ANOTAÇÃO DE MISSÃO do Mestre neste turno.`;
         o = found;
         const changes: string[] = [];
         if (args.description) o.description = String(args.description);
