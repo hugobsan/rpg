@@ -1,0 +1,335 @@
+{
+  "standard": "Técnica do cânone de Naruto: use o nome romanizado oficial da Narutopedia (naruto.fandom.com), em Hepburn com mácrons (ō, ū) e com o prefixo de natureza quando faz parte do nome oficial (Katon:, Suiton:, Doton:, Fūton:, Raiton:), sem parênteses e sem tradução no nome; ex.: \"Katon: Gōkakyū no Jutsu\". A tradução em português vai no campo translation, no estilo da dublagem e dos fãs brasileiros (ex.: \"Liberação de Fogo: Técnica da Grande Bola de Fogo\"). Técnica, perícia ou ofício sem nome no cânone: nome descritivo curto em português, sem translation e sem parênteses. O nome é da técnica, nunca de quem a usa nem do estágio de domínio (nada de \"de Kakashi\" ou \"Três Tomoe\" no nome).",
+  "renames": [
+    {
+      "from": "Bunshin no Jutsu",
+      "name": "Bunshin no Jutsu",
+      "translation": "Técnica do Clone",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Clone_Technique"
+    },
+    {
+      "from": "Henge no Jutsu",
+      "name": "Henge no Jutsu",
+      "translation": "Técnica da Transformação",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Transformation_Technique"
+    },
+    {
+      "from": "Kawarimi no Jutsu",
+      "name": "Kawarimi no Jutsu",
+      "translation": "Técnica da Substituição",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Body_Replacement_Technique"
+    },
+    {
+      "from": "Kage Bunshin no Jutsu",
+      "name": "Kage Bunshin no Jutsu",
+      "translation": "Técnica dos Clones das Sombras",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Shadow_Clone_Technique"
+    },
+    {
+      "from": "Arremesso de shuriken e kunai",
+      "name": "Arremesso de shuriken e kunai",
+      "translation": null,
+      "confirmed": true,
+      "source": null,
+      "note": "Sem nome no cânone; descritivo, já no padrão."
+    },
+    {
+      "from": "Taijutsu básico da Academia",
+      "name": "Taijutsu básico da Academia",
+      "translation": null,
+      "confirmed": true,
+      "source": null,
+      "note": "Sem nome no cânone; descritivo, já no padrão."
+    },
+    {
+      "from": "Kai (liberar genjutsu)",
+      "name": "Genjutsu Kai",
+      "translation": "Dissipação de Genjutsu",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Genjutsu",
+      "note": "Não tem página própria; o artigo Genjutsu dá o nome 幻術解 'Genjutsu Kai' (Genjutsu Dissipation). 'Kai' sozinho é só o grito."
+    },
+    {
+      "from": "Controle de Fluxo: Revestimento de Membros",
+      "name": "Controle de Fluxo: Revestimento de Membros",
+      "translation": null,
+      "confirmed": true,
+      "source": null,
+      "note": "Técnica original da campanha (não é a Chakura Nagashi do cânone, que flui por objetos); descritivo, mantido."
+    },
+    {
+      "from": "Goukakyuu no Jutsu (Grande Bola de Fogo)",
+      "name": "Katon: Gōkakyū no Jutsu",
+      "translation": "Liberação de Fogo: Técnica da Grande Bola de Fogo",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Fire_Release:_Great_Fireball_Technique"
+    },
+    {
+      "from": "Manejo de Facas de Cozinha",
+      "name": "Manejo de Facas de Cozinha",
+      "translation": null,
+      "confirmed": true,
+      "source": null,
+      "note": "Ofício sem nome no cânone; mantido."
+    },
+    {
+      "from": "Preparo de Ramen do Ichiraku",
+      "name": "Preparo de Ramen do Ichiraku",
+      "translation": null,
+      "confirmed": true,
+      "source": null,
+      "note": "Ofício sem nome no cânone; mantido."
+    },
+    {
+      "from": "Shunshin no Jutsu (Técnica de Movimentação Corporal)",
+      "name": "Shunshin no Jutsu",
+      "translation": "Técnica do Corpo Cintilante",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Body_Flicker_Technique",
+      "note": "Junta com 'Shunshin no Jutsu' do kit inicial (chunin)."
+    },
+    {
+      "from": "Shunshin no Jutsu",
+      "name": "Shunshin no Jutsu",
+      "translation": "Técnica do Corpo Cintilante",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Body_Flicker_Technique",
+      "note": "Nome do kit inicial (chunin); junta com a entrada da biblioteca."
+    },
+    {
+      "from": "Suiton: Suiryūdan no Jutsu (Liberação de Água: Técnica do Dragão de Água)",
+      "name": "Suiton: Suiryūdan no Jutsu",
+      "translation": "Liberação de Água: Técnica do Projétil do Dragão de Água",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Water_Release:_Water_Dragon_Bullet_Technique"
+    },
+    {
+      "from": "Doton: Doryūheki (Liberação de Terra: Parede de Terra)",
+      "name": "Doton: Doryūheki",
+      "translation": "Liberação de Terra: Parede de Terra",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Earth_Release:_Earth-Style_Wall"
+    },
+    {
+      "from": "Kagemane no Jutsu (Técnica de Imitação das Sombras)",
+      "name": "Kagemane no Jutsu",
+      "translation": "Técnica de Imitação das Sombras",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Shadow_Imitation_Technique",
+      "note": "Na dublagem brasileira: 'Jutsu Possessão da Sombra'."
+    },
+    {
+      "from": "Chidori (Mil Pássaros)",
+      "name": "Chidori",
+      "translation": "Mil Pássaros",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Chidori"
+    },
+    {
+      "from": "Shōsen Jutsu (Técnica da Palma Mística)",
+      "name": "Shōsen Jutsu",
+      "translation": "Técnica da Palma Mística",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Mystical_Palm_Technique"
+    },
+    {
+      "from": "Rasengan (Esfera Espiral)",
+      "name": "Rasengan",
+      "translation": "Esfera Espiral",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Rasengan"
+    },
+    {
+      "from": "Kuchiyose no Jutsu (Técnica de Invocação)",
+      "name": "Kuchiyose no Jutsu",
+      "translation": "Técnica de Invocação",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Summoning_Technique"
+    },
+    {
+      "from": "Suiton: Suirō no Jutsu (Liberação de Água: Técnica da Prisão de Água)",
+      "name": "Suirō no Jutsu",
+      "translation": "Técnica da Prisão de Água",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Water_Prison_Technique",
+      "note": "A Narutopedia usa 'Suirō no Jutsu' (jutsu type Water Release), sem o prefixo 'Suiton:' no nome; segui a Narutopedia."
+    },
+    {
+      "from": "Katon: Hōsenka no Jutsu (Liberação de Fogo: Técnica da Flor de Fênix)",
+      "name": "Katon: Hōsenka no Jutsu",
+      "translation": "Liberação de Fogo: Técnica da Flor de Fênix",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Fire_Release:_Phoenix_Sage_Fire_Technique"
+    },
+    {
+      "from": "Kirigakure no Jutsu (Técnica de Ocultação na Névoa)",
+      "name": "Kirigakure no Jutsu",
+      "translation": "Técnica de Ocultação na Névoa",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Hiding_in_Mist_Technique"
+    },
+    {
+      "from": "Magen: Narakumi no Jutsu (Ilusão Demoníaca: Técnica da Visão do Inferno)",
+      "name": "Magen: Narakumi no Jutsu",
+      "translation": "Ilusão Demoníaca: Técnica da Visão do Inferno",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Demonic_Illusion:_Hell_Viewing_Technique"
+    },
+    {
+      "from": "Doton: Shinjū Zanshu no Jutsu (Liberação de Terra: Técnica da Decapitação Subter",
+      "name": "Doton: Shinjū Zanshu no Jutsu",
+      "translation": "Liberação de Terra: Técnica da Decapitação Subterrânea",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Earth_Release:_Double_Suicide_Decapitation_Technique",
+      "note": "O nome atual no banco está truncado em 'Subter' (from é o valor exato). Inglês oficial: Double Suicide Decapitation Technique; mantida a tradução corrente entre fãs."
+    },
+    {
+      "from": "Suiton: Suijinheki (Liberação de Água: Parede de Formação de Água)",
+      "name": "Suiton: Suijinheki",
+      "translation": "Liberação de Água: Parede de Formação de Água",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Water_Release:_Water_Formation_Wall"
+    },
+    {
+      "from": "Fūton: Daitoppa (Liberação de Vento: Grande Ruptura)",
+      "name": "Fūton: Daitoppa",
+      "translation": "Liberação de Vento: Grande Ruptura",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Wind_Release:_Great_Breakthrough"
+    },
+    {
+      "from": "Kokuangyō no Jutsu (Técnica da Jornada na Escuridão)",
+      "name": "Kokuangyō no Jutsu",
+      "translation": "Técnica do Portador da Escuridão",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Bringer-of-Darkness_Technique",
+      "note": "A Narutopedia grafa 'Kokuangyo no Jutsu' sem mácron (黒暗行, Hepburn: kokuangyō) e cita a forma longa 'Genjutsu: Kokuangyo no Jutsu'; mantido o mácron pelo padrão Hepburn. Tradução ajustada ao inglês oficial (Bringer-of-Darkness)."
+    },
+    {
+      "from": "Shintenshin no Jutsu (Técnica de Transferência de Mente)",
+      "name": "Shintenshin no Jutsu",
+      "translation": "Técnica de Transferência de Mente",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Mind_Body_Switch_Technique"
+    },
+    {
+      "from": "Konoha Senpū (Furacão da Folha)",
+      "name": "Konoha Senpū",
+      "translation": "Furacão da Folha",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Leaf_Whirlwind"
+    },
+    {
+      "from": "Doton: Yomi Numa (Liberação de Terra: Pântano do Submundo)",
+      "name": "Doton: Yomi Numa",
+      "translation": "Liberação de Terra: Pântano do Submundo",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Earth_Release:_Swamp_of_the_Underworld"
+    },
+    {
+      "from": "Fūton: Shinkūgyoku (Liberação de Vento: Esferas de Vácuo)",
+      "name": "Fūton: Shinkūgyoku",
+      "translation": "Liberação de Vento: Esfera de Vácuo",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Wind_Release:_Vacuum_Sphere"
+    },
+    {
+      "from": "Conferência de Acervo",
+      "name": "Conferência de Acervo",
+      "translation": null,
+      "confirmed": true,
+      "source": null,
+      "note": "Perícia original da campanha; mantido."
+    },
+    {
+      "from": "Acompanhamento de Consulta",
+      "name": "Acompanhamento de Consulta",
+      "translation": null,
+      "confirmed": true,
+      "source": null,
+      "note": "Perícia original da campanha; mantido."
+    },
+    {
+      "from": "Sharingan de Kakashi — Três Tomoe",
+      "name": "Sharingan",
+      "translation": "Olho Copiador Giratório",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Sharingan",
+      "note": "Dōjutsu, não técnica; nome canônico 'Sharingan'. 'de Kakashi' é variável de personagem e 'Três Tomoe' é estágio, então saem do nome. A descrição/efeito atuais falam do olho transplantado de Kakashi (não desativa, fica coberto): na migração, reescrever em termos gerais e deixar o específico de Kakashi na ficha/notas dele."
+    },
+    {
+      "from": "Katon: Karyū Endan (Liberação de Fogo: Projétil do Dragão de Fogo)",
+      "name": "Katon: Karyū Endan",
+      "translation": "Liberação de Fogo: Projétil de Chamas do Dragão de Fogo",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Fire_Release:_Fire_Dragon_Flame_Bullet"
+    },
+    {
+      "from": "Shuriken Kage Bunshin no Jutsu (Técnica dos Clones das Sombras de Shuriken)",
+      "name": "Shuriken Kage Bunshin no Jutsu",
+      "translation": "Técnica dos Clones das Sombras de Shuriken",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Shuriken_Shadow_Clone_Technique"
+    },
+    {
+      "from": "Tōmegane no Jutsu (Técnica do Telescópio)",
+      "name": "Tōmegane no Jutsu",
+      "translation": "Técnica do Telescópio",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Telescope_Technique"
+    },
+    {
+      "from": "Enma: Kongō Nyoi (Enma: Bastão Adamantino)",
+      "name": "Henge: Kongōnyoi",
+      "translation": "Transformação: Bastão Adamantino",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Transformation:_Adamantine_Staff",
+      "note": "Nome canônico 'Henge: Kongōnyoi' (Transformation: Adamantine Staff); 'Enma' é quem se transforma, vai em users."
+    },
+    {
+      "from": "Transformação da Natureza: Fūton",
+      "name": "Transformação da Natureza: Fūton",
+      "translation": null,
+      "confirmed": true,
+      "source": null,
+      "note": "Treino de Seishitsu Henka (transformação de natureza), conceito e não técnica nomeada; nome descritivo mantido."
+    },
+    {
+      "from": "Ki Nobori no Shugyō (andar em árvores)",
+      "name": "Ki Nobori no Shugyō",
+      "translation": "Treino de Escalar Árvores",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Tree_Climbing_Practice",
+      "note": "Só no kit inicial (genin)."
+    },
+    {
+      "from": "Suimen Hokō no Gyō (andar sobre a água)",
+      "name": "Suimen Hokō no Gyō",
+      "translation": "Treino de Andar sobre a Água",
+      "confirmed": true,
+      "source": "https://naruto.fandom.com/wiki/Water_Surface_Walking_Practice",
+      "note": "Só no kit inicial (chunin)."
+    },
+    {
+      "from": "Domínio de duas naturezas de chakra",
+      "name": "Domínio de duas naturezas de chakra",
+      "translation": null,
+      "confirmed": true,
+      "source": null,
+      "note": "Só no kit inicial (jounin); descritivo, sem nome no cânone; mantido."
+    }
+  ],
+  "merges": [
+    {
+      "name": "Shunshin no Jutsu",
+      "from": [
+        "Shunshin no Jutsu (Técnica de Movimentação Corporal)",
+        "Shunshin no Jutsu"
+      ]
+    }
+  ]
+}

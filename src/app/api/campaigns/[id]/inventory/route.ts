@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
+import { dehydrateSheet } from "@/lib/library";
 import { getCharacters, getCurrentScene } from "@/lib/engine";
 import { addMemory } from "@/lib/retrieval";
 
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const qty = Math.min(Math.max(Math.floor(Number(body.qty) || 1), 1), item.qty);
   item.qty -= qty;
   player.sheet.inventory = player.sheet.inventory.filter((i) => i.qty > 0);
-  await q(`UPDATE characters SET sheet = $1, updated_at = now() WHERE id = $2`, [JSON.stringify(player.sheet), player.id]);
+  await q(`UPDATE characters SET sheet = $1, updated_at = now() WHERE id = $2`, [JSON.stringify(dehydrateSheet(player.sheet)), player.id]);
   await addMemory(
     id,
     "event",

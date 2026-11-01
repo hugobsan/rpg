@@ -7,7 +7,7 @@ import { addMemory, formatHistory, searchHistory, searchMemories, searchBookChun
 import { listBooks, readPages } from "./books";
 import { Ability, Campaign, Character, LibraryAbility, LibraryItem, Scene, Sheet, TableRules, TurnEvent } from "./types";
 import { abilityPromptLine, blankSheet, currentMilestone, nextMilestone } from "./ruleset";
-import { ensureAbility, fallbackAbility, findLibrary, itemText, libraryLine, listLibrary } from "./library";
+import { dehydrateSheet, editAbility, findLibrary, hydrateSheets, itemText, libraryLine, linkAbility, listLibrary } from "./library";
 import {
   abilityAttribute,
   attributePoints,
@@ -29,13 +29,9 @@ import { executeLocalMapTool, executeMapBrief, MAP_BRIEF_TOOL } from "./cartogra
 import { dcResultText, getTable, tableDc } from "./table";
 import { queueProfile } from "./characters";
 
-// add_ability espera o Criador de habilidades até isto; depois registra com o que o Mestre passou
-// (o Criador segue em segundo plano e a técnica fica na biblioteca para a próxima vez)
+// add_ability espera o Criador de habilidades até isto; depois registra incompleta com o que o Mestre passou
+// (se o Criador responder depois, a resposta completa a entrada: linkAbility)
 const CREATOR_TIMEOUT_MS = 90_000;
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
-  let t: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([p, new Promise<null>((r) => (t = setTimeout(() => r(null), ms)))]).finally(() => clearTimeout(t));
-}
 
 const MILESTONE_SCHEMA = {
   type: "array",
@@ -118,7 +114,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "add_ability",
       description:
-        "Registra (ou redefine, se mesmo nome) uma técnica na ficha: quando o personagem aprende E quando usa uma técnica plausível que ainda não está na ficha (registre antes de resolver). Passe só o nome e um brief: a técnica vem da biblioteca do mundo ou o Criador de habilidades a cria agora, completa (tipo, rank, custo, efeito, dano, marcos de domínio).",
+        "Liga uma técnica na ficha: quando o personagem aprende E quando usa uma técnica plausível que ainda não está na ficha (registre antes de resolver). Passe só o nome e um brief: a técnica vem da biblioteca do mundo ou o Criador de habilidades a cria agora, completa (tipo, rank, efeito, dano, marcos de domínio; o custo vem do rank). Se já está na ficha, só ajusta o domínio (progress). Para mudar a técnica em si, use edit_ability.",
       parameters: S(
         {
           character: { type: "string" },
@@ -126,12 +122,38 @@ export const GM_TOOLS: ToolDef[] = [
           brief: { type: "string", description: "o que é e faz, em uma frase, para o Criador (se não estiver na biblioteca)" },
           abilityType: { type: "string", description: "opcional: key do tipo, só como dica" },
           rank: { type: "string", description: "opcional: nível, só como dica" },
+          costFree: { type: "boolean", description: "opcional: true se não gasta recurso (taijutsu, armas, ofícios), só como dica" },
           progress: {
             type: "number",
             description: `0-100: domínio inicial (default ${NEW_ABILITY_MASTERY}). Registrada na hora do uso: 10-25; aprendida com treino longo: mais.`,
           },
         },
         ["character", "name"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "edit_ability",
+      description:
+        "Corrige uma técnica NA BIBLIOTECA DO MUNDO: muda para todos que a têm, em todas as campanhas deste mundo (as fichas apontam para ela). Use para completar uma registrada incompleta, corrigir tipo, rank, efeito, dano, marcos ou renomear (siga o padrão de nomes do mundo). Não use para algo que é só de um personagem: domínio é update_ability_progress. Mande só o que muda; texto vazio apaga o campo.",
+      parameters: S(
+        {
+          name: { type: "string", description: "nome atual da técnica na biblioteca" },
+          new_name: { type: "string", description: "novo nome, no padrão de nomes do mundo" },
+          translation: { type: "string", description: "tradução para exibição, se o padrão do mundo usar" },
+          type: { type: "string", description: "key do tipo" },
+          rank: { type: "string" },
+          costFree: { type: "boolean", description: "true se não gasta recurso (taijutsu, armas, ofícios)" },
+          description: { type: "string" },
+          effect: { type: "string", description: "o que faz em jogo (alcance, duração, teste)" },
+          damage: { type: "string", description: "dano em notação de dado, ex: 2d6" },
+          requirements: { type: "string", description: "selos, elemento, kekkei genkai, outra técnica" },
+          milestones: { ...MILESTONE_SCHEMA, description: "marcos de domínio (lista inteira, substitui a anterior)" },
+          users: { type: "string", description: "quem é conhecido por usar" },
+        },
+        ["name"]
       ),
     },
   },
@@ -596,7 +618,7 @@ async function getChar(campaignId: string, name: string): Promise<Character> {
     [campaignId, name]
   );
   if (!rows.length) throw new Error(`Personagem "${name}" não existe nesta campanha.`);
-  return rows[0];
+  return (await hydrateSheets(rows))[0];
 }
 
 /**
@@ -663,7 +685,7 @@ const deadlineText = (at: number | undefined, now: number | undefined) =>
 
 async function saveSheet(id: string, sheet: Sheet): Promise<void> {
   await q(`UPDATE characters SET sheet = $1, updated_at = now() WHERE id = $2`, [
-    JSON.stringify(sheet),
+    JSON.stringify(dehydrateSheet(sheet)),
     id,
   ]);
 }
@@ -717,28 +739,30 @@ export async function executeGmTool(
       const c = await getChar(cid, String(args.character));
       const abilityName = String(args.name || "").trim();
       if (!abilityName) return "Erro: informe name.";
-      // biblioteca > Criador de habilidades (agora, com prazo) > o que o Mestre passou: o turno nunca quebra
-      let def = (await findLibrary(cid, "ability", abilityName))?.data as LibraryAbility | undefined;
-      let from = "da biblioteca";
-      if (!def) {
-        ctx.emit({ type: "status", text: `Criador de habilidades: ${abilityName}` });
-        const hint = [args.brief, args.abilityType && `tipo sugerido: ${args.abilityType}`, args.rank && `nível sugerido: ${args.rank}`]
-          .filter(Boolean)
-          .join("; ");
-        def = (await withTimeout(ensureAbility(ctx.campaign, abilityName, hint), CREATOR_TIMEOUT_MS)) ?? undefined;
-        from = def ? "criada pelo Criador de habilidades e guardada na biblioteca" : "o Criador não respondeu: registrada só com o que você passou (custo padrão do rank)";
-      }
-      const { users: _users, ...base } = def ?? fallbackAbility(ctx.campaign.ruleset, abilityName, args);
-      void _users;
-      const ability: Ability = {
-        ...base,
-        progress: Math.max(0, Math.min(100, typeof args.progress === "number" ? args.progress : NEW_ABILITY_MASTERY)),
-      };
-      const idx = c.sheet.abilities.findIndex(
-        (a) => a.name.toLowerCase() === ability.name.toLowerCase()
-      );
-      // redefinir sem informar o domínio mantém o que ele já tinha
-      if (idx >= 0 && typeof args.progress !== "number") ability.progress = c.sheet.abilities[idx].progress;
+      // biblioteca do mundo > Criador de habilidades (com prazo) > o que o Mestre passou (incompleta): a ficha sempre recebe uma ref
+      const brief = [
+        args.brief,
+        args.abilityType && `tipo sugerido: ${args.abilityType}`,
+        args.rank && `nível sugerido: ${args.rank}`,
+        args.costFree === true && "não gasta recurso",
+      ]
+        .filter(Boolean)
+        .join("; ");
+      const { entry, from } = await linkAbility(ctx.campaign, abilityName, {
+        brief,
+        fallback: args,
+        timeoutMs: CREATOR_TIMEOUT_MS,
+        onCreator: () => ctx.emit({ type: "status", text: `Criador de habilidades: ${abilityName}` }),
+      });
+      const idx = c.sheet.abilities.findIndex((a) => a.ref === entry.id);
+      // já na ficha sem informar o domínio: mantém o que ele tinha
+      const progress =
+        typeof args.progress === "number"
+          ? Math.max(0, Math.min(100, args.progress))
+          : idx >= 0
+            ? c.sheet.abilities[idx].progress
+            : NEW_ABILITY_MASTERY;
+      const ability: Ability = { ...(entry.data as LibraryAbility), name: entry.name, ref: entry.id, progress };
       if (idx >= 0) c.sheet.abilities[idx] = ability;
       else c.sheet.abilities.push(ability);
       await saveSheet(c.id, c.sheet);
@@ -749,15 +773,31 @@ export async function executeGmTool(
         name,
         summary: `${c.name} ${idx >= 0 ? "aprimorou" : "aprendeu"}: ${ability.name}${ability.rank ? ` (${ability.rank})` : ""}${cur ? ` — ${cur.description}` : ""}`,
       });
-      return `Habilidade ${idx >= 0 ? "atualizada" : "adicionada"} (${from}): ${abilityPromptLine(ctx.campaign.ruleset, ability)}.${cur ? ` Marco atual: ${cur.description}` : ""}`;
+      const origin =
+        from === "library"
+          ? "da biblioteca"
+          : from === "creator"
+            ? "criada pelo Criador de habilidades e guardada na biblioteca"
+            : "o Criador não respondeu: registrada INCOMPLETA na biblioteca, só com o que você passou; complete com edit_ability";
+      return `Habilidade ${idx >= 0 ? "já estava na ficha" : "adicionada"} (${origin}): ${abilityPromptLine(ctx.campaign.ruleset, ability)}.${cur ? ` Marco atual: ${cur.description}` : ""}`;
+    }
+    case "edit_ability": {
+      const target = String(args.name || "").trim();
+      if (!target) return "Erro: informe name.";
+      const { name: _cur, new_name, ...patch } = args;
+      void _cur;
+      if (typeof new_name === "string" && new_name.trim()) patch.name = new_name.trim();
+      const e = await editAbility(ctx.campaign, target, patch);
+      if (typeof e === "string") return `Erro: ${e}`;
+      ctx.emit({ type: "state" });
+      ctx.emit({ type: "tool", name, summary: `📚 Biblioteca: ${e.name}${e.name !== target ? ` (era ${target})` : ""} editada` });
+      return `Técnica editada na biblioteca do mundo (vale para todos que a têm): ${libraryLine(ctx.campaign.ruleset, e)}`;
     }
     case "update_ability_progress": {
       const c = await getChar(cid, String(args.character));
-      const ability = c.sheet.abilities.find(
-        (a) => a.name.toLowerCase() === String(args.name).toLowerCase()
-      );
+      const ability = findAbility(c.sheet, String(args.name || ""));
       if (!ability)
-        return `Erro: ${c.name} não possui a habilidade "${args.name}". Use add_ability para criá-la primeiro (com milestones, se aplicável).`;
+        return `Erro: ${c.name} não possui a habilidade "${args.name}". Use add_ability para ligá-la primeiro.`;
       const before = currentMilestone(ability);
       const prevProgress = ability.progress ?? 0;
       if (typeof args.set === "number") ability.progress = args.set;
@@ -872,7 +912,7 @@ export async function executeGmTool(
       const existing = c.sheet.inventory.find(
         (i) => i.name.toLowerCase() === String(args.name).toLowerCase()
       );
-      const lib = existing ? null : await findLibrary(cid, "item", String(args.name));
+      const lib = existing ? null : await findLibrary(ctx.campaign, "item", String(args.name));
       if (existing) existing.qty += qty;
       else
         c.sheet.inventory.push({
@@ -888,7 +928,7 @@ export async function executeGmTool(
     case "search_library": {
       const kind = args.kind === "item" ? "item" : "ability";
       const query = args.query ? String(args.query).trim() : "";
-      const list = await listLibrary(cid, kind, { query, limit: query ? 15 : 300 });
+      const list = await listLibrary(ctx.campaign, kind, { query, limit: query ? 15 : 300 });
       if (!list.length) return query ? `Nada na biblioteca com "${query}".` : "A biblioteca ainda não tem nada desse tipo.";
       if (!query) return `${list.length} na biblioteca: ${list.map((e) => e.name).join(", ")}`;
       return list.map((e) => `- ${libraryLine(ctx.campaign.ruleset, e)}`).join("\n");
@@ -994,7 +1034,7 @@ export async function executeGmTool(
          VALUES ($1,'npc',$2,TRUE,$3,$4,$5)
          ON CONFLICT (campaign_id, name) DO UPDATE SET active = TRUE
          RETURNING *, (xmax = 0) AS inserted`,
-        [cid, String(args.name), !!args.canon, JSON.stringify(sheet), JSON.stringify(persona)]
+        [cid, String(args.name), !!args.canon, JSON.stringify(dehydrateSheet(sheet)), JSON.stringify(persona)]
       );
       ctx.emit({ type: "state" });
       if (!npc.inserted) {

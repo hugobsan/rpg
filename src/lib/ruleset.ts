@@ -54,6 +54,9 @@ export function normalizeRuleset(input: unknown): Ruleset {
   r.ranks = Array.isArray(r.ranks) ? r.ranks : [];
   r.extraFields = Array.isArray(r.extraFields) ? r.extraFields : [];
   // campos de habilidade opcionais (rulesets antigos não têm)
+  const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  r.world = text(r.world);
+  r.abilityNaming = text(r.abilityNaming);
   r.abilitiesLabel = typeof r.abilitiesLabel === "string" && r.abilitiesLabel.trim() ? r.abilitiesLabel : "Habilidades";
   const ac = r.abilityCosts;
   r.abilityCosts = ac && typeof ac.resource === "string" && ac.byRank && typeof ac.byRank === "object" ? ac : undefined;
@@ -83,11 +86,11 @@ export function blankSheet(ruleset: Ruleset): Sheet {
   };
 }
 
-/** Custo efetivo: o da habilidade ou, sem ele, o padrão do rank no ruleset. */
+/** Custo base: 0 se a técnica não gasta recurso; senão o do rank no ruleset (o custo depende da mesa, não da biblioteca). */
 export function abilityCost(r: Ruleset, a: Ability): { resource: string; amount: number } | null {
-  if (a.cost) return a.cost;
-  const amount = a.rank ? r.abilityCosts?.byRank[a.rank] : undefined;
-  return amount === undefined ? null : { resource: r.abilityCosts!.resource, amount };
+  if (!r.abilityCosts) return null; // mesa sem custo de habilidade
+  const amount = a.costFree ? 0 : a.rank ? r.abilityCosts.byRank[a.rank] : undefined;
+  return amount === undefined ? null : { resource: r.abilityCosts.resource, amount };
 }
 
 /** "D=3, C=6, ..." na ordem de abilityRanks (o JSONB do Postgres reordena as chaves). */
@@ -118,7 +121,7 @@ export function abilityPromptLine(r: Ruleset, a: Ability, textMax = Infinity): s
     `domínio ${mastery(a)}% (+${masteryBonus(r, a)} no teste)`,
     cost &&
       (cost.amount || cost.base
-        ? `custo ${cost.amount} ${cost.resource}${adj ? ` (base ${cost.base}${a.cost ? "" : " do rank"}, ${adj})` : a.cost ? "" : " (padrão do rank)"}`
+        ? `custo ${cost.amount} ${cost.resource}${adj ? ` (base ${cost.base} do rank, ${adj})` : " (padrão do rank)"}`
         : "sem custo"),
     a.damage && `dano ${a.damage}`,
   ].filter(Boolean);
@@ -166,6 +169,7 @@ export function rulesetPromptSummary(r: Ruleset): string {
     lines.push(
       `Custo padrão de habilidade por rank (${r.abilityCosts.resource}): ${costsByRankText(r)}`
     );
+  if (r.abilityNaming) lines.push(`Padrão de nomes das habilidades: ${r.abilityNaming}`);
   const kits = r.ranks
     .filter((k) => r.startingAbilities?.[k.key]?.length)
     .map((k) => `${k.label}: ${r.startingAbilities![k.key].map((a) => a.name).join(", ")}`);

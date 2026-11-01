@@ -124,9 +124,13 @@ export function raiseBlocked(r: Ruleset, s: Sheet, key: string, to: number): str
 
 // ---------- uso e treino ----------
 
+// sem acento nem caixa: o nome no padrão do mundo tem mácrons (Gōkakyū) que o Mestre nem sempre escreve
+const fold = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
+
+/** Habilidade da ficha (hidratada) pelo nome ou pela tradução; a removida da biblioteca continua valendo. */
 export function findAbility(s: Sheet, name: string): Ability | undefined {
-  const n = name.trim().toLowerCase();
-  return s.abilities.find((a) => a.name.toLowerCase() === n);
+  const n = fold(name);
+  return s.abilities.find((a) => fold(a.name) === n || (!!a.translation && fold(a.translation) === n));
 }
 
 /** Atributo do teste: override > mapa do ruleset > atributo de mesma key do tipo > primeiro atributo. */

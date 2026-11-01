@@ -86,6 +86,12 @@ const inv = stateToasts(
 );
 assert.deepEqual(inv, [{ kind: "info", title: "Inventário", text: "+2 kunai · −1 Pergaminho · +1 Bandana" }]);
 
+// habilidade aprendida: por ref (renomear na biblioteca não é aprender); sem ref, por nome
+const jutsu = (name: string, ref?: number) => ({ name, type: "ninjutsu", ref });
+assert.deepEqual(stateToasts(view({ player: { abilities: [jutsu("Kawarimi", 1)] } }), view({ player: { abilities: [jutsu("Kawarimi no Jutsu", 1), jutsu("Chidori", 2)] } })),
+  [{ kind: "sucesso", title: "Aprendeu", text: "Chidori" }]);
+assert.deepEqual(stateToasts(view({ player: { abilities: [jutsu("Kawarimi")] } }), view({ player: { abilities: [jutsu("kawarimi")] } })), []);
+
 const kakashi = char("n1", "npc", "Kakashi");
 const iruka = char("n2", "npc", "Iruka");
 const cast = stateToasts(view({ npcs: [kakashi, { ...iruka, active: false }] }), view({ npcs: [{ ...kakashi, active: false }, iruka, char("n3", "npc", "Gai")] }));

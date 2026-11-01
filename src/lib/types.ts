@@ -60,6 +60,10 @@ export interface TrainingRules {
 export interface Ruleset {
   name: string;
   description: string;
+  /** Slug do tipo de campanha (ex.: "naruto"): escopo da biblioteca. Ler sempre por worldOf (library.ts) */
+  world?: string;
+  /** Padrão de nomes das habilidades, para o Criador e o Mestre (ex.: romanização oficial + translation) */
+  abilityNaming?: string;
   /** Tema visual (chave de THEMES em theme.ts). Sem ele, o tema é inferido pelo nome */
   theme?: string;
   /** Instruções de tom/lore/cânone injetadas no prompt do Mestre */
@@ -97,7 +101,7 @@ export interface Ruleset {
   progressionNotes?: string;
   /** Nome da aba/seção de habilidades na UI (ex: "Jutsus"). Padrão: "Habilidades" */
   abilitiesLabel?: string;
-  /** Custo padrão por rank de habilidade, usado quando a habilidade não tem custo próprio */
+  /** Custo por rank de habilidade (a habilidade não tem custo próprio; costFree = 0) */
   abilityCosts?: { resource: string; byRank: Record<string, number> };
   /** Kit que todo personagem sabe ao atingir cada rank (key de RankDef). Cumulativo: um rank inclui os anteriores */
   startingAbilities?: Record<string, Ability[]>;
@@ -112,23 +116,24 @@ export interface AbilityMilestone {
   description: string;
 }
 
-export interface Ability {
-  name: string;
-  type: string; // key de AbilityTypeDef
-  rank?: string; // opcional: nível amplo (D/C/B/A/S) para habilidades simples
-  description?: string;
+/**
+ * Habilidade em memória: a entrada da biblioteca hidratada (hydrateSheet em library.ts) + o que é do personagem.
+ * Sem ref = formato antigo (cópia na ficha), mantido como está até a migração. Não há custo próprio: vem do
+ * rank (abilityCost); um `cost` que ainda venha no formato antigo é ignorado.
+ */
+export interface Ability extends LibraryAbility {
+  /** library.id */
+  ref?: number;
   /** 0-100: domínio/aprendizado desta habilidade especificamente (não do personagem) */
   progress?: number;
-  /** marcos de capacidade por nível de domínio, ordenados por threshold crescente */
-  milestones?: AbilityMilestone[];
-  /** custo por uso; sem ele, vale o padrão do rank (Ruleset.abilityCosts). amount 0 = sem custo */
-  cost?: { resource: string; amount: number };
-  /** o que a habilidade faz em jogo (alcance, duração, teste) */
-  effect?: string;
-  /** dano em notação de dado, ex: "2d6" */
-  damage?: string;
-  /** requisitos: selos, elemento, kekkei genkai, outra habilidade */
-  requirements?: string;
+  /** a entrada foi excluída da biblioteca (soft delete); quem já tinha continua tendo */
+  removed?: true;
+}
+
+/** Habilidade como fica gravada em characters.sheet.abilities (e nos turn_snapshots). */
+export interface StoredAbility {
+  ref: number;
+  progress?: number;
 }
 
 export interface Item {
@@ -152,6 +157,9 @@ export interface Sheet {
   /** treino e ganho de domínio do dia do jogo atual (zera quando o dia muda) */
   trainingLog?: { day: number; hours: number; mastery: Record<string, number> };
 }
+
+/** Ficha como fica gravada (dehydrateSheet): habilidades só com ref; sem ref só no formato antigo. */
+export type StoredSheet = Omit<Sheet, "abilities"> & { abilities: (StoredAbility | Ability)[] };
 
 export interface Persona {
   appearance?: string;
@@ -349,14 +357,32 @@ export interface Job {
   error: string | null;
 }
 
-// ---------- Biblioteca da campanha (tabela library) ----------
+// ---------- Biblioteca do mundo (tabela library) ----------
 
 export type LibraryKind = "ability" | "item";
 
-/** Habilidade da biblioteca: a mesma forma da ficha, sem o domínio (que é de quem aprende). */
-export type LibraryAbility = Omit<Ability, "progress"> & {
+/** Habilidade da biblioteca: só o que é da técnica (não varia com quem usa nem com a mesa; o custo vem do rank). */
+export interface LibraryAbility {
+  name: string; // no padrão do mundo (Ruleset.abilityNaming)
+  /** tradução para exibição (Naruto: em português); não entra na busca */
+  translation?: string;
+  type: string; // key de AbilityTypeDef
+  rank?: string; // D/C/B/A/S
+  /** não gasta recurso (taijutsu, armas, ofícios) */
+  costFree?: boolean;
+  description?: string;
+  /** o que a habilidade faz em jogo (alcance, duração, teste) */
+  effect?: string;
+  /** dano em notação de dado, ex: "2d6" */
+  damage?: string;
+  /** requisitos: selos, elemento, kekkei genkai, outra habilidade */
+  requirements?: string;
+  /** marcos de capacidade por nível de domínio, ordenados por threshold crescente (o progresso é de cada um) */
+  milestones?: AbilityMilestone[];
   users?: string; // quem é conhecido por usar (cânone), ex.: "Clã Uchiha, Kakashi"
-};
+  /** registrada sem o Criador (só com o que o Mestre passou): falta completar com edit_ability */
+  incomplete?: boolean;
+}
 
 /** Item/ferramenta/equipamento da biblioteca. Vai para o inventário como { name, qty, description }. */
 export interface LibraryItem {
@@ -370,11 +396,14 @@ export interface LibraryItem {
 
 export interface LibraryEntry {
   id: number;
+  world: string;
   kind: LibraryKind;
   name: string;
   data: LibraryAbility | LibraryItem;
   canon: boolean;
   source: "agent" | "gm";
+  /** excluída (soft delete): só aparece na leitura por id (getLibraryByIds) */
+  deleted?: boolean;
 }
 
 // ---------- Agentes ----------

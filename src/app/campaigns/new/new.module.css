@@ -163,6 +163,7 @@
 .addBox summary { cursor: pointer; padding: var(--s-3) 0; color: var(--accent); font-size: 13.5px; font-weight: 500; }
 .formGrid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: var(--s-2) var(--s-3); }
 .formGrid2 { display: grid; grid-template-columns: 1fr 2fr; gap: var(--s-2) var(--s-3); }
+.inlineCheck { display: flex; align-items: center; gap: 6px; min-height: 36px; color: var(--text); }
 .personaGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--s-4); }
 .extraGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 0 var(--s-4); }
 @media (max-width: 640px) { .formGrid, .formGrid2, .personaGrid { grid-template-columns: 1fr; } }

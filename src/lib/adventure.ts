@@ -40,7 +40,7 @@ const KEYS: (keyof Ruleset)[] = [
   "name", "description", "theme", "loreNotes", "canonBased", "startingPoint", "attributes", "resources",
   "abilityTypes", "abilityRanks", "ranks", "powerLevels", "masteryBonus", "masteryCost", "xpPerAttributePoint",
   "attributeMultiplier", "abilityAttributes", "training", "creationPoints", "extraFields", "diceNotes",
-  "progressionNotes", "abilitiesLabel", "abilityCosts", "startingAbilities",
+  "progressionNotes", "abilitiesLabel", "abilityCosts", "startingAbilities", "abilityNaming",
 ];
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -171,7 +171,7 @@ export function draftIssues(d: Draft): string[] {
     const mapped = d.abilityAttributes?.[t];
     if (mapped ? !attrs.includes(mapped) : !attrs.includes(t)) out.push(`abilityAttributes: tipo "${t}" sem atributo de teste válido`);
   }
-  // kit: o primeiro cargo tem kit; cada habilidade com tipo, rank e custo que existem
+  // kit: o primeiro cargo tem kit; cada habilidade com tipo e rank que existem; custo vem do rank (só costFree)
   if (cargos[0] && !(d.startingAbilities?.[cargos[0]]?.length)) out.push(`startingAbilities: falta o kit do primeiro cargo "${cargos[0]}"`);
   for (const [k, list] of Object.entries(d.startingAbilities || {})) {
     if (!cargos.includes(k)) out.push(`startingAbilities: "${k}" não é key de ranks`);
@@ -180,7 +180,8 @@ export function draftIssues(d: Draft): string[] {
       if (!str(a?.name)) out.push(`startingAbilities.${k}: habilidade sem name`);
       if (!types.includes(a?.type)) out.push(`startingAbilities.${k}.${n}: type "${a?.type}" não está em abilityTypes`);
       if (a?.rank !== undefined && !ranks.includes(a.rank)) out.push(`startingAbilities.${k}.${n}: rank "${a.rank}" não está em abilityRanks`);
-      if (a?.cost && (!res.includes(a.cost.resource) || !num(a.cost.amount))) out.push(`startingAbilities.${k}.${n}: cost {resource de resources, amount número}`);
+      if (a?.costFree !== undefined && typeof a.costFree !== "boolean") out.push(`startingAbilities.${k}.${n}: costFree é true ou false`);
+      if ("cost" in Object(a)) out.push(`startingAbilities.${k}.${n}: sem cost (o custo vem do rank); use costFree: true se não gasta recurso`);
     }
   }
   for (const f of ["masteryBonus", "masteryCost"] as const) {

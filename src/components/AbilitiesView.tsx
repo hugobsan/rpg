@@ -49,7 +49,7 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
   const typeLabel = (k: string) => ruleset.abilityTypes.find((t) => t.key === k)?.label || k;
   const qf = fold(query.trim());
   const shown = abilities.filter((a) => (!rank || rankOf(a) === rank) && (!type || a.type === type) &&
-    (!qf || fold(`${a.name} ${a.effect ?? ""} ${a.description ?? ""}`).includes(qf)));
+    (!qf || fold(`${a.name} ${a.translation ?? ""} ${a.effect ?? ""} ${a.description ?? ""}`).includes(qf)));
   const filterRow = (
     title: string,
     opts: string[],
@@ -76,16 +76,20 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
     const bonus = masteryBonus(ruleset, a);
     const adj = cost?.base ? costAdjustText(cost.mult) : "";
     const marks = [...(a.milestones || [])].sort((x, y) => x.threshold - y.threshold);
-    const isOpen = open.has(a.name);
+    const key = String(a.ref ?? a.name);
+    const isOpen = open.has(key);
     return (
-      <article key={a.name} className={s.item} style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}>
+      <article key={key} className={s.item} style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}>
         <div className={s.top}>
           <Ring value={progress} estimated={a.progress === undefined} />
-          <button type="button" className={s.title} aria-expanded={isOpen} onClick={() => toggle(a.name)}>
+          <button type="button" className={s.title} aria-expanded={isOpen} onClick={() => toggle(key)}>
             <h4 className={s.name}>{a.name}</h4>
+            {a.translation && <span className={s.tr}>{a.translation}</span>}
             <div className={s.meta}>
               {a.rank && <span className={s.rank}>{a.rank}</span>}
               <span>{typeLabel(a.type)}</span>
+              {a.removed && <span className="pill err" data-tip="Saiu da biblioteca do mundo; continua na ficha">fora da biblioteca</span>}
+              {a.incomplete && <span className={`pill ${s.warn}`} data-tip="Registrada às pressas; o Mestre completa o efeito e os detalhes">incompleta</span>}
             </div>
           </button>
           {onUse && (

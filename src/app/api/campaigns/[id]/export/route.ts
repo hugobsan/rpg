@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
 import { getCampaign } from "@/lib/engine";
+import { hydrateSheets } from "@/lib/library";
+import type { StoredSheet } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +23,8 @@ export async function GET(
     });
   }
   const [characters, scenes, messages, memories] = await Promise.all([
-    q(`SELECT kind, name, active, canon, sheet, persona, voice FROM characters WHERE campaign_id = $1`, [id]),
+    // habilidades hidratadas: a exportação sai autocontida (sem depender da biblioteca)
+    q<{ sheet: StoredSheet }>(`SELECT kind, name, active, canon, sheet, persona, voice FROM characters WHERE campaign_id = $1`, [id]).then(hydrateSheets),
     q(`SELECT seq, mode, title, location, summary FROM scenes WHERE campaign_id = $1 ORDER BY seq`, [id]),
     q(`SELECT role, speaker, content, meta, created_at::text FROM messages WHERE campaign_id = $1 ORDER BY id`, [id]),
     q(`SELECT kind, subject, content, importance, created_at::text FROM memories WHERE campaign_id = $1 ORDER BY id`, [id]),

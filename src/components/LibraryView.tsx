@@ -6,6 +6,7 @@ import Loader from "./ui/Loader";
 import Skeleton from "./ui/Skeleton";
 import SearchBox, { fold } from "./ui/SearchBox";
 import { toast } from "./ui/Toast";
+import { abilityCost } from "@/lib/ruleset";
 import p from "./SidePanels.module.css";
 import a from "./AbilitiesView.module.css";
 import s from "./LibraryView.module.css";
@@ -15,7 +16,7 @@ type Data = LibraryAbility & LibraryItem;
 
 /**
  * Aba Biblioteca: técnicas e itens do mundo (cânone ou originais) que o Mestre e o Criador de
- * personagens usam. Busca, filtros, detalhe, excluir e "Gerar em segundo plano" (Criador de habilidades/itens).
+ * personagens usam. Busca, filtros, detalhe, tirar da biblioteca (some só daqui; as fichas continuam) e "Gerar em segundo plano" (Criador de habilidades/itens).
  */
 export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
   campaignId: string;
@@ -35,7 +36,6 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
   const [focus, setFocus] = useState("");
   const [canon, setCanon] = useState(ruleset.canonBased);
   const [sending, setSending] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [genError, setGenError] = useState("");
 
   const libJobs = jobs.filter((j) => j.kind === "library");
@@ -68,7 +68,7 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
   const shown = entries.filter((e) => {
     const d = e.data as Data;
     return (!type || typeOf(e) === type) && (!rank || d.rank === rank) &&
-      (!qf || fold(`${e.name} ${d.description ?? ""} ${d.effect ?? ""} ${d.users ?? ""}`).includes(qf));
+      (!qf || fold(`${e.name} ${d.translation ?? ""} ${d.description ?? ""} ${d.effect ?? ""} ${d.users ?? ""}`).includes(qf));
   });
   const running = libJobs.filter((j) => j.status === "running" && j.target?.startsWith(`${kind}:`));
   const what = kind === "ability" ? label.toLowerCase() : "itens";
@@ -96,25 +96,6 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
     }
   };
 
-  // sem IA: as habilidades que já estão nas fichas (jogador e NPCs) entram com quem usa
-  const fromSheets = async () => {
-    setImporting(true);
-    const res = await fetch(`/api/campaigns/${campaignId}/library`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ from: "sheets" }),
-    }).catch(() => null);
-    const data = res && (await res.json().catch(() => ({})));
-    setImporting(false);
-    if (!res?.ok) return toast(data?.error || "Tente de novo.", { kind: "alerta", title: "Não deu para trazer das fichas" });
-    toast(data.added.length ? data.added.join(", ") : "Todas já estavam aqui.", {
-      kind: data.added.length ? "sucesso" : "info",
-      title: `${data.added.length} de ${data.total} vieram das fichas`,
-    });
-    setLib(null);
-    fetch(`/api/campaigns/${campaignId}/library`).then((r) => r.json()).then(setLib).catch(() => {});
-  };
-
   // otimista: sai da lista na hora; se o DELETE falhar, volta para o mesmo lugar com aviso
   const remove = async (e: LibraryEntry) => {
     const k = kind;
@@ -129,9 +110,9 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
         next.splice(at < 0 ? next.length : Math.min(at, next.length), 0, e);
         return { ...l, [k]: next };
       });
-      return toast("Tente de novo.", { kind: "alerta", title: `Não deu para excluir ${e.name}` });
+      return toast("Tente de novo.", { kind: "alerta", title: `Não deu para tirar ${e.name}` });
     }
-    toast("Fichas que já têm continuam iguais.", { title: `${e.name} saiu da biblioteca` });
+    toast("Quem já tem continua tendo.", { title: `${e.name} saiu da biblioteca deste mundo` });
   };
 
   const filterRow = (title: string, opts: string[], value: string | null, set: (v: string | null) => void, get: (e: LibraryEntry) => string | undefined, show: (o: string) => string) =>
@@ -148,9 +129,7 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
 
   const entry = (e: LibraryEntry, i: number) => {
     const d = e.data as Data;
-    const cost = d.cost ?? (kind === "ability" && d.rank && ruleset.abilityCosts?.byRank[d.rank] !== undefined
-      ? { resource: ruleset.abilityCosts.resource, amount: ruleset.abilityCosts.byRank[d.rank] }
-      : undefined);
+    const cost = kind === "ability" ? abilityCost(ruleset, d) : null;
     const marks = d.milestones ?? [];
     return (
       <details key={e.id} className={`${p.card} ${s.entry}`} style={{ animationDelay: `${Math.min(i, 8) * 25}ms` }}
@@ -158,10 +137,12 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
         <summary>
           <div className={p.grow}>
             <div className={p.title}>{e.name}</div>
+            {d.translation && <div className={a.tr}>{d.translation}</div>}
             <div className={s.meta}>
               {d.rank && <span className={a.rank}>{d.rank}</span>}
               {typeOf(e) && <span>{typeLabel(typeOf(e))}</span>}
               {!e.canon && <span className={p.chip}>original</span>}
+              {d.incomplete && <span className={`${p.chip} ${a.warn}`} data-tip="Registrada às pressas; o Mestre completa o efeito e os detalhes">incompleta</span>}
             </div>
           </div>
           <Icon name="chevron" size={16} className={s.chev} />
@@ -170,7 +151,7 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
           {(cost || d.damage) && (
             <div className={a.stats}>
               {cost && (
-                <span className={a.stat} title={d.cost ? "Custo por uso" : "Custo padrão do rank"}>
+                <span className={a.stat} data-tip={d.costFree ? "Não gasta recurso" : "Custo base do rank; varia com o domínio de quem usa"}>
                   <span className={a.statK}>custo</span>
                   {cost.amount ? <span><b className="num">{cost.amount}</b> {resLabel(cost.resource)}</span> : <span>livre</span>}
                 </span>
@@ -189,14 +170,14 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
           )}
           {confirming === e.id ? (
             <div className={p.actions}>
-              <span className={p.sub}>Excluir {e.name} da biblioteca? Fichas que já têm continuam iguais.</span>
-              <button className="btn danger small" onClick={() => remove(e)}>Excluir</button>
+              <span className={p.sub}>Tirar {e.name} da biblioteca? Sai da biblioteca deste mundo; quem já tem continua tendo.</span>
+              <button className="btn danger small" onClick={() => remove(e)}>Tirar</button>
               <button className="btn ghost small" onClick={() => setConfirming(null)}>Cancelar</button>
             </div>
           ) : (
             <div className={s.foot}>
-              <span className="faint">{e.canon ? "Do cânone" : "Original desta campanha"} · {e.source === "gm" ? "registrada no jogo" : "Criador"}</span>
-              <button className="btn ghost small" onClick={() => setConfirming(e.id)}>Excluir</button>
+              <span className="faint">{e.canon ? "Do cânone" : "Original"} · {e.source === "gm" ? "registrada no jogo" : "Criador"}</span>
+              <button className="btn ghost small" onClick={() => setConfirming(e.id)}>Tirar da biblioteca</button>
             </div>
           )}
         </div>
@@ -207,7 +188,7 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
   return (
     <div className={p.wrap}>
       <p className={p.note}>
-        {label} e itens do mundo. O Mestre consulta antes de inventar, e o que ele registra de novo também fica aqui.
+        {label} e itens deste mundo, compartilhados entre as campanhas dele. O Mestre consulta antes de inventar, e o que ele registra de novo também fica aqui.
       </p>
       <div className={s.seg} role="group" aria-label="Seção da biblioteca">
         {(["ability", "item"] as const).map((k) => (
@@ -245,13 +226,6 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
           {genError && <div className="error-box" style={{ flex: "1 1 100%" }}>{genError}</div>}
         </form>
       </details>
-
-      {kind === "ability" && (
-        <button className={`btn ghost small ${s.fromSheets}`} onClick={fromSheets} disabled={importing}
-          title="Copia para cá, sem IA, as que você e os NPCs já têm na ficha">
-          {importing ? <Loader size={14} label="Copiando" /> : <Icon name="sheet" size={14} />} Trazer das fichas
-        </button>
-      )}
 
       {running.map((j) => (
         <div key={j.id} className={s.job} aria-live="polite">

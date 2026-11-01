@@ -205,18 +205,35 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS jobs_campaign_idx ON jobs (campaign_id, id DESC);
 
--- biblioteca da campanha: habilidades e itens do mundo/cânone, fonte para criar personagens e registrar técnicas
+-- biblioteca do mundo (tipo de campanha, Ruleset.world): habilidades e itens, fonte única das fichas
+-- (characters.sheet.abilities guarda só { ref: library.id, progress }). Compartilhada por todas as campanhas
+-- do mundo; campaign_id só registra onde a entrada nasceu. Excluir = deleted_at (as fichas continuam apontando).
 CREATE TABLE IF NOT EXISTS library (
   id BIGSERIAL PRIMARY KEY,
-  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  world TEXT NOT NULL,  -- worldOf(campaign) em library.ts
+  campaign_id UUID REFERENCES campaigns(id) ON DELETE SET NULL,
   kind TEXT NOT NULL,   -- ability | item
   name TEXT NOT NULL,
   data JSONB NOT NULL DEFAULT '{}', -- LibraryAbility | LibraryItem (types.ts)
   canon BOOLEAN NOT NULL DEFAULT FALSE,
   source TEXT NOT NULL DEFAULT 'agent', -- agent (Criador) | gm (registrada no jogo)
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at TIMESTAMPTZ
 );
-CREATE UNIQUE INDEX IF NOT EXISTS library_name_idx ON library (campaign_id, kind, lower(name));
+-- banco de antes do escopo por mundo: world entra sem NOT NULL porque as linhas antigas ainda não têm mundo;
+-- scripts/library-migration.ts preenche e aplica o NOT NULL
+ALTER TABLE library ADD COLUMN IF NOT EXISTS world TEXT;
+ALTER TABLE library ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE library ALTER COLUMN campaign_id DROP NOT NULL;
+DO $$ BEGIN
+  -- a FK antiga apagava a biblioteca junto com a campanha (CASCADE); troca só se ainda for a antiga
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'library_campaign_id_fkey' AND confdeltype <> 'n') THEN
+    ALTER TABLE library DROP CONSTRAINT library_campaign_id_fkey;
+    ALTER TABLE library ADD CONSTRAINT library_campaign_id_fkey FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+DROP INDEX IF EXISTS library_name_idx; -- era único por campanha
+CREATE UNIQUE INDEX IF NOT EXISTS library_world_name_idx ON library (world, kind, lower(name)) WHERE deleted_at IS NULL;
 
 -- Criador de aventuras: a entrevista (mensagens) e o ruleset parcial, para retomar depois de um refresh
 CREATE TABLE IF NOT EXISTS adventure_drafts (

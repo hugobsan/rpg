@@ -9,6 +9,7 @@ import { db, q } from "./db";
  * feita depois do turno também é desfeita (falas, memórias novas e mudanças nas fichas).
  * Diretrizes da conversa fora do jogo, regras da mesa e tema ficam (não são estado da história).
  */
+// fichas no formato gravado (abilities = { ref, progress }): salvar e restaurar copiam a linha crua, sem hidratar
 interface Snapshot {
   characters: Record<string, unknown>[];
   scenes: Record<string, unknown>[];

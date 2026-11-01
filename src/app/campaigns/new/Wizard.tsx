@@ -59,7 +59,6 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
   const [extraAbilities, setExtraAbilities] = useState<Ability[]>([]);
   const blankAbility = (): Ability => ({ name: "", type: "", description: "", effect: "", damage: "", requirements: "" });
   const [draft, setDraft] = useState<Ability>(blankAbility());
-  const [draftCost, setDraftCost] = useState(""); // vazio = padrão do rank
 
   // extras
   const [initialNpcs, setInitialNpcs] = useState("");
@@ -119,13 +118,11 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
   const addExtra = () => {
     if (!ruleset || !draft.name.trim()) return;
     const type = draft.type || ruleset.abilityTypes[0]?.key || "geral";
-    const resource = ruleset.abilityCosts?.resource || ruleset.resources[0].key;
     const a: Ability = { ...draft, name: draft.name.trim(), type };
-    if (draftCost.trim() !== "" && !Number.isNaN(Number(draftCost))) a.cost = { resource, amount: Number(draftCost) };
+    if (!a.costFree) delete a.costFree;
     for (const k of ["rank", "description", "effect", "damage", "requirements"] as const) if (!a[k]?.trim()) delete a[k];
     setExtraAbilities([...extraAbilities.filter((x) => x.name.toLowerCase() !== a.name.toLowerCase()), a]);
     setDraft(blankAbility());
-    setDraftCost("");
   };
 
   const create = async () => {
@@ -406,12 +403,18 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
                       {ruleset.abilityRanks.map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
                   </label>
-                  <label className="field">
-                    <span>Custo ({ruleset.resources.find((r) => r.key === (ruleset.abilityCosts?.resource || ruleset.resources[0].key))?.label})</span>
-                    <input type="number" min={0} value={draftCost}
-                      placeholder={draft.rank && ruleset.abilityCosts?.byRank[draft.rank] !== undefined ? `${ruleset.abilityCosts.byRank[draft.rank]} (rank)` : ""}
-                      onChange={(e) => setDraftCost(e.target.value)} />
-                  </label>
+                  {ruleset.abilityCosts && (
+                    <label className="field">
+                      <span>Custo</span>
+                      <div className={s.inlineCheck}>
+                        <input type="checkbox" checked={!!draft.costFree} onChange={(e) => setDraft({ ...draft, costFree: e.target.checked })} />
+                        Não gasta recurso
+                      </div>
+                      {!draft.costFree && (
+                        <small className="faint">{draft.rank ? `Padrão do rank: ${costText(draft) || "não definido"}` : "Sem rank, sem custo padrão"}</small>
+                      )}
+                    </label>
+                  )}
                 </div>
                 <label className="field"><span>Efeito (o que faz em jogo)</span>
                   <input type="text" value={draft.effect || ""} onChange={(e) => setDraft({ ...draft, effect: e.target.value })} />

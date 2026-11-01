@@ -18,6 +18,7 @@ import {
 import { decideCast, decideElapsed, decideMoved, decideTurn, scoreImportance } from "./decisions";
 import { attributeCap, attributePoints, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
+import { hydrateSheets } from "./library";
 import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { getStage, loadMap, mapPromptBlock, normName } from "./map";
 import { getTable, modeHint, tablePromptBlock, xpRuleText } from "./table";
@@ -65,10 +66,10 @@ export async function getCurrentScene(campaignId: string): Promise<Scene> {
   return created[0];
 }
 
+/** Personagens da campanha com as habilidades hidratadas pela biblioteca (gravar de volta só com dehydrateSheet). */
 export async function getCharacters(campaignId: string): Promise<Character[]> {
-  return q<Character>(
-    `SELECT * FROM characters WHERE campaign_id = $1 ORDER BY kind DESC, name`,
-    [campaignId]
+  return hydrateSheets(
+    await q<Character>(`SELECT * FROM characters WHERE campaign_id = $1 ORDER BY kind DESC, name`, [campaignId])
   );
 }
 
@@ -114,6 +115,8 @@ export function sheetSummary(c: Character, full: boolean, rs: Ruleset, compact =
             const next = nextMilestone(a);
             if (cur) line += ` — atual: ${cur.description}`;
             if (next) line += ` | próximo marco aos ${next.threshold}%: ${next.description}`;
+            if (a.incomplete) line += ` [INCOMPLETA na biblioteca: complete com edit_ability]`;
+            if (a.removed) line += ` [saiu da biblioteca]`;
             return line;
           })
           .join("\n")
@@ -174,7 +177,7 @@ async function buildGmSystem(
     `\n====== CAMPANHA: ${campaign.name} ======`,
     STYLE_INSTRUCTIONS[campaign.style] || STYLE_INSTRUCTIONS.hybrid,
     `\n--- MECÂNICA ---\n${rulesetPromptSummary(campaign.ruleset)}`,
-    "Biblioteca do mundo: técnicas e itens já criados (search_library). add_ability só precisa de personagem, nome e brief: a técnica vem da biblioteca ou o Criador de habilidades a cria completa (tipo, rank, custo, efeito, dano, marcos); não invente esses números.",
+    "Biblioteca do mundo: técnicas e itens já criados (search_library). add_ability só precisa de personagem, nome e brief: a técnica vem da biblioteca ou o Criador de habilidades a cria completa (tipo, rank, efeito, dano, marcos; o custo vem do rank); não invente esses números.",
     "Ao abrir cena nova ou mudar de local (set_scene), informe present com todos os NPCs que estão lá: quem ficar de fora sai de cena.",
     "search_history busca no chat inteiro da campanha (turnos e conversas com NPCs, com dia, hora e local): use para lembrar exatamente o que alguém disse ou fez, ou detalhes antigos que não viraram memória.",
     "O estado do turno (cena, hora, personagens, memórias) chega numa mensagem de contexto logo antes da ação do jogador.",

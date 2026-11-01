@@ -3,7 +3,9 @@ import { q } from "@/lib/db";
 import { blankSheet, normalizeRuleset, startingKit } from "@/lib/ruleset";
 import { generateScript, getCampaign } from "@/lib/engine";
 import { EXTRA_MASTERY } from "@/lib/progression";
-import { Ability, Campaign, Persona } from "@/lib/types";
+import { dehydrateSheet, ensureLibraryAbility } from "@/lib/library";
+import { slugKey } from "@/lib/table";
+import { Ability, Campaign, Persona, StoredAbility, StoredSheet } from "@/lib/types";
 import { THEMES } from "@/lib/theme";
 import { listCampaigns } from "@/app/(home)/campaignList";
 
@@ -41,6 +43,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   const ruleset = normalizeRuleset(body.ruleset);
+  ruleset.world ||= slugKey(ruleset.name); // escopo da biblioteca (igual ao worldOf), fixo desde a criação
 
   const rows = await q<Campaign>(
     `INSERT INTO campaigns (name, style, ruleset, state) VALUES ($1,$2,$3,$4) RETURNING *`,
@@ -60,15 +63,20 @@ export async function POST(req: NextRequest) {
   const sheet = blankSheet(ruleset);
   if (body.character.attributes) Object.assign(sheet.attributes, body.character.attributes);
   if (body.character.extra) Object.assign(sheet.extra, body.character.extra);
-  // kit do rank inicial + extras da tela (extra com mesmo nome substitui o do kit)
-  const abilities = new Map(startingKit(ruleset, sheet.rank).map((a) => [a.name.toLowerCase(), a]));
-  for (const a of body.character.abilities || [])
-    if (a?.name?.trim() && a.type) abilities.set(a.name.trim().toLowerCase(), {
-        ...a,
-        name: a.name.trim(),
-        progress: typeof a.progress === "number" && Number.isFinite(a.progress) ? Math.max(0, Math.min(100, a.progress)) : EXTRA_MASTERY,
-      });
-  sheet.abilities = [...abilities.values()];
+  // kit do rank inicial + extras da tela entram na biblioteca do mundo (a existente pelo nome, se já há) e a ficha
+  // guarda { ref, progress }; extra que cai na mesma entrada do kit substitui o domínio
+  const abilities = new Map<number, StoredAbility>();
+  for (const a of startingKit(ruleset, sheet.rank)) {
+    const e = await ensureLibraryAbility(campaign, a, "gm", !!ruleset.canonBased);
+    if (e) abilities.set(e.id, { ref: e.id, progress: a.progress });
+  }
+  for (const a of body.character.abilities || []) {
+    if (!a?.name?.trim() || !a.type) continue;
+    const e = await ensureLibraryAbility(campaign, { ...a, name: a.name.trim() }, "gm", false);
+    const progress = typeof a.progress === "number" && Number.isFinite(a.progress) ? Math.max(0, Math.min(100, a.progress)) : EXTRA_MASTERY;
+    if (e) abilities.set(e.id, { ref: e.id, progress });
+  }
+  const stored: StoredSheet = { ...sheet, abilities: [...abilities.values()] };
   const persona: Persona = {
     appearance: body.character.appearance,
     personality: body.character.personality,
@@ -78,7 +86,7 @@ export async function POST(req: NextRequest) {
   const [player] = await q<{ id: string }>(
     `INSERT INTO characters (campaign_id, kind, name, sheet, persona)
      VALUES ($1, 'player', $2, $3, $4) RETURNING id`,
-    [campaign.id, body.character.name.trim(), JSON.stringify(sheet), JSON.stringify(persona)]
+    [campaign.id, body.character.name.trim(), JSON.stringify(dehydrateSheet(stored)), JSON.stringify(persona)]
   );
   await q(
     `INSERT INTO scenes (campaign_id, seq, mode, title, location)

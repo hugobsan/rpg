@@ -18,7 +18,6 @@
 .gen summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--accent); width: fit-content; }
 .gen summary::-webkit-details-marker { display: none; }
 .gen[open] summary { margin-bottom: var(--s-3); }
-.fromSheets { align-self: flex-start; width: fit-content; }
 .form { display: flex; flex-wrap: wrap; gap: var(--s-3) var(--s-2); align-items: flex-end; }
 .form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-dim); }
 .form input[type="text"], .form input[type="number"] { padding: 7px 10px; font-size: 13.5px; }

@@ -3,7 +3,7 @@ import { db, q } from "./db";
 import { getAgent } from "./agents";
 import { chat } from "./openrouter";
 import { startJob } from "./jobs";
-import { ensureAbility, listLibrary } from "./library";
+import { dehydrateSheet, hydrateSheet, linkAbility, listLibrary } from "./library";
 import { rulesetPromptSummary } from "./ruleset";
 import { powerLevels } from "./progression";
 import type { Ability, Campaign, Character, Item, LibraryItem, Persona, Ruleset, Sheet } from "./types";
@@ -28,7 +28,7 @@ export interface Snapshot {
 export interface Draft {
   persona: Partial<Persona>;
   sheet: Partial<Pick<Sheet, "rank" | "xp" | "attributes" | "resources" | "extra" | "inventory">>;
-  /** nome + domínio; a definição própria só vale se a habilidade não estiver (nem puder ir) para a biblioteca */
+  /** do Criador: nome + domínio (+ definição, que só vale como fallback incompleto do linkAbility); depois de createProfile, ligadas à biblioteca (com ref) */
   abilities: Ability[];
 }
 
@@ -88,8 +88,6 @@ export function normalizeDraft(raw: unknown, r: Ruleset): Draft {
   const abilities: Ability[] = list(s.abilities).flatMap((a) => {
     const name = str(a.name, 80)!;
     if (!fresh(name)) return [];
-    const cost = obj(a.cost);
-    const amount = num(cost.amount);
     const milestones = Array.isArray(a.milestones)
       ? a.milestones
           .map(obj)
@@ -107,7 +105,6 @@ export function normalizeDraft(raw: unknown, r: Ruleset): Draft {
         effect: str(a.effect, 600),
         damage: str(a.damage, 40),
         requirements: str(a.requirements, 300),
-        cost: r.resources.some((x) => x.key === cost.resource) && amount !== undefined ? { resource: String(cost.resource), amount: Math.max(0, amount) } : undefined,
         milestones: milestones.length ? milestones : undefined,
       },
     ];
@@ -133,6 +130,12 @@ function byName<T extends { name: string }>(cur: T[] = [], add: T[] = []): T[] {
     out.set(k, { ...a, ...out.get(k) });
   }
   return [...out.values()];
+}
+
+/** Habilidades: identidade é a ref (biblioteca). As da ficha ficam como estão; entram as refs novas. */
+function byRef(cur: Ability[] = [], add: Ability[] = []): Ability[] {
+  const has = new Set(cur.map((a) => a.ref));
+  return [...cur, ...add.filter((a) => !has.has(a.ref) && !!has.add(a.ref))];
 }
 
 /**
@@ -165,7 +168,7 @@ export function mergeProfile(base: Snapshot, cur: Snapshot, d: Draft): Snapshot 
   sheet.extra = perKey(d.sheet.extra, b.sheet.extra, cur.sheet.extra);
   if (d.sheet.rank && untouched(b.sheet.rank, cur.sheet.rank)) sheet.rank = d.sheet.rank;
   if (d.sheet.xp !== undefined && untouched(b.sheet.xp, cur.sheet.xp)) sheet.xp = d.sheet.xp;
-  sheet.abilities = byName(cur.sheet.abilities, d.abilities);
+  sheet.abilities = byRef(cur.sheet.abilities, d.abilities);
   sheet.inventory = byName(cur.sheet.inventory, d.sheet.inventory);
   return { sheet, persona };
 }
@@ -180,12 +183,13 @@ export async function applyProfile(id: string, base: Snapshot, d: Draft): Promis
   const client = await (await db()).connect();
   try {
     await client.query("BEGIN");
+    // ficha crua (abilities = { ref, progress }): o merge junta por ref e grava desidratada
     const { rows } = await client.query<Snapshot>(`SELECT sheet, persona FROM characters WHERE id = $1 FOR UPDATE`, [id]);
     if (rows[0]) {
       const m = mergeProfile(base, rows[0], d);
       await client.query(`UPDATE characters SET sheet = $2, persona = $3, updated_at = now() WHERE id = $1`, [
         id,
-        JSON.stringify(m.sheet),
+        JSON.stringify(dehydrateSheet(m.sheet)),
         JSON.stringify(m.persona),
       ]);
     }
@@ -219,10 +223,10 @@ async function createProfile(
   { brief = "", redo = false, fixedRank = false }: { brief?: string; redo?: boolean; fixedRank?: boolean }
 ): Promise<Draft> {
   const cid = campaign.id;
-  const [agent, libAbilities, libItems, [scene], others, memories] = await Promise.all([
+  const [agent, libAbilities, libItems, [scene], others, memories, baseSheet] = await Promise.all([
     getAgent("characters"),
-    listLibrary(cid, "ability", { limit: 400 }),
-    listLibrary(cid, "item", { limit: 200 }),
+    listLibrary(campaign, "ability", { limit: 400 }),
+    listLibrary(campaign, "item", { limit: 200 }),
     q<{ location: string; title: string; summary: string }>(
       `SELECT location, title, summary FROM scenes WHERE campaign_id = $1 AND is_current LIMIT 1`,
       [cid]
@@ -235,11 +239,12 @@ async function createProfile(
       `SELECT content FROM memories WHERE campaign_id = $1 AND lower(subject) = lower($2) ORDER BY importance DESC, id DESC LIMIT 20`,
       [cid, npc.name]
     ),
+    hydrateSheet(base.sheet), // a foto pode vir crua (só ref): o Refazer precisa dos nomes
   ]);
   const r = campaign.ruleset;
   const arc = campaign.script?.arcs.find((a) => a.status === "active");
   const { voiceFx: _fx, ...known } = base.persona;
-  const sheetNow = { ...base.sheet, abilities: base.sheet.abilities.map((a) => ({ name: a.name, progress: a.progress })) };
+  const sheetNow = { ...baseSheet, abilities: baseSheet.abilities.map((a) => ({ name: a.name, progress: a.progress })) };
   const user = [
     `MECÂNICA E CENÁRIO\n${rulesetPromptSummary(r)}`,
     `KEYS PARA O JSON\n${keysBlock(r)}`,
@@ -282,16 +287,19 @@ async function createProfile(
   const d = normalizeDraft(parseCreatorJson(res.content), r);
   if (!PROFILE_FIELDS.some((k) => d.persona[k])) throw new Error("O Criador de personagens devolveu um perfil vazio.");
 
-  // habilidade da biblioteca (ou criada agora pelo Criador de habilidades e guardada lá); sem ela, a do próprio Criador
+  // cada habilidade vira ref: a da biblioteca, a criada agora pelo Criador de habilidades ou, se ele falhar,
+  // a definição do Criador de personagens gravada como incomplete. Sem ref não entra na ficha.
   const resolved = await Promise.all(
     d.abilities.map(async (a) => {
       const def = [a.type, a.rank, a.description, a.effect].filter(Boolean).join(". ");
-      const hit = await ensureAbility(campaign, a.name, `${def}${def ? ". " : ""}Usada por ${npc.name}.`).catch(() => null);
-      if (hit) {
-        const { users: _users, ...lib } = hit;
-        return { ...lib, progress: a.progress } as Ability;
-      }
-      return a.type ? a : null;
+      const brief = `${def}${def ? ". " : ""}Usada por ${npc.name}.`;
+      const linked = await linkAbility(campaign, a.name, { brief, fallback: { ...a, abilityType: a.type } }).catch((e) => {
+        console.error(`[createProfile ${npc.name}] ${a.name}`, e);
+        return null;
+      });
+      if (!linked) return null;
+      const { entry } = linked;
+      return { ...(entry.data as Ability), name: entry.name, ref: entry.id, progress: a.progress } as Ability;
     })
   );
   d.abilities = resolved.filter((a): a is Ability => !!a);

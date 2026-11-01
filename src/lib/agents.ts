@@ -37,6 +37,7 @@ REGRAS DE OURO
 9. Progressão. Treino se resolve com train (personagem, alvo, horas realistas): ele avança o relógio pelas horas e só então aplica o ganho (não chame advance_time para essas horas). Há limite de horas de treino por dia e de domínio ganho por habilidade por dia; quando train recusar (exausto, teto), narre o cansaço ou o platô e não force o ganho por outra ferramenta. O nível de poder vem só da XP e sobe sozinho: ele define o teto dos atributos e dá pontos livres que o JOGADOR distribui na ficha; não suba atributos por ele por causa da XP. update_attribute só aumenta até o teto (atributo que já está acima fica como está); reduções por lesão ou maldição são livres. Cargo (rank) é posição na história e só muda com set_rank.
 10. Missões, eventos e prazos ficam registrados. Quando surgir na história algo com prazo ou data marcada (uma missão atribuída, um exame marcado, um encontro combinado, uma dívida a pagar), anote com note_objective, numa frase com o prazo em tempo do jogo e a recompensa. Os abertos e o tempo que falta estão no contexto em MISSÕES E PRAZOS: leve o prazo em conta na narração e faça o mundo lembrar o jogador quando ele estiver gastando tempo demais. Quando for cumprido, cancelado na história ou o prazo mudar, anote também com note_objective. Quando o relógio passa do prazo, o sistema marca o objetivo como PERDIDO: narre a consequência na história (a missão vai para outro time, o exame acontece sem ele, a pessoa vai embora) e não desfaça a perda nem registre de novo o mesmo objetivo para contorná-la.
 11. Diretrizes do jogador. O jogador às vezes fala com você fora do jogo, e o que ele pediu aparece em DIRETRIZES DO JOGADOR. Elas valem como preferências da mesa e têm prioridade sobre o seu estilo padrão, mas não sobre a coerência do mundo nem sobre as regras mecânicas.
+12. Biblioteca do mundo. Cada técnica existe uma vez só, na biblioteca do mundo (a mesma para todas as campanhas deste cenário); a ficha só aponta para ela e guarda o domínio. Antes de registrar uma técnica, consulte search_library e use o nome de lá; técnica nova segue o padrão de nomes da MECÂNICA. add_ability liga a ficha à técnica da biblioteca (se ainda não existir, o Criador de habilidades a cria). Para corrigir ou completar uma técnica (nome fora do padrão, rank, efeito, dano, marcos), use edit_ability, e complete assim as marcadas como incompletas: a mudança vale para todos que a têm, em todas as campanhas deste mundo, então só mude o que é da técnica. O que é de um personagem só (o domínio dele, um jeito próprio de usar) não vai para a biblioteca. O custo não é da técnica: vem do rank e do domínio (costFree só quando ela não gasta recurso).
 
 CENAS E RITMO
 - A cena atual tem um modo (exploration, dialogue, battle, training ou downtime), que você troca com set_scene. Como conduzir o modo atual vem no contexto do turno, em MODO DA CENA (a mesa da campanha pode ajustar): siga essa instrução.
@@ -151,6 +152,7 @@ NUNCA
 - Inventar o que a narração não mostra, nem registrar o que só foi planejado, oferecido ou tentado sem sucesso.
 - Repetir o que está em JÁ FEITO PELO MESTRE: use_ability já cobrou o custo da técnica e subiu o domínio; train já aplicou o ganho e avançou o relógio; roll_dice só rolou.
 - Mexer no relógio, na cena ou nos NPCs em cena: o sistema cuida disso.
+- Registrar ou corrigir técnicas: técnica nova (add_ability) e correção na biblioteca (edit_ability) são do Mestre.
 Na dúvida, não registre nada. Nomes de personagens, recursos (keys), itens e habilidades exatamente como estão no ESTADO.`,
   },
   {
@@ -257,13 +259,15 @@ CAMPOS DO RULESET (o exemplo completo de Naruto vem no contexto; siga o mesmo fo
 - abilityRanks: níveis de habilidade, do mais fraco ao mais forte (Naruto: ["D","C","B","A","S"]). São textos que aparecem na ficha: escreva com acento normal.
 - abilitiesLabel: nome da aba de habilidades (Naruto: "Jutsus"; Harry Potter: "Feitiços").
 - abilityCosts: custo padrão por nível {"resource": key do recurso gasto, "byRank": {nível: custo}} com todos os níveis de abilityRanks.
+- abilityNaming: padrão de nomes das técnicas do mundo, para o Criador de habilidades e o Mestre (como o de Naruto): de onde vem o nome (o oficial da obra, com a tradução em translation; ou um nome descritivo em português), como escrever e o que não entra no nome (nada de quem usa nem de estágio de domínio).
+- world: não inclua (a criação da campanha preenche).
 - abilityAttributes: atributo testado por tipo de habilidade {key do tipo: key do atributo}. Obrigatório para todo tipo que não tem um atributo de mesma key.
 - attributeMultiplier: teste de habilidade = 1d20 + atributo × isto + bônus do domínio. Use 2 com atributos de 1 a 10 (como Naruto).
 - ranks: cargos, a posição na história [{key, label, xpRequired}], em ordem, o primeiro com xpRequired 0 e os seguintes crescendo. Só mudam por eventos da história (Naruto: Estudante da Academia → Genin → Chunin...; Harry Potter: Primeiranista → ... → Auror).
 - powerLevels: níveis de poder pela XP [{key, label, xpRequired, attributeCap}], primeiro com 0, subindo; attributeCap é o teto de atributo naquele nível (Naruto: 5 a 10). Sobem sozinhos com a XP.
 - xpPerAttributePoint: 1 ponto livre de atributo a cada N de XP (Naruto: 50).
 - creationPoints: pontos livres para distribuir na criação do personagem (Naruto: 10).
-- startingAbilities: kit que todo personagem sabe ao chegar a cada cargo {key do cargo: [habilidades]}, cumulativo. O primeiro cargo PRECISA de kit: 3 a 6 habilidades básicas que todo iniciante da obra sabe. Cada habilidade: {name, type (key de abilityTypes), rank (de abilityRanks), cost {resource, amount}, description, effect (o que faz em jogo e qual teste), damage (ex.: "1d6", só se causar dano), requirements (opcional)}.
+- startingAbilities: kit que todo personagem sabe ao chegar a cada cargo {key do cargo: [habilidades]}, cumulativo. O primeiro cargo PRECISA de kit: 3 a 6 habilidades básicas que todo iniciante da obra sabe. Cada habilidade: {name, type (key de abilityTypes), rank (de abilityRanks), costFree (true só se não gasta recurso; o custo vem do rank), description, effect (o que faz em jogo e qual teste), damage (ex.: "1d6", só se causar dano), requirements (opcional)}.
 - extraFields: campos de texto livre da ficha [{key, label, description}] (Naruto: vila, clã, afinidade elemental; Harry Potter: casa, varinha, patrono, família...).
 - diceNotes: convenções de rolagem coerentes com attributeMultiplier: dificuldades típicas (Naruto: 14 fácil, 18 médio, 22 difícil, 26 heroico), testes opostos, custo e o que acontece ao usar habilidade acima do próprio nível.
 - progressionNotes: como habilidades especiais evoluem em estágios (milestones por domínio de 0 a 100), com um exemplo da obra, como o Sharingan em Naruto.
@@ -354,7 +358,7 @@ MAPA 3D (local_map): caro e lento (o Cartógrafo). Siga MAPAS 3D DOS LOCAIS: gen
     id: "characters",
     name: "Criador de personagens",
     description:
-      "Monta em segundo plano o perfil rico (aparência, idade, papel, personalidade, jeito de falar, passado, objetivos, segredos, relações, manias) e a ficha de cada NPC que o Mestre registra com create_npc, a partir do pedido dele. Usa as habilidades e os itens da biblioteca da campanha (as habilidades que faltam vão para o Criador de habilidades) (o retrato fica para o botão Gerar retrato). Também roda no botão Refazer perfil do NPC.",
+      "Monta em segundo plano o perfil rico (aparência, idade, papel, personalidade, jeito de falar, passado, objetivos, segredos, relações, manias) e a ficha de cada NPC que o Mestre registra com create_npc, a partir do pedido dele. Usa as habilidades e os itens da biblioteca do mundo (as habilidades que faltam vão para o Criador de habilidades) (o retrato fica para o botão Gerar retrato). Também roda no botão Refazer perfil do NPC.",
     // grátis; raciocina antes de responder, então max_tokens alto (senão volta vazio)
     model: "nvidia/nemotron-3.5-super-vl:free",
     temperature: 0.7,
@@ -368,7 +372,7 @@ PRINCÍPIOS
 - Personagem CANÔNICO (da obra): fiel à obra NO PONTO ATUAL DA LINHA DO TEMPO da campanha (idade, aparência, cargo, poder, técnicas que já domina, relações e paradeiro daquele momento). Não dê o que ele só ganha depois.
 - Personagem ORIGINAL: alguém específico e memorável, que caiba no mundo e na cena; detalhes concretos, nada genérico.
 - Poder coerente com o papel: escolha o cargo e o nível de poder e distribua atributos e recursos de acordo (um novato perto do padrão; um veterano ou mestre perto do teto do nível). Atributos entre o mínimo e o máximo e até o teto do nível de poder; recursos como o máximo de cada barra (padrão para gente comum, bem acima para os fortes).
-- Habilidades: prefira SEMPRE as da BIBLIOTECA, com o nome exatamente como lá, e dê a cada uma o domínio (progress 0-100) que o personagem tem. Só crie uma nova quando o papel ou a obra pedirem e não houver equivalente na biblioteca; aí descreva completa (type, rank, description, effect, cost, damage se causar dano, requirements). De 2 a 8 habilidades marcantes; o básico que todo mundo sabe não precisa.
+- Habilidades: prefira SEMPRE as da BIBLIOTECA, com o nome exatamente como lá, e dê a cada uma o domínio (progress 0-100) que o personagem tem. Só crie uma nova quando o papel ou a obra pedirem e não houver equivalente na biblioteca; aí dê o nome no padrão de nomes da mecânica e descreva completa (translation se o padrão pedir, type, rank, description, effect, costFree só se não gasta recurso, damage se causar dano, requirements); sem cost: o custo vem do rank. De 2 a 8 habilidades marcantes; o básico que todo mundo sabe não precisa.
 - Inventário: prefira itens da BIBLIOTECA (nome exato); de 0 a 6 itens que ele de fato carrega.
 - Texto em português do Brasil, denso e útil para interpretar o personagem, sem floreio:
   appearance 3-5 frases (rosto, cabelo, corpo, roupas, cores, marcas: serve para desenhar o retrato); age (idade ou aparente, ex.: "12 anos", "uns 40"); role (papel e afiliação em poucas palavras); personality 2-4 frases; speech 1-2 frases (tom, vocabulário, bordões, como trata os outros); backstory 3-6 frases; goals 1-3 frases; secrets 1-2 frases (o que ninguém sabe; pode ficar vazio); relationships (com quem se relaciona e como; use os nomes já registrados quando fizer sentido); quirks 1-2 frases (manias, hábitos, gestos).
@@ -386,7 +390,7 @@ Só um JSON válido, sem texto antes ou depois e sem comentários. Use apenas as
     "extra": { "key do campo extra": "texto" },
     "abilities": [
       { "name": "nome exato da biblioteca", "progress": 70 },
-      { "name": "habilidade nova", "progress": 40, "type": "key do tipo", "rank": "nível", "description": "", "effect": "", "cost": { "resource": "key do recurso", "amount": 5 }, "damage": "2d6", "requirements": "" }
+      { "name": "habilidade nova, no padrão de nomes", "translation": "", "progress": 40, "type": "key do tipo", "rank": "nível", "description": "", "effect": "", "costFree": false, "damage": "2d6", "requirements": "" }
     ],
     "inventory": [ { "name": "", "qty": 1, "description": "" } ]
   }
@@ -396,7 +400,7 @@ Só um JSON válido, sem texto antes ou depois e sem comentários. Use apenas as
     id: "abilities",
     name: "Criador de habilidades",
     description:
-      "Cria as técnicas do mundo para a Biblioteca da campanha (jutsus, magias, feitiços, programas, conforme o cenário): tipo, nível, custo, efeito, dano e marcos de domínio, validados pelo código contra a mecânica. Roda em segundo plano quando você pede um lote na aba Biblioteca (ex.: 20 técnicas canônicas de um lugar ou escola), recebendo os nomes que já existem para não repetir, e na hora quando o Mestre registra com add_ability uma técnica que a biblioteca ainda não tem.",
+      "Cria as técnicas do mundo para a Biblioteca do mundo, compartilhada pelas campanhas do mesmo cenário (jutsus, magias, feitiços, programas, conforme o cenário): nome no padrão de nomes do mundo, tradução, tipo, nível, efeito, dano e marcos de domínio (o custo vem do nível), validados pelo código contra a mecânica. Roda em segundo plano quando você pede um lote na aba Biblioteca (ex.: 20 técnicas canônicas de um lugar ou escola), recebendo os nomes que já existem para não repetir, e na hora quando o Mestre registra com add_ability uma técnica que a biblioteca ainda não tem.",
     // grátis; raciocina antes de responder, então max_tokens alto (senão volta vazio)
     model: "nvidia/nemotron-3.5-super-vl:free",
     temperature: 0.6,
@@ -408,10 +412,10 @@ Só um JSON válido, sem texto antes ou depois e sem comentários. Use apenas as
 O contexto traz a MECÂNICA da campanha (tipos, níveis, recursos, custo padrão por nível, domínio, cenário) e o PEDIDO (quantas, o foco, se é do cânone e os nomes que já existem).
 
 REGRAS
-- Cânone: só técnicas que existem de fato na obra, com o nome pelo qual são conhecidas (a tradução entre parênteses, se ajudar), efeito, nível e usuários fiéis à obra. Nunca invente uma técnica e a marque como canônica; se não lembrar de técnicas suficientes dentro do foco, traga menos. Fora do cânone: técnicas originais coerentes com o mundo, a lógica do poder e o tom.
+- Cânone: só técnicas que existem de fato na obra, com o nome no padrão de nomes da mecânica (sem padrão: o nome pelo qual são conhecidas, sem parênteses) e a tradução em translation quando o nome não está em português, efeito, nível e usuários fiéis à obra. Nunca invente uma técnica e a marque como canônica; se não lembrar de técnicas suficientes dentro do foco, traga menos. Fora do cânone: técnicas originais coerentes com o mundo, a lógica do poder e o tom.
 - Nunca repita um nome de JÁ EXISTEM, nem variação do mesmo nome.
 - type: uma das keys dos tipos. rank: um dos níveis, proporcional ao poder (o básico de iniciante no mais baixo, o lendário no mais alto).
-- cost: {resource: key do recurso, amount}. Parta do custo padrão do nível e desvie só com motivo. Passiva ou sem gasto: amount 0.
+- costFree: true só se a técnica não gasta recurso (taijutsu, armas, ofícios, passivas); senão omita. Não ponha cost: o custo vem do nível e do domínio de quem usa.
 - effect: o que faz em jogo, curto e jogável: alcance, duração, área, alvo e qual teste exige.
 - damage: só se causar dano direto, em notação de dado ("2d6", "3d8+2"), proporcional ao nível.
 - description: 1 a 2 frases do que é, como se parece e de onde vem.
@@ -422,7 +426,7 @@ REGRAS
 - Português do Brasil; nomes próprios da obra na forma conhecida.
 
 FORMATO: responda APENAS com JSON válido, sem markdown nem comentários. Campo sem valor: omita.
-{"items":[{"name":"","type":"","rank":"","description":"","effect":"","cost":{"resource":"","amount":0},"damage":"","requirements":"","users":"","milestones":[{"threshold":0,"description":""}],"canon":true}]}`,
+{"items":[{"name":"","translation":"","type":"","rank":"","description":"","effect":"","costFree":false,"damage":"","requirements":"","users":"","milestones":[{"threshold":0,"description":""}],"canon":true}]}`,
   },
   {
     id: "items",
@@ -518,6 +522,56 @@ const GM_PROMPT_FIXES: [string, string][] = [
   ],
 ];
 
+// biblioteca como fonte única (por mundo, ficha só com ref): edit_ability, padrão de nomes e nada de custo por técnica.
+// [agente, trecho exato de antes, novo]; o novo não contém o de antes, então rodar de novo não muda nada
+const LIBRARY_PROMPT_FIXES: [string, string, string][] = [
+  [
+    "gm",
+    "nem sobre as regras mecânicas.\n\nCENAS E RITMO",
+    "nem sobre as regras mecânicas.\n12. Biblioteca do mundo. Cada técnica existe uma vez só, na biblioteca do mundo (a mesma para todas as campanhas deste cenário); a ficha só aponta para ela e guarda o domínio. Antes de registrar uma técnica, consulte search_library e use o nome de lá; técnica nova segue o padrão de nomes da MECÂNICA. add_ability liga a ficha à técnica da biblioteca (se ainda não existir, o Criador de habilidades a cria). Para corrigir ou completar uma técnica (nome fora do padrão, rank, efeito, dano, marcos), use edit_ability, e complete assim as marcadas como incompletas: a mudança vale para todos que a têm, em todas as campanhas deste mundo, então só mude o que é da técnica. O que é de um personagem só (o domínio dele, um jeito próprio de usar) não vai para a biblioteca. O custo não é da técnica: vem do rank e do domínio (costFree só quando ela não gasta recurso).\n\nCENAS E RITMO",
+  ],
+  [
+    "scribe",
+    "o sistema cuida disso.\nNa dúvida",
+    "o sistema cuida disso.\n- Registrar ou corrigir técnicas: técnica nova (add_ability) e correção na biblioteca (edit_ability) são do Mestre.\nNa dúvida",
+  ],
+  [
+    "characters",
+    "aí descreva completa (type, rank, description, effect, cost, damage se causar dano, requirements).",
+    "aí dê o nome no padrão de nomes da mecânica e descreva completa (translation se o padrão pedir, type, rank, description, effect, costFree só se não gasta recurso, damage se causar dano, requirements); sem cost: o custo vem do rank.",
+  ],
+  [
+    "characters",
+    `{ "name": "habilidade nova", "progress": 40, "type": "key do tipo", "rank": "nível", "description": "", "effect": "", "cost": { "resource": "key do recurso", "amount": 5 }, "damage": "2d6", "requirements": "" }`,
+    `{ "name": "habilidade nova, no padrão de nomes", "translation": "", "progress": 40, "type": "key do tipo", "rank": "nível", "description": "", "effect": "", "costFree": false, "damage": "2d6", "requirements": "" }`,
+  ],
+  [
+    "abilities",
+    "com o nome pelo qual são conhecidas (a tradução entre parênteses, se ajudar), efeito",
+    "com o nome no padrão de nomes da mecânica (sem padrão: o nome pelo qual são conhecidas, sem parênteses) e a tradução em translation quando o nome não está em português, efeito",
+  ],
+  [
+    "abilities",
+    "- cost: {resource: key do recurso, amount}. Parta do custo padrão do nível e desvie só com motivo. Passiva ou sem gasto: amount 0.",
+    "- costFree: true só se a técnica não gasta recurso (taijutsu, armas, ofícios, passivas); senão omita. Não ponha cost: o custo vem do nível e do domínio de quem usa.",
+  ],
+  [
+    "abilities",
+    `{"items":[{"name":"","type":"","rank":"","description":"","effect":"","cost":{"resource":"","amount":0},"damage":""`,
+    `{"items":[{"name":"","translation":"","type":"","rank":"","description":"","effect":"","costFree":false,"damage":""`,
+  ],
+  [
+    "adventure",
+    "rank (de abilityRanks), cost {resource, amount}, description,",
+    "rank (de abilityRanks), costFree (true só se não gasta recurso; o custo vem do rank), description,",
+  ],
+  [
+    "adventure",
+    "com todos os níveis de abilityRanks.\n- abilityAttributes:",
+    "com todos os níveis de abilityRanks.\n- abilityNaming: padrão de nomes das técnicas do mundo, para o Criador de habilidades e o Mestre (como o de Naruto): de onde vem o nome (o oficial da obra, com a tradução em translation; ou um nome descritivo em português), como escrever e o que não entra no nome (nada de quem usa nem de estágio de domínio).\n- world: não inclua (a criação da campanha preenche).\n- abilityAttributes:",
+  ],
+];
+
 // uma vez por processo (antes era um INSERT por agente a cada getAgent, várias vezes por turno);
 // variável do módulo, não global: no dev, editar este arquivo roda de novo e cria agente novo
 let defaultsReady: Promise<void> | null = null;
@@ -557,6 +611,8 @@ async function insertDefaultAgents(): Promise<void> {
     "De 5 a 10% do que falta para o próximo nível num feito comum, até 25% num grande.",
     "Quanto: pela REGRA DE XP DA MESA, no estado.",
   ]);
+  for (const [id, from, to] of LIBRARY_PROMPT_FIXES)
+    await q(`UPDATE agents SET system_prompt = replace(system_prompt, $2, $3) WHERE id = $1 AND strpos(system_prompt, $2) > 0`, [id, from, to]);
 }
 
 export async function getAgent(id: string): Promise<AgentConfig> {

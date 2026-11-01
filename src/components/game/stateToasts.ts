@@ -75,8 +75,11 @@ export function stateToasts(prev: CampaignView, next: CampaignView): StateToast[
       out.push({ kind: "xp", text: `+${xp} XP${pts > 0 ? ` · ${pts} ponto${pts > 1 ? "s" : ""} livre${pts > 1 ? "s" : ""} de atributo` : ""}` });
     }
 
-    const known = new Set(was.abilities?.map((a) => a.name.toLowerCase()));
-    const learned = now.abilities?.filter((a) => !known.has(a.name.toLowerCase())).map((a) => a.name) ?? [];
+    // identidade = ref da biblioteca; sem ref (formato antigo), o nome
+    const idOf = (a: { ref?: number; name: string }) => a.ref ?? a.name.toLowerCase();
+    const known = new Set<number | string>();
+    for (const a of was.abilities ?? []) known.add(idOf(a));
+    const learned = now.abilities?.filter((a) => !known.has(idOf(a))).map((a) => a.name) ?? [];
     if (learned.length) out.push({ kind: "sucesso", title: "Aprendeu", text: joinNames(learned) });
 
     // inventário por nome

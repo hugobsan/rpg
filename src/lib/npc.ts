@@ -8,6 +8,7 @@ import { getCampaign, getCurrentScene } from "./engine";
 import { Character, InboxItem } from "./types";
 import { decideNpcWilling, scoreImportance } from "./decisions";
 import { startJob } from "./jobs";
+import { hydrateSheets } from "./library";
 
 async function getNpc(campaignId: string, npcId: string): Promise<Character> {
   const rows = await q<Character>(
@@ -15,7 +16,7 @@ async function getNpc(campaignId: string, npcId: string): Promise<Character> {
     [campaignId, npcId]
   );
   if (!rows.length) throw new Error("NPC não encontrado");
-  return rows[0];
+  return (await hydrateSheets(rows))[0];
 }
 
 function npcContext(npc: Character): string {

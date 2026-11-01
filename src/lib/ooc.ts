@@ -6,7 +6,8 @@ import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { activeDirectives, addMemory } from "./retrieval";
 import { getCampaign, getCharacters, getCurrentScene, sheetSummary } from "./engine";
 import { executeGmTool, GM_TOOLS, saveTable } from "./tools";
-import { generateLibrary, importSheetAbilities } from "./library";
+import { findAbility } from "./progression";
+import { dehydrateSheet, generateLibrary } from "./library";
 import { MAP_TOOLS } from "./map";
 import { LOCAL_MAP_TOOLS } from "./cartographer";
 import { DIFFICULTIES, getTable, mergeCategories, MODE_HINTS, modeHint, normalizeTable, tablePromptBlock, tableSummary } from "./table";
@@ -50,15 +51,6 @@ export const OOC_GAME_TOOLS: ToolDef[] = [
       },
     },
   },
-  {
-    type: "function",
-    function: {
-      name: "import_sheet_abilities",
-      description:
-        "A pedido do jogador, copia para a biblioteca as habilidades que já estão nas fichas (dele e dos NPCs), com quem usa cada uma, sem criar nada novo. As que já estão na biblioteca ficam como estão.",
-      parameters: { type: "object", properties: {} },
-    },
-  },
 ];
 const isRead = (name: string) => /^(search_|read_|get_|list_)/.test(name);
 
@@ -76,7 +68,7 @@ const OOC_PROMPT = `Você é o Mestre desta mesa de RPG, conversando FORA DO JOG
 - Você tem as mesmas ferramentas do turno. Use-as SÓ quando o jogador pedir algo explícito: registrar uma missão ou um lembrete com prazo (add_objective), corrigir ficha (dele ou de NPC: habilidades, domínio, atributos, recursos, itens, XP), ajustar o relógio, registrar um NPC, guardar uma memória. Não narre, não role dados por conta própria e não avance a história daqui. Só diga que mudou algo que você mudou de fato com uma ferramenta.
 - Se a fala trouxer uma orientação de como conduzir a mesa daqui para a frente (o que ele quer que aconteça, como o personagem dele deve ser retratado, ritmo, tom, estilo, algo que você deve parar de fazer ou corrigir), chame save_directive uma vez por orientação (uma para o momento atual e outra geral são duas), reescrevendo cada pedido como instrução curta e autossuficiente para você mesmo ler no turno, e confirme na resposta. Pergunta, dúvida, elogio ou comentário não viram diretriz. Não salve de novo o que já está em DIRETRIZES ATIVAS.
 - Se a orientação contrariar a coerência do mundo ou as regras, salve o que der e explique o limite.
-- Habilidade que falta, sobra ou com domínio errado: add_ability (acrescenta ou redefine pelo nome), remove_ability ou update_ability_progress. Se a correção contrariar o momento do cânone, avise em uma frase, mas aplique se ele confirmar ou insistir.
+- Habilidade que falta, sobra ou com domínio errado na ficha: add_ability (liga a técnica da biblioteca), remove_ability ou update_ability_progress. Técnica com nome, tipo, rank, efeito, dano ou marcos errados: edit_ability, que corrige a técnica na biblioteca do mundo para todos que a têm (ao renomear, siga o padrão de nomes do mundo). Se a correção contrariar o momento do cânone, avise em uma frase, mas aplique se ele confirmar ou insistir.
 - Dificuldade e dados são REGRAS DA MESA, não diretriz: "deixa os combates mais difíceis", "quero modo história", "sem críticos", "furtividade mais fácil" vão por set_table_rules: pedido sobre um tipo de ação (combate, furtividade, social...) vai em setCategories, sobre o jogo todo em difficulty/dcOffset; críticos em crits; ritmo de XP ("quero subir de nível mais rápido") em xp; jeito de conduzir um tipo de cena ("diálogos mais descritivos", "batalhas mais cruas") em modes, com o texto inteiro da instrução nova do modo. Orientação de dificuldade que não cabe em número ("inimigos mais espertos", "pode matar meu personagem") vai em notes. Diga em números o que mudou.`;
 
 const TABLE_TOOL: ToolDef = {
@@ -208,18 +200,15 @@ async function runTool(
       const job = await generateLibrary(ctx.campaign, args.kind === "item" ? "item" : "ability", Number(args.count) || 10, String(args.focus || ""), canon);
       return job.started ? `✓ ${job.label}: começou em segundo plano; o resultado aparece na aba Biblioteca.` : `Já está rodando: ${job.label}.`;
     }
-    if (name === "import_sheet_abilities") {
-      const r = await importSheetAbilities(ctx.campaign);
-      return `✓ Biblioteca: ${r.added.length} de ${r.total} habilidades das fichas entraram${r.added.length ? ` (${r.added.join(", ")})` : " (as outras já estavam lá)"}.`;
-    }
     if (name === "remove_ability") {
       const target = chars.find((c) => c.name.toLowerCase() === String(args.character || "").toLowerCase());
       if (!target) return `Erro: personagem "${args.character}" não existe.`;
-      const before = target.sheet.abilities.length;
-      target.sheet.abilities = target.sheet.abilities.filter((a) => a.name.toLowerCase() !== String(args.name || "").toLowerCase());
-      if (target.sheet.abilities.length === before) return `Erro: ${target.name} não tem "${args.name}".`;
-      await q(`UPDATE characters SET sheet = $1, updated_at = now() WHERE id = $2`, [JSON.stringify(target.sheet), target.id]);
-      return `✓ Ficha de ${target.name}: removida a habilidade ${args.name}.`;
+      // chars vem hidratado (getCharacters); sai só da ficha, a técnica fica na biblioteca
+      const hit = findAbility(target.sheet, String(args.name || ""));
+      if (!hit) return `Erro: ${target.name} não tem "${args.name}".`;
+      target.sheet.abilities = target.sheet.abilities.filter((a) => a !== hit);
+      await q(`UPDATE characters SET sheet = $1, updated_at = now() WHERE id = $2`, [JSON.stringify(dehydrateSheet(target.sheet)), target.id]);
+      return `✓ Ficha de ${target.name}: removida a habilidade ${hit.name}.`;
     }
     const out = await executeGmTool(name, args, ctx);
     return isRead(name) || out.startsWith("Erro") ? out : `✓ ${out}`;
