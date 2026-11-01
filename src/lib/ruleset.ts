@@ -108,7 +108,8 @@ export function startingKit(r: Ruleset, rankKey?: string): Ability[] {
 }
 
 /** Linha compacta de uma habilidade para o prompt: tipo, rank, domínio (bônus), custo efetivo, dano, efeito, requisitos. */
-export function abilityPromptLine(r: Ruleset, a: Ability): string {
+export function abilityPromptLine(r: Ruleset, a: Ability, textMax = Infinity): string {
+  const cut = (t: string) => (t.length > textMax ? `${t.slice(0, textMax).trimEnd()}…` : t);
   const cost = effectiveCost(r, a);
   const adj = cost ? costAdjustText(cost.mult) : "";
   const bits = [
@@ -122,8 +123,8 @@ export function abilityPromptLine(r: Ruleset, a: Ability): string {
     a.damage && `dano ${a.damage}`,
   ].filter(Boolean);
   let line = `${a.name} [${bits.join(", ")}]`;
-  if (a.effect) line += ` — efeito: ${a.effect}`;
-  if (a.requirements) line += ` — requisitos: ${a.requirements}`;
+  if (a.effect) line += ` — efeito: ${cut(a.effect)}`;
+  if (a.requirements) line += ` — requisitos: ${cut(a.requirements)}`;
   return line;
 }
 

@@ -73,7 +73,11 @@ export async function getCharacters(campaignId: string): Promise<Character[]> {
 
 // ---------- montagem de contexto do Mestre ----------
 
-export function sheetSummary(c: Character, full: boolean, rs: Ruleset): string {
+/**
+ * Ficha em texto. compact (contexto do turno do Mestre, que vai a cada chamada): efeito e requisito de cada técnica
+ * e o passado do jogador encurtados; ficam marco atual e próximo (guiam a cena ao roteiro). O completo sai no get_character.
+ */
+export function sheetSummary(c: Character, full: boolean, rs: Ruleset, compact = false): string {
   const s = c.sheet;
   const res = Object.entries(s.resources)
     .map(([k, v]) => `${k} ${v.current}/${v.max}`)
@@ -104,7 +108,7 @@ export function sheetSummary(c: Character, full: boolean, rs: Ruleset): string {
       `  habilidades:\n` +
         s.abilities
           .map((a) => {
-            let line = `    - ${abilityPromptLine(rs, a)}`;
+            let line = `    - ${abilityPromptLine(rs, a, compact ? 160 : Infinity)}`;
             const cur = currentMilestone(a);
             const next = nextMilestone(a);
             if (cur) line += ` — atual: ${cur.description}`;
@@ -125,7 +129,7 @@ export function sheetSummary(c: Character, full: boolean, rs: Ruleset): string {
     if (p.personality) lines.push(`  personalidade: ${p.personality}`);
     if (p.speech) lines.push(`  jeito de falar: ${cut(p.speech, 200)}`);
     if (p.relationships) lines.push(`  relações: ${cut(p.relationships, 240)}`);
-    if (p.backstory) lines.push(`  passado: ${c.kind === "npc" ? cut(p.backstory, 400) : p.backstory}`);
+    if (p.backstory) lines.push(`  passado: ${c.kind === "npc" || compact ? cut(p.backstory, compact ? 300 : 400) : p.backstory}`);
     if (p.goals) lines.push(`  objetivos: ${p.goals}`);
     if (p.secrets) lines.push(`  segredos (só você sabe): ${p.secrets}`);
   }
@@ -188,10 +192,10 @@ async function buildGmSystem(
     // só local, rotas e palco: o resto do mapa (mapas 3D, locais distantes, regras) vai ao Topógrafo pelo map_brief
     mapPromptBlock(await loadMap(campaign.id, campaign.state), getStage(scene.state), scene.mode),
     player
-      ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset)}`
+      ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset, true)}`
       : "",
     activeNpcs.length
-      ? `\n--- NPCs EM CENA ---\n${activeNpcs.map((n) => sheetSummary(n, true, campaign.ruleset)).join("\n")}`
+      ? `\n--- NPCs EM CENA ---\n${activeNpcs.map((n) => sheetSummary(n, true, campaign.ruleset, true)).join("\n")}`
       : "\n--- NPCs EM CENA ---\n(nenhum)",
     inactiveNames.length
       ? `NPCs conhecidos fora de cena (não interagem; reative com set_npc_active): ${inactiveNames.join(", ")}`
