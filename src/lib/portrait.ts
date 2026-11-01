@@ -10,8 +10,29 @@ import type { Campaign, Character } from "./types";
  * Retratos antigos podem ser SVG (do Pixel artista, aposentado) e continuam valendo.
  */
 
+/**
+ * Em que ponto da história a campanha está (arco ativo do roteiro). Vai no prompt do Ilustrador e do reescritor para
+ * cada personagem sair na fase certa da obra: sem isso, um modelo desenhava o visual de Shippuden numa sessão do Naruto clássico.
+ */
+export function storyMoment(campaign: Pick<Campaign, "ruleset" | "script">): string {
+  const arc = campaign.script?.arcs.find((a) => a.status === "active");
+  return [
+    arc && `Momento da história: arco "${arc.title}": ${arc.summary.slice(0, 300)}`,
+    campaign.ruleset.canonBased && "Desenhe cada personagem com a aparência e a roupa desta fase da obra, não de fases posteriores.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Uma linha por personagem em cena, com a aparência da ficha (o Ilustrador não tem outro jeito de saber como cada um é). */
+export function appearanceLine(c: Pick<Character, "name" | "kind" | "canon" | "persona">): string {
+  const p = c.persona;
+  const who = [c.kind === "player" ? "protagonista, o \"você\" da narração" : "NPC", c.canon && "personagem da obra", p.age].filter(Boolean).join(", ");
+  return `- ${c.name} (${who}): ${p.appearance || (c.canon ? "aparência oficial da obra nesta fase" : "aparência não registrada")}`;
+}
+
 /** Quem é o personagem, em texto curto e agnóstico de cenário (entra no prompt do Ilustrador). */
-export function describe(campaign: Pick<Campaign, "ruleset">, c: Pick<Character, "name" | "kind" | "canon" | "sheet" | "persona">): string {
+export function describe(campaign: Pick<Campaign, "ruleset"> & Partial<Pick<Campaign, "script">>, c: Pick<Character, "name" | "kind" | "canon" | "sheet" | "persona">): string {
   const rs = campaign.ruleset;
   const rank = rs.ranks?.find((r) => r.key === c.sheet.rank)?.label || c.sheet.rank;
   const extra = Object.entries(c.sheet.extra || {})
@@ -21,6 +42,7 @@ export function describe(campaign: Pick<Campaign, "ruleset">, c: Pick<Character,
   const p = c.persona;
   return [
     `Cenário: ${rs.name}${rs.description ? `. ${rs.description}` : ""}`,
+    storyMoment({ ruleset: rs, script: campaign.script ?? null }),
     `Personagem: ${c.name} (${c.kind === "player" ? "protagonista" : "NPC"}${c.canon ? ", personagem canônico da obra: siga a aparência oficial" : ""})`,
     rank && `Cargo: ${rank}`,
     extra,
@@ -48,7 +70,7 @@ export function imageFromDataUrl(url: string): { mime: string; data: Buffer } | 
   return { mime: m[1], data: Buffer.from(text) };
 }
 
-const REWRITE = `Reescreva o pedido de ilustração abaixo como um prompt para um modelo de geração de imagem, em inglês, com até 80 palavras. Mantenha o estilo pedido (ex.: pixel art 16-bit, anime cinematográfico), o enquadramento e o formato; descreva só o que se vê: quem aparece e sua aparência concreta, roupa, expressão, o lugar, a luz e o clima. Mantenha os nomes da obra e dos personagens: o modelo de imagem pode conhecê-los e seguir a aparência oficial. Sem texto na imagem. Responda só o prompt.`;
+const REWRITE = `Reescreva o pedido de ilustração abaixo como um prompt para um modelo de geração de imagem, em inglês, com até 80 palavras. Mantenha o estilo pedido (ex.: pixel art 16-bit, anime cinematográfico), o enquadramento e o formato; descreva só o que se vê: quem aparece e sua aparência concreta, roupa, expressão, o lugar, a luz e o clima. Mantenha os nomes da obra e dos personagens e escreva junto a aparência de cada um: a da lista de personagens quando houver; para personagem da obra sem aparência registrada, o visual oficial (roupa, cores, acessórios, idade) da fase indicada em "Momento da história", nunca de fases posteriores. Sem texto na imagem. Responda só o prompt.`;
 
 /**
  * Prompt do Ilustrador. Com params.promptModel (modelo de texto da mesma fonte), ele é reescrito curto e em inglês antes:

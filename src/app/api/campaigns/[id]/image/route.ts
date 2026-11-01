@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSetting, q } from "@/lib/db";
 import { getAgent } from "@/lib/agents";
 import { chat } from "@/lib/openrouter";
-import { getCampaign, getCurrentScene } from "@/lib/engine";
+import { getCampaign, getCharacters, getCurrentScene } from "@/lib/engine";
 import { getClock, period } from "@/lib/clock";
-import { imageFromDataUrl, imagePrompt } from "@/lib/portrait";
+import { appearanceLine, imageFromDataUrl, imagePrompt, storyMoment } from "@/lib/portrait";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -19,7 +19,7 @@ export async function POST(
   if ((await getSetting<{ imageGeneration?: boolean }>("ui", {})).imageGeneration === false)
     return NextResponse.json({ error: "A geração de imagens está desligada nas Configurações." }, { status: 403 });
   try {
-    const [campaign, scene, agent, lastMsgs] = await Promise.all([
+    const [campaign, scene, agent, lastMsgs, chars] = await Promise.all([
       getCampaign(id),
       getCurrentScene(id),
       getAgent("image"),
@@ -28,6 +28,7 @@ export async function POST(
          ORDER BY id DESC LIMIT 2`,
         [id]
       ),
+      getCharacters(id),
     ]);
     const context = lastMsgs
       .map((m) => m.content)
@@ -36,7 +37,12 @@ export async function POST(
       .slice(-2500);
     const clock = getClock(campaign.state);
     const light = clock ? ` Período do dia: ${period(clock.minutes)} (a luz e o céu devem refletir isso).` : "";
-    const prompt = `Ilustração de cena de RPG, estilo anime cinematográfico detalhado. Cenário: ${campaign.ruleset.name}. Local: ${scene.location || "desconhecido"}. Modo da cena: ${scene.mode}.${light}\n\nDescrição do momento atual (ilustre fielmente o ambiente e a atmosfera; sem texto na imagem):\n${context}`;
+    // quem está em cena, com a aparência da ficha, e a fase da obra: sem isso o modelo inventa roupas e visual de outra época
+    const present = chars.filter((c) => c.kind === "player" || c.active).map(appearanceLine).join("\n");
+    const moment = storyMoment(campaign);
+    const prompt = `Ilustração de cena de RPG, estilo anime cinematográfico detalhado. Cenário: ${campaign.ruleset.name}. Local: ${scene.location || "desconhecido"}. Modo da cena: ${scene.mode}.${light}${
+      moment ? `\n${moment}` : ""
+    }\n\nPersonagens em cena (desenhe só quem a narração mostra ali, com esta aparência):\n${present || "- (nenhum registrado)"}\n\nDescrição do momento atual (ilustre fielmente o ambiente e a atmosfera; sem texto na imagem):\n${context}`;
 
     const result = await chat({
       model: agent.model,
