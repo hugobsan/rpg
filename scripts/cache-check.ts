@@ -63,6 +63,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
       { type: "message_delta", delta: { stop_reason: "tool_use", stop_sequence: null }, usage: { output_tokens: 50 } },
       { type: "message_stop" },
     ]);
+  if (url === "https://openrouter.ai/api/v1/images")
+    return Response.json({ created: 1, data: [{ b64_json: Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'/>").toString("base64"), media_type: "image/svg+xml" }], usage: { prompt_tokens: 0, completion_tokens: 4175, total_tokens: 4175, cost: 0.008 } });
   if (url.endsWith("/chat/completions")) return Response.json({ choices: [{ message: { content: "ok" } }], usage: { prompt_tokens: 3, completion_tokens: 1, cost: 0.5 } });
   return new Response("não achei", { status: 404 });
 }) as typeof fetch;
@@ -224,13 +226,18 @@ async function main() {
   assert.ok("temperature" in bodies[0] && !("temperature" in bodies[1]), "a repetição vai sem temperature");
   assert.equal(lastLog().error, null);
 
-  // 11. modelo que só gera imagem (pelo catálogo): o pedido vai só com image; os outros seguem com image + text
+  // 11. modelo que só gera imagem (pelo catálogo): vai por POST /images do OpenRouter; os de imagem + texto seguem no chat
   state.source = "openrouter";
   sent.length = 0;
-  await chat({ ...GM, model: "black-forest-labs/flux-3-image-klein", tools: undefined, modalities: ["image", "text"] });
+  const flux = await chat({ ...GM, model: "black-forest-labs/flux-3-image-klein", tools: undefined, modalities: ["image", "text"] });
+  const imgCall = sent.find((x) => x.url === "https://openrouter.ai/api/v1/images");
+  assert.ok(imgCall, "modelo que só gera imagem vai por POST /images do OpenRouter");
+  assert.equal(imgCall.body.model, "black-forest-labs/flux-3-image-klein");
+  assert.match(String(imgCall.body.prompt), /abro a porta/, "o prompt é o texto das mensagens");
+  assert.ok(flux.images[0].startsWith("data:image/svg+xml;base64,"), "media_type da resposta vira o tipo do data URL");
+  assert.equal(lastLog().cost, 0.008, "custo real do OpenRouter");
   await chat({ ...GM, model: "google/gemini-3.1-flash-lite-image", tools: undefined, modalities: ["image", "text"] });
-  const chats = sent.filter((x) => x.url.endsWith("/chat/completions"));
-  assert.deepEqual(chats.map((x) => x.body.modalities), [["image"], ["image", "text"]]);
+  assert.deepEqual(sent.at(-1)?.body.modalities, ["image", "text"], "modelo de imagem e texto segue no chat/completions");
 
   // 12. imagem em data URL: png e svg (base64 ou texto) valem; outro tipo não (viraria página no nosso domínio)
   assert.equal(imageFromDataUrl("data:image/png;base64,iVBORw0KGgo=")?.mime, "image/png");

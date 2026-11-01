@@ -182,23 +182,33 @@ export function chatRequest(opts: ChatOptions, src: Source, cache = false) {
   return { url: `${src.url}/chat/completions`, headers, body };
 }
 
-/** Imagem na fonte que só gera por /images/generations (Gemini): o pedido de chat vira prompt de texto. */
+/**
+ * Imagem por endpoint próprio, com o pedido de chat virando prompt de texto: no OpenRouter, POST /images para os modelos
+ * que só geram imagem (FLUX, Recraft...; o chat/completions recusa); nas outras fontes (Gemini), /images/generations da OpenAI.
+ * Doc: https://openrouter.ai/docs/api/api-reference/images/generate-an-image
+ */
 export function imagesRequest(opts: ChatOptions, src: Source) {
   const prompt = opts.messages
     .map((m) => (typeof m.content === "string" ? m.content : (m.content ?? []).map((p) => p.text ?? "").join("")))
     .filter(Boolean)
     .join("\n\n");
   const { headers } = chatRequest(opts, src);
+  if (src.id === OPENROUTER) return { url: `${src.url}/images`, headers, body: { model: opts.model, prompt } as Record<string, unknown> };
   return { url: `${src.url}/images/generations`, headers, body: { model: opts.model, prompt, n: 1, response_format: "b64_json" } as Record<string, unknown> };
 }
 
-// tipo da imagem pelos primeiros bytes em base64 (a resposta de /images/generations não informa)
-const mimeOf = (b64: string) => (b64.startsWith("/9j/") ? "image/jpeg" : b64.startsWith("UklGR") ? "image/webp" : "image/png");
+// tipo da imagem pelos primeiros bytes em base64, quando a resposta não traz media_type
+const mimeOf = (b64: string) =>
+  b64.startsWith("/9j/") ? "image/jpeg"
+  : b64.startsWith("UklGR") ? "image/webp"
+  : b64.startsWith("R0lGOD") ? "image/gif"
+  : /^(PHN2Zy|PD94bW)/.test(b64) ? "image/svg+xml" // "<svg" ou "<?xml"
+  : "image/png";
 
 /** Resposta de /images/generations (data[].b64_json) → JSON de chat com message.images, como o OpenRouter devolve. */
 export function imagesToChat(json: Record<string, unknown>): Record<string, unknown> {
-  const data = (json.data as { b64_json?: string }[] | undefined) ?? [];
-  const images = data.filter((d) => d.b64_json).map((d) => ({ image_url: { url: `data:${mimeOf(d.b64_json!)};base64,${d.b64_json}` } }));
+  const data = (json.data as { b64_json?: string; media_type?: string }[] | undefined) ?? [];
+  const images = data.filter((d) => d.b64_json).map((d) => ({ image_url: { url: `data:${d.media_type || mimeOf(d.b64_json!)};base64,${d.b64_json}` } }));
   return { ...json, data: undefined, choices: [{ message: { role: "assistant", content: "", images }, finish_reason: "stop" }] };
 }
 
@@ -248,13 +258,13 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   const src = await getSource(agent?.source ?? OPENROUTER);
   const cache = !!agent?.params?.cache && isClaude(src, opts.model);
   if (!cache) opts = { ...opts, messages: mergeSystem(opts.messages) };
-  // modelo que só gera imagem recusa pedir texto junto: no OpenRouter, o catálogo diz quem é
-  if (src.id === OPENROUTER && opts.modalities?.includes("image") && catalogMatch(opts.model, await catalogModels())?.imageOnly)
-    opts = { ...opts, modalities: ["image"] };
   // a camada compatível da Anthropic não faz cache e ignora reasoning_effort: com um dos dois vai pela API nativa
   const native = src.kind === "anthropic" && (cache || !!opts.reasoning?.effort);
   const resp = src.auth === "chatgpt"; // Login com ChatGPT: Responses API, sempre em streaming
-  const img = !!opts.modalities?.includes("image") && !!presetOf(src.kind)?.imagesEndpoint;
+  // imagem por endpoint próprio: fonte que só gera assim (Gemini) ou, no OpenRouter, modelo que só gera imagem (pelo catálogo)
+  const img =
+    !!opts.modalities?.includes("image") &&
+    (!!presetOf(src.kind)?.imagesEndpoint || (src.id === OPENROUTER && !!catalogMatch(opts.model, await catalogModels())?.imageOnly));
   const { url, headers, body } = img ? imagesRequest(opts, src) : resp ? responsesRequest(opts, src) : chatRequest(opts, src, cache);
   const model = body.model as string;
   const started = Date.now();
@@ -498,7 +508,7 @@ export async function listModels(): Promise<
   {
     id: string; slug: string; name: string; context: number; pricing: ModelPricing;
     speech: boolean; // modelo de fala (TTS)
-    imageOnly: boolean; // gera imagem e nenhum texto (FLUX, Recraft...): o pedido vai com modalities ["image"]
+    imageOnly: boolean; // gera imagem e nenhum texto (FLUX, Recraft...): no OpenRouter vai por POST /images
     voices: string[] | null; // vozes aceitas (null = o catálogo não lista)
   }[]
 > {
