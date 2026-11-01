@@ -530,6 +530,29 @@ export const GM_TOOLS: ToolDef[] = [
   MAP_BRIEF_TOOL,
 ];
 
+// o Escrivão registra estas depois da narração, pelo que ela mostra: saem do turno do Mestre (o fora do jogo fica com todas)
+export const SCRIBE_TOOLS = new Set([
+  "update_resource", "add_item", "remove_item", "add_memory", "grant_xp", "update_ability_progress", "update_extra_field",
+  "add_objective", "update_objective",
+]);
+
+// anotações cujo resultado o Mestre não precisa para narrar: rodam depois da narração, sem outra rodada do modelo
+export const DEFERRED_TOOLS = new Set(["set_scene", "set_npc_active", "set_rank", "update_script", "note_objective", "map_brief"]);
+
+/** Ferramentas do turno do Mestre: sem as do Escrivão e sem advance_time (o relógio anda sozinho depois da narração). */
+export const GM_TURN_TOOLS: ToolDef[] = [
+  ...GM_TOOLS.filter((t) => !SCRIBE_TOOLS.has(t.function.name) && t.function.name !== "advance_time"),
+  {
+    type: "function",
+    function: {
+      name: "note_objective",
+      description:
+        "Anota numa frase uma missão, evento marcado ou compromisso com prazo que a história criou, mudou, cumpriu ou cancelou (ex.: \"Hokage deu a missão de escoltar o Tazuna até a Vila da Névoa, prazo de 3 dias; recompensa 30 mil ryō\", \"missão do Tazuna concluída\"). O Escrivão registra com o prazo em tempo do jogo depois da narração.",
+      parameters: S({ brief: { type: "string", description: "o que foi combinado, prazo e recompensa, como a história disse" } }, ["brief"]),
+    },
+  },
+];
+
 export interface ToolContext {
   campaign: Campaign;
   scene: Scene;

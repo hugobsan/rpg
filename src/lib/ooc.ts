@@ -15,7 +15,7 @@ import { DIFFICULTIES, getTable, mergeCategories, normalizeTable, tablePromptBlo
 // (é jogada, não conversa fora do jogo), mais remover habilidade. Mapa: as ferramentas diretas no lugar do
 // map_brief, porque aqui o pedido é uma correção exata ("tira X do mapa", "junta esses dois") e é raro
 const HIDDEN = ["get_script", "update_script", "get_character", "npc_message", "map_brief"];
-const OOC_GAME_TOOLS: ToolDef[] = [
+export const OOC_GAME_TOOLS: ToolDef[] = [
   ...GM_TOOLS.filter((t) => !HIDDEN.includes(t.function.name)),
   ...MAP_TOOLS,
   ...LOCAL_MAP_TOOLS,

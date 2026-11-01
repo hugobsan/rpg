@@ -25,9 +25,9 @@ const SPECIAL: Record<string, string> = {
 };
 
 // ordem do fluxo (a mesma de Custos e uso) e cor de cada agente, só por tokens do tema
-const ORDER = ["gm", "npc", "chronicler", "scriptwriter", "decider", "characters", "abilities", "items", "image", "cartographer", "surveyor", "voice", "adventure"];
+const ORDER = ["gm", "scribe", "npc", "chronicler", "scriptwriter", "decider", "characters", "abilities", "items", "image", "cartographer", "surveyor", "voice", "adventure"];
 const TONE: Record<string, string> = {
-  gm: "var(--accent)", npc: "var(--mode-dialogue)", chronicler: "var(--warn)", scriptwriter: "var(--mode-exploration)",
+  gm: "var(--accent)", scribe: "color-mix(in srgb, var(--accent) 45%, var(--ok))", npc: "var(--mode-dialogue)", chronicler: "var(--warn)", scriptwriter: "var(--mode-exploration)",
   decider: "var(--info)", image: "var(--ok)", voice: "var(--mode-training)",
   // criadores em segundo plano: tons derivados dos do jogo
   characters: "color-mix(in srgb, var(--mode-dialogue) 55%, var(--accent))", abilities: "var(--mode-battle)",
