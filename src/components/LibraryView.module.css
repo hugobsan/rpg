@@ -33,10 +33,6 @@
 .jobRow { display: flex; align-items: center; gap: var(--s-2); }
 .jobRow > span:nth-child(2) { flex: 1; min-width: 0; }
 
-.search { position: relative; }
-.search input { padding-left: 34px; }
-.search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-faint); pointer-events: none; }
-
 /* entrada: resumo clicável, detalhe recolhido */
 .entry { padding: 0; }
 .entry > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: var(--s-2); padding: 10px 12px; border-radius: var(--r-md); }

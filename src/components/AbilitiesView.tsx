@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { Ability, Character, Ruleset } from "@/lib/types";
 import { costsByRankText } from "@/lib/ruleset";
 import { costAdjustText, DEFAULT_MASTERY_BONUS, effectiveCost, mastery, masteryBonus } from "@/lib/progression";
+import SearchBox, { fold } from "./ui/SearchBox";
 import s from "./AbilitiesView.module.css";
 
 const NO_RANK = "sem rank";
@@ -33,6 +34,7 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
   const abilities = char.sheet.abilities;
   const [rank, setRank] = useState<string | null>(null); // null = todos
   const [type, setType] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Set<string>>(new Set()); // cards expandidos; o padrão é recolhido
   const toggle = (name: string) =>
     setOpen((o) => { const n = new Set(o); if (n.has(name)) n.delete(name); else n.add(name); return n; });
@@ -45,7 +47,9 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
     (x, y) => ruleset.abilityTypes.findIndex((t) => t.key === x) - ruleset.abilityTypes.findIndex((t) => t.key === y)
   );
   const typeLabel = (k: string) => ruleset.abilityTypes.find((t) => t.key === k)?.label || k;
-  const shown = abilities.filter((a) => (!rank || rankOf(a) === rank) && (!type || a.type === type));
+  const qf = fold(query.trim());
+  const shown = abilities.filter((a) => (!rank || rankOf(a) === rank) && (!type || a.type === type) &&
+    (!qf || fold(`${a.name} ${a.effect ?? ""} ${a.description ?? ""}`).includes(qf)));
   const filterRow = (
     title: string,
     opts: string[],
@@ -155,12 +159,15 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
         </div>
       )}
       {abilities.length > 1 && (
+        <SearchBox value={query} onChange={setQuery} label={`Buscar ${label.toLowerCase()}`} placeholder={`Buscar ${label.toLowerCase()} por nome ou efeito`} />
+      )}
+      {abilities.length > 1 && (
         <div className={s.filterBox}>
           {filterRow("Rank", rankOpts, rank, setRank, (o) => abilities.filter((a) => rankOf(a) === o).length, (o) => o)}
           {filterRow("Tipo", typeOpts, type, setType, (o) => abilities.filter((a) => a.type === o).length, typeLabel)}
         </div>
       )}
-      {abilities.length > 0 && !shown.length && <p className="muted">Nenhuma com esses filtros.</p>}
+      {abilities.length > 0 && !shown.length && <p className="muted">Nenhuma com essa busca ou esses filtros.</p>}
       {shown.map(item)}
     </section>
   );

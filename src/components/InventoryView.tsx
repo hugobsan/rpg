@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Character } from "@/lib/types";
 import { toast } from "./ui/Toast";
+import SearchBox, { fold } from "./ui/SearchBox";
 import s from "./SidePanels.module.css";
 
 const BagIcon = ({ size = 18 }: { size?: number }) => (
@@ -26,6 +27,7 @@ export default function InventoryView({
 }) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
   // otimista: o que foi largado sai da lista na hora; o servidor confirma depois (ele grava a memória, demora)
   const [dropped, setDropped] = useState<Record<string, number>>({});
   const flying = useRef(new Map<string, number>()); // pedidos ainda sem resposta, por item
@@ -36,6 +38,9 @@ export default function InventoryView({
   const items = char.sheet.inventory
     .map((i) => ({ ...i, qty: i.qty - (dropped[i.name] ?? 0) }))
     .filter((i) => i.qty > 0);
+
+  const qf = fold(query.trim());
+  const shown = items.filter((i) => !qf || fold(`${i.name} ${i.description ?? ""}`).includes(qf));
 
   const drop = async (name: string, qty: number) => {
     const add = (n: number) => setDropped((d) => ({ ...d, [name]: Math.max(0, (d[name] ?? 0) + n) }));
@@ -75,8 +80,10 @@ export default function InventoryView({
         <h4>Carregando</h4>
         <span className={s.count}>{items.reduce((n, i) => n + i.qty, 0)} no total</span>
       </div>
+      {items.length > 1 && <SearchBox value={query} onChange={setQuery} label="Buscar no inventário" placeholder="Buscar item por nome ou descrição" />}
       {error && <div className="error-box">{error}</div>}
-      {items.map((i, n) => (
+      {!shown.length && <p className="muted">Nada com essa busca.</p>}
+      {shown.map((i, n) => (
         <div key={i.name} className={s.card} style={{ animationDelay: `${Math.min(n, 8) * 25}ms` }}>
           <div className={s.row}>
             <span className={s.icon}><BagIcon /></span>

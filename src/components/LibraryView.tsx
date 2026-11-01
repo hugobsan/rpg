@@ -4,6 +4,7 @@ import type { Job, LibraryAbility, LibraryEntry, LibraryItem, LibraryKind, Rules
 import Icon from "./game/Icon";
 import Loader from "./ui/Loader";
 import Skeleton from "./ui/Skeleton";
+import SearchBox, { fold } from "./ui/SearchBox";
 import { toast } from "./ui/Toast";
 import p from "./SidePanels.module.css";
 import a from "./AbilitiesView.module.css";
@@ -11,7 +12,6 @@ import s from "./LibraryView.module.css";
 
 type Lib = Record<LibraryKind, LibraryEntry[]>;
 type Data = LibraryAbility & LibraryItem;
-const fold = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
 /**
  * Aba Biblioteca: técnicas e itens do mundo (cânone ou originais) que o Mestre e o Criador de
@@ -274,11 +274,7 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
 
       {lib && entries.length > 0 && (
         <>
-          <label className={s.search}>
-            <span className="sr-only">Buscar na biblioteca</span>
-            <Icon name="search" size={16} />
-            <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Buscar ${what} por nome ou efeito`} />
-          </label>
+          <SearchBox value={query} onChange={setQuery} label="Buscar na biblioteca" placeholder={`Buscar ${what} por nome ou efeito`} />
           {(typeOpts.length > 1 || rankOpts.length > 1) && (
             <div className={a.filterBox}>
               {filterRow(kind === "ability" ? "Tipo" : "Categoria", typeOpts, type, setType, typeOf, typeLabel)}
