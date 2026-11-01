@@ -48,7 +48,7 @@ export function imageFromDataUrl(url: string): { mime: string; data: Buffer } | 
   return { mime: m[1], data: Buffer.from(text) };
 }
 
-const REWRITE = `Reescreva o pedido de ilustração abaixo como um prompt para um modelo de geração de imagem, em inglês, com até 80 palavras. Mantenha o estilo pedido (ex.: pixel art 16-bit, anime cinematográfico), o enquadramento e o formato; descreva só o que se vê: quem aparece e sua aparência concreta, roupa, expressão, o lugar, a luz e o clima. Nomes de personagens e obras conhecidos podem ficar. Sem texto na imagem. Responda só o prompt.`;
+const REWRITE = `Reescreva o pedido de ilustração abaixo como um prompt para um modelo de geração de imagem, em inglês, com até 80 palavras. Mantenha o estilo pedido (ex.: pixel art 16-bit, anime cinematográfico), o enquadramento e o formato; descreva só o que se vê: quem aparece e sua aparência concreta, roupa, expressão, o lugar, a luz e o clima. Troque nomes de obras, franquias e personagens por descrição visual (ex.: "ninja de cabelo prateado espetado, máscara cobrindo a boca, bandana com placa de metal"): vários modelos de imagem bloqueiam esses nomes na moderação. Sem texto na imagem. Responda só o prompt.`;
 
 /**
  * Prompt do Ilustrador. Com params.promptModel (modelo de texto da mesma fonte), ele é reescrito curto e em inglês antes:
