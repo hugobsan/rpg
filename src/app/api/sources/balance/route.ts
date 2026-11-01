@@ -11,6 +11,7 @@ export async function GET() {
   const r = await fetch("https://openrouter.ai/api/v1/key", { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15_000) }).catch(() => null);
   const d = await r?.json().catch(() => null);
   if (!r?.ok || !d?.data) return NextResponse.json({ error: r?.status === 401 ? "chave recusada pelo OpenRouter" : `OpenRouter ${r?.status ?? "fora do ar"}` }, { status: 502 });
-  // créditos do OpenRouter = US$; limit e limit_remaining são null quando a chave não tem limite
-  return NextResponse.json({ limit: d.data.limit, remaining: d.data.limit_remaining, usage: d.data.usage });
+  // créditos do OpenRouter = US$; limit e limit_remaining são null sem limite; com limit_reset (daily, weekly, monthly)
+  // o restante é do período atual, e usage é o gasto total da chave
+  return NextResponse.json({ limit: d.data.limit, remaining: d.data.limit_remaining, usage: d.data.usage, reset: d.data.limit_reset ?? null });
 }
