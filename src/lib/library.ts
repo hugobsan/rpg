@@ -2,14 +2,14 @@ import { q } from "./db";
 import { getAgent } from "./agents";
 import { chat } from "./openrouter";
 import { startJob } from "./jobs";
-import { abilityCost } from "./ruleset";
+import { abilityCost, consumptionOf } from "./ruleset";
 import { slugKey } from "./table";
 import { DEFAULT_MASTERY_BONUS } from "./progression";
 import type { Ability, Campaign, LibraryAbility, LibraryEntry, LibraryItem, LibraryKind, Ruleset, Sheet, StoredAbility, StoredSheet } from "./types";
 
 /**
  * Biblioteca do mundo (tabela library): habilidades e itens do tipo de campanha, compartilhados por
- * todas as campanhas daquele mundo. É a fonte única das habilidades: a ficha guarda só { ref, progress }
+ * todas as campanhas daquele mundo. É a fonte única das habilidades: a ficha guarda só { ref, progress, costMult? }
  * (dehydrateSheet) e é hidratada na leitura (hydrateSheets).
  * Quem preenche: o Criador de habilidades e o Criador de itens (agentes `abilities` e `items`),
  * em lote no segundo plano (generateLibrary) ou uma técnica por vez quando o Mestre registra
@@ -89,8 +89,8 @@ function hydrateAbility(a: AnyAbility, lib: Map<number, LibraryEntry>): Ability 
   if (typeof a.ref !== "number") return a as Ability; // formato antigo (cópia na ficha): fica como está
   const e = lib.get(a.ref);
   // id que não existe mais na tabela (não deveria: a exclusão é soft); mostra como fora da biblioteca
-  if (!e) return compact({ name: `#${a.ref}`, type: "", ref: a.ref, progress: a.progress, removed: true as const });
-  return compact({ ...(e.data as LibraryAbility), name: e.name, ref: e.id, progress: a.progress, removed: e.deleted ? (true as const) : undefined });
+  if (!e) return compact({ name: `#${a.ref}`, type: "", ref: a.ref, progress: a.progress, costMult: a.costMult, removed: true as const });
+  return compact({ ...(e.data as LibraryAbility), name: e.name, ref: e.id, progress: a.progress, costMult: a.costMult, removed: e.deleted ? (true as const) : undefined });
 }
 
 /** Habilidades das fichas completas pela biblioteca: uma consulta para o lote, mesma ordem de cada ficha. */
@@ -108,11 +108,11 @@ export async function hydrateSheet(sheet: Sheet | StoredSheet): Promise<Sheet> {
   return (await hydrateSheets([{ sheet }]))[0].sheet;
 }
 
-/** Ficha para gravar: cada habilidade com ref vira { ref, progress }; sem ref (formato antigo) fica como está. */
+/** Ficha para gravar: cada habilidade com ref vira { ref, progress, costMult? }; sem ref (formato antigo) fica como está. */
 export function dehydrateSheet(sheet: Sheet | StoredSheet): StoredSheet {
   return {
     ...sheet,
-    abilities: ((sheet.abilities ?? []) as AnyAbility[]).map((a) => (typeof a.ref === "number" ? compact({ ref: a.ref, progress: a.progress }) : a)),
+    abilities: ((sheet.abilities ?? []) as AnyAbility[]).map((a) => (typeof a.ref === "number" ? compact({ ref: a.ref, progress: a.progress, costMult: a.costMult === 1 ? undefined : a.costMult }) : a)),
   };
 }
 
@@ -248,7 +248,8 @@ export const itemText = (i: LibraryItem) => [i.description, i.effect, i.damage &
 export function libraryLine(r: Ruleset, e: LibraryEntry): string {
   const d = e.data as LibraryAbility & LibraryItem;
   const c = e.kind === "ability" ? abilityCost(r, d) : null;
-  const cost = c ? (c.amount ? `custo ${c.amount} ${c.resource}` : "sem custo") : "";
+  const band = e.kind === "ability" ? consumptionOf(r, d) : undefined;
+  const cost = c ? (c.amount ? `custo base ${c.amount} ${c.resource}${d.costUnit ? ` por ${d.costUnit}` : ""}${band ? ` (consumo ${band.label.toLowerCase()})` : ""}` : "sem custo") : "";
   const bits = [d.type ?? d.category, d.element, d.rank && `rank ${d.rank}`, cost, d.damage && `dano ${d.damage}`, !e.canon && "original", d.incomplete && "incompleta: complete com edit_ability"].filter(Boolean);
   const title = d.translation ? `${e.name} (${d.translation})` : e.name;
   return [`${title} [${bits.join(", ")}]`, d.effect || d.description, d.requirements && `requisitos: ${d.requirements}`, d.users && `usuários: ${d.users}`]
@@ -276,8 +277,8 @@ const dice = (v: unknown) => {
 };
 
 /**
- * Habilidade válida para o ruleset (tipo existe; rank e dano inválidos caem fora) ou null. Não guarda custo
- * (vem do rank): costFree, ou o cost.amount 0 do formato antigo, vira costFree true.
+ * Habilidade válida para o ruleset (tipo existe; rank, consumo e dano inválidos caem fora) ou null. Não guarda custo
+ * (vem da faixa de consumo ou do rank): costFree, ou o cost.amount 0 do formato antigo, vira costFree true.
  */
 export function normalizeAbility(r: Ruleset, raw: unknown): LibraryAbility | null {
   if (!raw || typeof raw !== "object") return null;
@@ -298,6 +299,8 @@ export function normalizeAbility(r: Ruleset, raw: unknown): LibraryAbility | nul
     element: r.abilityElements ? pickKey(r.abilityElements, a.element) : undefined,
     rank: pickRank(r, a.rank),
     costFree: a.costFree === true || (oldCost.amount !== null && oldCost.amount !== "" && Number(oldCost.amount) === 0) || undefined,
+    consumption: pickKey(r.abilityCosts?.byConsumption ?? [], a.consumption),
+    costUnit: str(a.costUnit, 30)?.toLowerCase(),
     description: str(a.description),
     effect: str(a.effect),
     damage: dice(a.damage),
@@ -380,8 +383,12 @@ export function creatorPrompt(r: Ruleset, kind: LibraryKind, req: CreateRequest)
       r.abilityNaming && `Padrão de nomes: ${r.abilityNaming}`,
       r.abilityElements &&
         `Elementos (campo element, key: nome; omita se a técnica não tem elemento): ${r.abilityElements.map((t) => `${t.key}: ${t.label}${t.description ? ` (${t.description})` : ""}`).join("; ")}`,
-      // o custo depende do ninja e da mesa: vem do nível; a biblioteca só sabe se gasta ou não
-      `Campos além do formato: translation (tradução do nome para exibição, só quando o nome não está em português) e costFree (true só se não gasta recurso: taijutsu, armas, ofícios). NÃO inclua cost: o custo vem do nível.`,
+      // o valor do custo é regra do mundo e o ajuste é de quem usa: a técnica só diz se gasta, quanto (faixa) e por unidade
+      `Campos além do formato: translation (tradução do nome para exibição, só quando o nome não está em português) e costFree (true só se não gasta recurso: técnicas físicas, armas, ofícios, passivas). NÃO inclua cost: o valor vem das regras do mundo.`,
+      r.abilityCosts?.byConsumption &&
+        `Faixas de consumo (campo consumption, key: nome = custo base em ${r.abilityCosts.resource}): ${r.abilityCosts.byConsumption.map((b) => `${b.key}: ${b.label} = ${b.cost}${b.description ? ` (${b.description})` : ""}`).join("; ")}. Escolha pela energia que a técnica gasta, independente do nível: o nível mede a dificuldade de aprender e controlar (uma técnica difícil pode ser econômica, uma fácil pode ser cara). Sem consumption, vale o custo do nível.`,
+      r.abilityCosts &&
+        `costUnit (opcional, texto curto no singular): quando o gasto é por unidade, o custo da faixa vale por unidade (ex.: Naruto: Kage Bunshin por "clone", um dōjutsu por "rodada" ativo; Harry Potter: Patrono por "rodada"; invocação por "invocação"). Técnica de efeito único: omita.`,
       `Domínio: quem aprende tem 0-100% de domínio de cada técnica; bônus no teste por faixa: ${(r.masteryBonus ?? DEFAULT_MASTERY_BONUS)
         .map((b) => `${b.min}%: +${b.value}`)
         .join(", ")}`,

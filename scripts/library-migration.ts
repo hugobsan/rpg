@@ -255,7 +255,7 @@ async function migrate(c: PoolClient, log: (s: string) => void) {
         log(`${who}: repetida juntada na ref #${ref} (fica o maior progress: ${dup.progress})`);
         continue;
       }
-      out.push({ ref, progress: a.progress as number | undefined } as Ability & { ref: number });
+      out.push({ ref, progress: a.progress as number | undefined, costMult: a.costMult as number | undefined } as Ability & { ref: number });
     }
     sheet.abilities = [...dehydrateSheet({ ...sheet, abilities: out }).abilities, ...(kept as Ability[])];
     const mastery = sheet.trainingLog?.mastery;
@@ -324,7 +324,8 @@ async function verify(run: Run, before: Run): Promise<boolean> {
     for (const { who, campaign, sheet } of list)
       for (const a of (Array.isArray(sheet?.abilities) ? sheet!.abilities : []) as Json[]) {
         total++;
-        const extra = Object.keys(a).filter((k) => k !== "ref" && k !== "progress");
+        // costMult: multiplicador de custo do vínculo (do personagem, não da técnica)
+        const extra = Object.keys(a).filter((k) => k !== "ref" && k !== "progress" && k !== "costMult");
         if (typeof a.ref !== "number" || extra.length) {
           a1.push(`${who}: ${JSON.stringify(a).slice(0, 100)}`);
           continue;
@@ -337,10 +338,10 @@ async function verify(run: Run, before: Run): Promise<boolean> {
     return { a1, a2, warn, total };
   };
   const cs = shape(chars.map((c) => ({ who: c.name, campaign: campById.get(c.campaign_id)!, sheet: c.sheet })));
-  check("A1", cs.a1, `${cs.total} habilidades em ${chars.length} fichas, todas só { ref, progress }`);
+  check("A1", cs.a1, `${cs.total} habilidades em ${chars.length} fichas, todas só { ref, progress, costMult? }`);
   check("A2", cs.a2, `todas as ${cs.total} refs existem no mundo da campanha${cs.warn.length ? `; aviso: ${cs.warn.join("; ")}` : ""}`);
   const ss = shape(snaps.flatMap((s) => (s.data.characters ?? []).map((c) => ({ who: `snapshot/${c.name}`, campaign: campById.get(s.campaign_id)!, sheet: c.sheet }))));
-  check("A3", [...ss.a1, ...ss.a2], `${ss.total} habilidades em ${snaps.length} snapshot(s): só { ref, progress }, refs válidas${ss.warn.length ? `; aviso: ${ss.warn.join("; ")}` : ""}`);
+  check("A3", [...ss.a1, ...ss.a2], `${ss.total} habilidades em ${snaps.length} snapshot(s): só { ref, progress, costMult? }, refs válidas${ss.warn.length ? `; aviso: ${ss.warn.join("; ")}` : ""}`);
 
   // backup: o que era custo 0 deve virar costFree
   const bCamps = await before<Camp>(`SELECT id, ruleset FROM campaigns`);

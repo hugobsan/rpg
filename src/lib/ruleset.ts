@@ -1,5 +1,5 @@
 import { Ability, AbilityMilestone, Ruleset, Sheet } from "./types";
-import { costAdjustText, effectiveCost, KIT_MASTERY, mastery, masteryBonus, progressionPromptLines } from "./progression";
+import { controlLabel, costBreakdown, effectiveCost, KIT_MASTERY, mastery, masteryBonus, progressionPromptLines } from "./progression";
 
 /** Ruleset padrão, agnóstico de cenário. Presets (ex: Naruto) são importados por JSON. */
 export const DEFAULT_RULESET: Ruleset = {
@@ -61,6 +61,15 @@ export function normalizeRuleset(input: unknown): Ruleset {
   r.abilitiesLabel = typeof r.abilitiesLabel === "string" && r.abilitiesLabel.trim() ? r.abilitiesLabel : "Habilidades";
   const ac = r.abilityCosts;
   r.abilityCosts = ac && typeof ac.resource === "string" && ac.byRank && typeof ac.byRank === "object" ? ac : undefined;
+  if (r.abilityCosts) {
+    // faixas de consumo do mundo (opcionais): só as com key, nome e custo válidos
+    const bands = (Array.isArray(ac!.byConsumption) ? ac!.byConsumption : []).filter(
+      (b) => b && typeof b.key === "string" && b.key.trim() && typeof b.label === "string" && b.label.trim() && typeof b.cost === "number" && Number.isFinite(b.cost) && b.cost >= 0
+    );
+    r.abilityCosts = { ...r.abilityCosts, byConsumption: bands.length ? bands : undefined };
+    if (!bands.length) delete r.abilityCosts.byConsumption;
+  }
+  r.costControlLabel = text(r.costControlLabel);
   const sa = r.startingAbilities;
   r.startingAbilities =
     sa && typeof sa === "object" && !Array.isArray(sa)
@@ -87,12 +96,22 @@ export function blankSheet(ruleset: Ruleset): Sheet {
   };
 }
 
-/** Custo base: 0 se a técnica não gasta recurso; senão o do rank no ruleset (o custo depende da mesa, não da biblioteca). */
+/** Faixa de consumo da técnica nas regras do mundo (undefined se o mundo não tem faixas ou a técnica não tem uma válida). */
+export const consumptionOf = (r: Ruleset, a: Pick<Ability, "consumption">) =>
+  a.consumption ? r.abilityCosts?.byConsumption?.find((b) => b.key === a.consumption) : undefined;
+
+/**
+ * Custo base: 0 se a técnica não gasta recurso; senão o da faixa de consumo dela (byConsumption do mundo); sem faixa,
+ * o do rank (byRank). O valor é regra do mundo; a técnica só diz a faixa; o ajuste de quem usa vem em effectiveCost.
+ */
 export function abilityCost(r: Ruleset, a: Ability): { resource: string; amount: number } | null {
   if (!r.abilityCosts) return null; // mesa sem custo de habilidade
-  const amount = a.costFree ? 0 : a.rank ? r.abilityCosts.byRank[a.rank] : undefined;
+  const amount = a.costFree ? 0 : (consumptionOf(r, a)?.cost ?? (a.rank ? r.abilityCosts.byRank[a.rank] : undefined));
   return amount === undefined ? null : { resource: r.abilityCosts.resource, amount };
 }
+
+/** "Mínimo=1, Baixo=3, ..." na ordem do ruleset. */
+export const costsByConsumptionText = (r: Ruleset) => (r.abilityCosts?.byConsumption ?? []).map((b) => `${b.label}=${b.cost}`).join(", ");
 
 /** "D=3, C=6, ..." na ordem de abilityRanks (o JSONB do Postgres reordena as chaves). */
 export function costsByRankText(r: Ruleset): string {
@@ -111,18 +130,22 @@ export function startingKit(r: Ruleset, rankKey?: string): Ability[] {
   return [...kit.values()];
 }
 
-/** Linha compacta de uma habilidade para o prompt: tipo, rank, domínio (bônus), custo efetivo, dano, efeito, requisitos. */
-export function abilityPromptLine(r: Ruleset, a: Ability, textMax = Infinity): string {
+/**
+ * Linha compacta de uma habilidade para o prompt: tipo, rank, consumo, domínio (bônus), custo final de quem usa
+ * (sheet: o multiplicador geral da ficha), dano, efeito, requisitos.
+ */
+export function abilityPromptLine(r: Ruleset, a: Ability, textMax = Infinity, sheet?: Pick<Sheet, "costMult">): string {
   const cut = (t: string) => (t.length > textMax ? `${t.slice(0, textMax).trimEnd()}…` : t);
-  const cost = effectiveCost(r, a);
-  const adj = cost ? costAdjustText(cost.mult) : "";
+  const cost = effectiveCost(r, a, { sheet });
+  const band = consumptionOf(r, a);
   const bits = [
     a.type,
     a.rank && `rank ${a.rank}`,
+    band && `consumo ${band.label.toLowerCase()}`,
     `domínio ${mastery(a)}% (+${masteryBonus(r, a)} no teste)`,
     cost &&
       (cost.amount || cost.base
-        ? `custo ${cost.amount} ${cost.resource}${adj ? ` (base ${cost.base} do rank, ${adj})` : " (padrão do rank)"}`
+        ? `custo ${cost.perUnit} ${cost.resource}${cost.unit ? ` por ${cost.unit} (use_ability com units)` : ""}${cost.perUnit !== cost.base ? ` (${costBreakdown(r, a, cost)})` : ""}`
         : "sem custo"),
     a.damage && `dano ${a.damage}`,
   ].filter(Boolean);
@@ -167,10 +190,16 @@ export function rulesetPromptSummary(r: Ruleset): string {
       `Campos extras da ficha: ${r.extraFields.map((f) => `${f.label} (${f.key})`).join(", ")}`
     );
   if (r.diceNotes) lines.push(`Rolagens: ${r.diceNotes}`);
-  if (r.abilityCosts)
+  if (r.abilityCosts) {
+    lines.push(`Custo padrão de habilidade por rank (${r.abilityCosts.resource}): ${costsByRankText(r)}`);
+    if (r.abilityCosts.byConsumption)
+      lines.push(
+        `Faixas de consumo (${r.abilityCosts.resource}; quando a técnica tem uma, vale a faixa e não o rank): ${costsByConsumptionText(r)}. Técnica com unidade de custo (por rodada, por cópia criada, por invocação...) custa isso por unidade.`
+      );
     lines.push(
-      `Custo padrão de habilidade por rank (${r.abilityCosts.resource}): ${costsByRankText(r)}`
+      `${controlLabel(r)}: multiplicador de custo de cada personagem (padrão 1; menor = gasta menos) e, por técnica, um multiplicador próprio (ex.: técnica de linhagem usada sem a linhagem); ajuste com set_cost_modifier.`
     );
+  }
   if (r.abilityNaming) lines.push(`Padrão de nomes das habilidades: ${r.abilityNaming}`);
   const kits = r.ranks
     .filter((k) => r.startingAbilities?.[k.key]?.length)

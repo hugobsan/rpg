@@ -56,21 +56,65 @@ export const mastery = (a: Ability) => clamp100(a.progress ?? LEGACY_MASTERY);
 export const masteryBonus = (r: Ruleset, a: Ability) => band(r.masteryBonus ?? DEFAULT_MASTERY_BONUS, mastery(a));
 export const trainingRules = (r: Ruleset): TrainingRules => ({ ...DEFAULT_TRAINING, ...r.training });
 
-/** Custo com o ajuste do domínio. Acréscimo arredonda para cima, desconto para baixo. */
-export function effectiveCost(r: Ruleset, a: Ability): { resource: string; amount: number; base: number; mult: number } | null {
+/** Limites do multiplicador de custo (ficha e vínculo da técnica) e das unidades de um uso. */
+export const COST_MULT_MIN = 0.5;
+export const COST_MULT_MAX = 2;
+export const MAX_UNITS = 1000;
+
+/** Multiplicador de custo gravado (ficha ou vínculo): número dentro dos limites; ausente ou inválido = 1. */
+export const costMultOf = (v: unknown) =>
+  typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.min(COST_MULT_MAX, Math.max(COST_MULT_MIN, v)) : 1;
+
+/** Nome do multiplicador geral de custo do personagem no mundo (Naruto: "Controle de chakra"). */
+export const controlLabel = (r: Ruleset) => r.costControlLabel || "Eficiência";
+
+export interface EffectiveCost {
+  resource: string;
+  /** total cobrado: base × units × multiplicadores, arredondado */
+  amount: number;
+  /** custo da faixa de consumo (ou do rank) */
+  base: number;
+  /** multiplicador do domínio */
+  mult: number;
+  /** multiplicador geral da ficha (Sheet.costMult) */
+  sheetMult: number;
+  /** multiplicador do vínculo desta técnica (Ability.costMult) */
+  linkMult: number;
+  /** custo de uma unidade sozinha (ou do uso, sem unidade), arredondado: o que a ficha mostra */
+  perUnit: number;
+  units: number;
+  /** unidade de custo da técnica (costUnit), se houver */
+  unit?: string;
+}
+
+/**
+ * Custo final de um uso: base (faixa de consumo ou rank) × unidades (só se a técnica tem costUnit) × multiplicadores
+ * (ficha, vínculo, domínio), arredondado no total (acréscimo para cima, desconto para baixo; nunca abaixo de 1 se a
+ * base > 0). sheet: a ficha de quem usa (só o costMult importa).
+ */
+export function effectiveCost(r: Ruleset, a: Ability, opts: { sheet?: Pick<Sheet, "costMult">; units?: number } = {}): EffectiveCost | null {
   const c = abilityCost(r, a);
   if (!c) return null;
   const mult = band(r.masteryCost ?? DEFAULT_MASTERY_COST, mastery(a)) || 1;
-  const raw = c.amount * mult;
-  const amount = Math.max(0, mult > 1 ? Math.ceil(raw - 1e-9) : Math.floor(raw + 1e-9));
-  return { resource: c.resource, amount, base: c.amount, mult };
+  const sheetMult = costMultOf(opts.sheet?.costMult);
+  const linkMult = costMultOf(a.costMult);
+  const m = mult * sheetMult * linkMult;
+  const round = (raw: number) => (c.amount > 0 ? Math.max(1, m > 1 ? Math.ceil(raw - 1e-9) : Math.floor(raw + 1e-9)) : 0);
+  const units = a.costUnit ? Math.min(MAX_UNITS, Math.max(1, Math.round(Number(opts.units) || 1))) : 1;
+  return { resource: c.resource, amount: round(c.amount * units * m), base: c.amount, mult, sheetMult, linkMult, perUnit: round(c.amount * m), units, unit: a.costUnit };
 }
 
-/** "+50% (domínio < 25%)" / "−25% (domínio 100%)" / "" */
-export function costAdjustText(mult: number): string {
-  if (mult === 1) return "";
-  const pct = Math.round((mult - 1) * 100);
-  return `${pct > 0 ? "+" : "−"}${Math.abs(pct)}% pelo domínio`;
+const num = (n: number) => String(Math.round(n * 100) / 100).replace(".", ",");
+
+/** A conta do custo: "base 3 (baixo) por clone × 10 × controle ×1,25 × domínio ×1,5 = 57". */
+export function costBreakdown(r: Ruleset, a: Ability, c: EffectiveCost): string {
+  const band = a.consumption ? r.abilityCosts?.byConsumption?.find((b) => b.key === a.consumption) : undefined;
+  const parts = [`base ${c.base}${band ? ` (${band.label.toLowerCase()})` : a.rank ? ` (rank ${a.rank})` : ""}${c.unit ? ` por ${c.unit}` : ""}`];
+  if (c.units > 1) parts.push(String(c.units));
+  if (c.sheetMult !== 1) parts.push(`${controlLabel(r).toLowerCase()} ×${num(c.sheetMult)}`);
+  if (c.linkMult !== 1) parts.push(`técnica ×${num(c.linkMult)}`);
+  if (c.mult !== 1) parts.push(`domínio ×${num(c.mult)}`);
+  return `${parts.join(" × ")} = ${c.amount}`;
 }
 
 // ---------- nível de poder ----------

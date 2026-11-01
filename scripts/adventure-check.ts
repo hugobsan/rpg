@@ -76,7 +76,7 @@ async function main() {
   const prog = Object.fromEntries(draftProgress({ ...naruto, startingPoint: "Véspera do Exame Chunin" }).map((p) => [p.label, p.value]));
   assert.equal(prog["Aventura"], "Mundo Shinobi (Naruto), segue a obra");
   assert.match(prog["Jutsus"]!, /Ninjutsu.*níveis D < C < B < A < S/);
-  assert.equal(prog["Custo"], "Chakra por nível: D 3, C 6, B 12, A 20, S 35");
+  assert.equal(prog["Custo"], "Chakra por nível: D 3, C 6, B 12, A 20, S 35 · por consumo: Mínimo 1, Baixo 3, Médio 6, Alto 12, Muito alto 20, Extremo 35 · Controle de chakra por personagem");
   assert.equal(prog["Kit inicial"], "10 habilidades");
   assert.equal(prog["Tema visual"], "Shinobi");
   assert.equal(prog["Ponto de partida"], "Véspera do Exame Chunin");

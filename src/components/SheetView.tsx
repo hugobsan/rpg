@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
 import type { Campaign, Character } from "@/lib/types";
-import { attributeCap, attributePoints, DEFAULT_XP_PER_POINT, levelThatAllows, powerLevel, trainingRules } from "@/lib/progression";
+import { attributeCap, attributePoints, controlLabel, costMultOf, DEFAULT_XP_PER_POINT, levelThatAllows, powerLevel, trainingRules } from "@/lib/progression";
 import { toast } from "./ui/Toast";
 import Portrait, { PortraitButton } from "./Portrait";
 import s from "./SheetView.module.css";
@@ -65,6 +65,7 @@ export default function SheetView({ char, campaign, onChange }: { char: Characte
   const sh = char.sheet;
   const rank = rs.ranks.find((r) => r.key === sh.rank);
   const { level, next } = powerLevel(rs, sh.xp);
+  const costMult = rs.abilityCosts ? costMultOf(sh.costMult) : 1;
   const pts = attributePoints(rs, sh);
   const per = rs.xpPerAttributePoint ?? DEFAULT_XP_PER_POINT;
   const perHour = trainingRules(rs).hoursPerAttributePoint;
@@ -193,14 +194,22 @@ export default function SheetView({ char, campaign, onChange }: { char: Characte
         })()}
       </div>}
 
-      {Object.entries(sh.extra || {}).some(([, v]) => v) && (
+      {(Object.entries(sh.extra || {}).some(([, v]) => v) || costMult !== 1) && (
         <dl className={s.extra}>
-          {Object.entries(sh.extra).filter(([, v]) => v).map(([k, v]) => (
+          {Object.entries(sh.extra || {}).filter(([, v]) => v).map(([k, v]) => (
             <div key={k}>
               <dt>{rs.extraFields.find((x) => x.key === k)?.label || k}</dt>
               <dd>{v}</dd>
             </div>
           ))}
+          {costMult !== 1 && (
+            <div>
+              <dt>{controlLabel(rs)}</dt>
+              <dd data-tip="Multiplica o custo de todas as técnicas">
+                custo <span className="num">×{String(costMult).replace(".", ",")}</span> ({costMult < 1 ? "gasta menos" : "gasta mais"})
+              </dd>
+            </div>
+          )}
         </dl>
       )}
     </div>

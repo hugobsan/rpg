@@ -170,7 +170,7 @@ async function db() {
     assert.equal((await char()).sheet.inventory[1].description, "em branco");
     ok("add_item: descrição vem da biblioteca; item fora dela segue como antes");
 
-    assert.match(await run("search_library", { kind: "ability", query: "kakashi" }), /^- Chidori \[ninjutsu, rank A, custo 20 chakra\].*usuários: Kakashi/);
+    assert.match(await run("search_library", { kind: "ability", query: "kakashi" }), /^- Chidori \[ninjutsu, rank A, custo base 20 chakra\].*usuários: Kakashi/);
     assert.match(await run("search_library", { kind: "ability" }), /^7 na biblioteca: Bunshin, Chidori/);
     assert.match(await run("search_library", { kind: "item", query: "nada" }), /Nada na biblioteca/);
     ok("search_library: por texto com custo e usuários; sem query, os nomes");

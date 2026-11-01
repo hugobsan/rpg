@@ -30,8 +30,8 @@ export async function suggestActions(campaignId: string): Promise<string[]> {
     sheet?.abilities.length &&
       `${rs.abilitiesLabel || "Habilidades"}: ${sheet.abilities
         .map((a) => {
-          const c = effectiveCost(rs, a);
-          return c?.amount ? `${a.name} (${c.amount} ${res(c.resource)})` : a.name;
+          const c = effectiveCost(rs, a, { sheet });
+          return c?.amount ? `${a.name} (${c.amount} ${res(c.resource)}${c.unit ? ` por ${c.unit}` : ""})` : a.name;
         })
         .join("; ")}`,
     sheet?.inventory.length && `Itens: ${sheet.inventory.map((i) => (i.qty > 1 ? `${i.name} ×${i.qty}` : i.name)).join("; ")}`,

@@ -40,7 +40,19 @@
   "abilityRanks": ["D", "C", "B", "A", "S"],
   "abilitiesLabel": "Jutsus",
   "abilityNaming": "Técnica do cânone de Naruto: use o nome romanizado oficial da Narutopedia (naruto.fandom.com), em Hepburn com mácrons (ō, ū) e com o prefixo de natureza quando faz parte do nome oficial (Katon:, Suiton:, Doton:, Fūton:, Raiton:), sem parênteses e sem tradução no nome; ex.: \"Katon: Gōkakyū no Jutsu\". A tradução em português vai no campo translation, no estilo da dublagem e dos fãs brasileiros (ex.: \"Liberação de Fogo: Técnica da Grande Bola de Fogo\"). Técnica, perícia ou ofício sem nome no cânone: nome descritivo curto em português, sem translation e sem parênteses. O nome é da técnica, nunca de quem a usa nem do estágio de domínio (nada de \"de Kakashi\" ou \"Três Tomoe\" no nome).",
-  "abilityCosts": { "resource": "chakra", "byRank": { "D": 3, "C": 6, "B": 12, "A": 20, "S": 35 } },
+  "abilityCosts": {
+    "resource": "chakra",
+    "byRank": { "D": 3, "C": 6, "B": 12, "A": 20, "S": 35 },
+    "byConsumption": [
+      { "key": "minimo", "label": "Mínimo", "cost": 1, "description": "técnicas de Academia e de rotina: Henge, Kawarimi, Bunshin, Shunshin, Genjutsu Kai" },
+      { "key": "baixo", "label": "Baixo", "cost": 3, "description": "técnicas leves ou o custo de cada unidade (um Kage Bunshin, uma rodada de dōjutsu ativo)" },
+      { "key": "medio", "label": "Médio", "cost": 6, "description": "elementais de rank C, Rasengan, invocação comum" },
+      { "key": "alto", "label": "Alto", "cost": 12, "description": "elementais de rank B, grandes áreas" },
+      { "key": "muito_alto", "label": "Muito alto", "cost": 20, "description": "técnicas de área enorme ou que esgotam um chūnin num uso: grandes inundações, pântanos" },
+      { "key": "extremo", "label": "Extremo", "cost": 35, "description": "o que um jōnin só usa poucas vezes por dia (Chidori: quatro para Kakashi), técnicas proibidas e de kage" }
+    ]
+  },
+  "costControlLabel": "Controle de chakra",
   "ranks": [
     { "key": "estudante", "label": "Estudante da Academia", "xpRequired": 0 },
     { "key": "genin", "label": "Genin", "xpRequired": 100 },

@@ -11,7 +11,11 @@ import { dehydrateSheet, editAbility, findLibrary, hydrateSheets, itemText, libr
 import {
   abilityAttribute,
   attributePoints,
-  costAdjustText,
+  costBreakdown,
+  costMultOf,
+  COST_MULT_MAX,
+  COST_MULT_MIN,
+  controlLabel,
   effectiveCost,
   findAbility,
   gainMastery,
@@ -124,16 +128,18 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "add_ability",
       description:
-        "Liga uma técnica na ficha: quando o personagem aprende E quando usa uma técnica plausível que ainda não está na ficha (registre antes de resolver). Passe só o nome e um brief: a técnica vem da biblioteca do mundo ou o Criador de habilidades a cria agora, completa (tipo, rank, efeito, dano, marcos de domínio; o custo vem do rank). Se já está na ficha, só ajusta o domínio (progress). Para mudar a técnica em si, use edit_ability.",
+        "Liga uma técnica na ficha: quando o personagem aprende E quando usa uma técnica plausível que ainda não está na ficha (registre antes de resolver). Passe só o nome e um brief: a técnica vem da biblioteca do mundo ou o Criador de habilidades a cria agora, completa (tipo, rank, consumo, efeito, dano, marcos de domínio; o valor do custo vem das regras do mundo). Se já está na ficha, só ajusta o domínio (progress). Para mudar a técnica em si, use edit_ability.",
       parameters: S(
         {
           character: { type: "string" },
           name: { type: "string", description: "nome da técnica como é conhecida no mundo" },
           brief: { type: "string", description: "o que é e faz, em uma frase, para o Criador (se não estiver na biblioteca)" },
           abilityType: { type: "string", description: "opcional: key do tipo, só como dica" },
-          element: { type: "string", description: "opcional: key do elemento (Naruto: natureza do chakra), só como dica" },
+          element: { type: "string", description: "opcional: key do elemento do mundo, se houver (Naruto: natureza do chakra; Avatar: dobra), só como dica" },
           rank: { type: "string", description: "opcional: nível, só como dica" },
-          costFree: { type: "boolean", description: "opcional: true se não gasta recurso (taijutsu, armas, ofícios), só como dica" },
+          costFree: { type: "boolean", description: "opcional: true se não gasta recurso (técnicas físicas, armas, ofícios, passivas), só como dica" },
+          consumption: { type: "string", description: "opcional: key da faixa de consumo do mundo (MECÂNICA), só como dica" },
+          costUnit: { type: "string", description: "opcional: unidade do custo, se o gasto é por unidade (Naruto: clone; Harry Potter: rodada), só como dica" },
           progress: {
             type: "number",
             description: `0-100: domínio inicial (default ${NEW_ABILITY_MASTERY}). Registrada na hora do uso: 10-25; aprendida com treino longo: mais.`,
@@ -148,16 +154,18 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "edit_ability",
       description:
-        "Corrige uma técnica NA BIBLIOTECA DO MUNDO: muda para todos que a têm, em todas as campanhas deste mundo (as fichas apontam para ela). Use para completar uma registrada incompleta, corrigir tipo, rank, efeito, dano, marcos ou renomear (siga o padrão de nomes do mundo). Não use para algo que é só de um personagem: domínio é update_ability_progress. Mande só o que muda; texto vazio apaga o campo.",
+        "Corrige uma técnica NA BIBLIOTECA DO MUNDO: muda para todos que a têm, em todas as campanhas deste mundo (as fichas apontam para ela). Use para completar uma registrada incompleta, corrigir tipo, rank, consumo, unidade de custo, efeito, dano, marcos ou renomear (siga o padrão de nomes do mundo). Não use para algo que é só de um personagem: domínio é update_ability_progress; custo maior ou menor para alguém é set_cost_modifier. Mande só o que muda; texto vazio apaga o campo.",
       parameters: S(
         {
           name: { type: "string", description: "nome atual da técnica na biblioteca" },
           new_name: { type: "string", description: "novo nome, no padrão de nomes do mundo" },
           translation: { type: "string", description: "tradução para exibição, se o padrão do mundo usar" },
           type: { type: "string", description: "key do tipo" },
-          element: { type: "string", description: "key do elemento do mundo (Naruto: natureza do chakra); vazio = sem elemento" },
+          element: { type: "string", description: "key do elemento do mundo, se houver (Naruto: natureza do chakra; Avatar: dobra); vazio = sem elemento" },
           rank: { type: "string" },
-          costFree: { type: "boolean", description: "true se não gasta recurso (taijutsu, armas, ofícios)" },
+          costFree: { type: "boolean", description: "true se não gasta recurso (técnicas físicas, armas, ofícios, passivas)" },
+          consumption: { type: "string", description: "key da faixa de consumo do mundo (quanto recurso a técnica gasta, independente do rank); vazio = custo do rank" },
+          costUnit: { type: "string", description: "unidade do custo quando o gasto é por unidade, no singular (Naruto: clone; Harry Potter: rodada; invocação); vazio = por uso" },
           description: { type: "string" },
           effect: { type: "string", description: "o que faz em jogo (alcance, duração, teste)" },
           damage: { type: "string", description: "dano em notação de dado, ex: 2d6" },
@@ -192,7 +200,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "use_ability",
       description:
-        "Resolve o uso de uma técnica DA FICHA do personagem (o que a mecânica chama de habilidade: magia, golpe especial...). O servidor faz a conta: desconta o custo já ajustado pelo domínio (falha sem rolar se não houver recurso), rola 1d20 + atributo x multiplicador + bônus do domínio contra a CD (o jogador vê a rolagem) e sobe o domínio pelo uso. Use no lugar de roll_dice + update_resource para técnicas da ficha. O dano, se houver, role à parte com roll_dice.",
+        "Resolve o uso de uma técnica DA FICHA do personagem (o que a mecânica chama de habilidade: magia, golpe especial...). O servidor faz a conta: desconta o custo já ajustado (faixa de consumo ou rank × multiplicadores do personagem × domínio; × units se a técnica custa por unidade; falha sem rolar se não houver recurso), rola 1d20 + atributo x multiplicador + bônus do domínio contra a CD (o jogador vê a rolagem) e sobe o domínio pelo uso. Use no lugar de roll_dice + update_resource para técnicas da ficha. O dano, se houver, role à parte com roll_dice.",
       parameters: S(
         {
           character: { type: "string" },
@@ -201,9 +209,26 @@ export const GM_TOOLS: ToolDef[] = [
           dc: { type: "number", description: "dificuldade (CD). Omita só em disputa direta (rolagem oposta). O servidor soma o ajuste das REGRAS DA MESA" },
           category: { type: "string", description: "tipo de ação, uma das keys das REGRAS DA MESA (se houver)" },
           target: { type: "string", description: "alvo, se houver" },
+          units: { type: "number", description: "só para técnica com custo por unidade (ex.: quantas cópias, rodadas mantidas ou invocações): inteiro ≥ 1, padrão 1" },
           note: { type: "string", description: "contexto curto do uso" },
         },
         ["character", "ability"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_cost_modifier",
+      description: `Ajusta quanto um personagem gasta: sem ability, o multiplicador geral de custo das técnicas dele (o nome no mundo vem na MECÂNICA; ex.: controle excelente 0,75, bom 0,9, ruim 1,25, péssimo 1,5); com ability, o multiplicador só daquela técnica para ele (ex.: técnica de linhagem usada por quem não nasceu com ela 1,5). 1 volta ao padrão. Entre ${COST_MULT_MIN} e ${COST_MULT_MAX}. Use quando a história mostra a mudança (treino de controle, uma condição) ou para corrigir; não é da técnica: para todos, use edit_ability.`,
+      parameters: S(
+        {
+          character: { type: "string" },
+          ability: { type: "string", description: "opcional: nome exato da técnica na ficha; sem ele, o multiplicador geral" },
+          mult: { type: "number", description: `multiplicador (${COST_MULT_MIN} a ${COST_MULT_MAX}; 1 = padrão; menor gasta menos)` },
+          reason: { type: "string", description: "por quê, em poucas palavras" },
+        },
+        ["character", "mult"]
       ),
     },
   },
@@ -806,6 +831,8 @@ export async function executeGmTool(
         args.element && `elemento sugerido: ${args.element}`,
         args.rank && `nível sugerido: ${args.rank}`,
         args.costFree === true && "não gasta recurso",
+        args.consumption && `consumo sugerido: ${args.consumption}`,
+        args.costUnit && `custo por ${args.costUnit}`,
       ]
         .filter(Boolean)
         .join("; ");
@@ -823,7 +850,8 @@ export async function executeGmTool(
           : idx >= 0
             ? c.sheet.abilities[idx].progress
             : NEW_ABILITY_MASTERY;
-      const ability: Ability = { ...(entry.data as LibraryAbility), name: entry.name, ref: entry.id, progress };
+      // o multiplicador de custo do vínculo é do personagem: re-ligar não o perde
+      const ability: Ability = { ...(entry.data as LibraryAbility), name: entry.name, ref: entry.id, progress, costMult: idx >= 0 ? c.sheet.abilities[idx].costMult : undefined };
       if (idx >= 0) c.sheet.abilities[idx] = ability;
       else c.sheet.abilities.push(ability);
       await saveSheet(c.id, c.sheet);
@@ -840,7 +868,7 @@ export async function executeGmTool(
           : from === "creator"
             ? "criada pelo Criador de habilidades e guardada na biblioteca"
             : "o Criador não respondeu: registrada INCOMPLETA na biblioteca, só com o que você passou; complete com edit_ability";
-      return `Habilidade ${idx >= 0 ? "já estava na ficha" : "adicionada"} (${origin}): ${abilityPromptLine(ctx.campaign.ruleset, ability)}.${cur ? ` Marco atual: ${cur.description}` : ""}`;
+      return `Habilidade ${idx >= 0 ? "já estava na ficha" : "adicionada"} (${origin}): ${abilityPromptLine(ctx.campaign.ruleset, ability, Infinity, c.sheet)}.${cur ? ` Marco atual: ${cur.description}` : ""}`;
     }
     case "edit_ability": {
       const target = String(args.name || "").trim();
@@ -891,12 +919,18 @@ export async function executeGmTool(
         return `Erro: ${c.name} não tem "${args.ability}" na ficha. Se for plausível que ele saiba, registre antes com add_ability (domínio 10-25) e chame use_ability de novo; se não, a tentativa falha na narrativa. Técnicas da ficha: ${c.sheet.abilities.map((a) => a.name).join(", ") || "nenhuma"}.`;
       const attrKey = abilityAttribute(rs, ability, args.attribute ? String(args.attribute) : undefined);
       if (!attrKey) return `Erro: atributo "${args.attribute}" não existe (${rs.attributes.map((a) => a.key).join(", ")}).`;
-      const cost = effectiveCost(rs, ability);
+      const cost = effectiveCost(rs, ability, { sheet: c.sheet, units: Number(args.units) || 1 });
+      // a conta só quando algo mudou o valor da faixa/rank (multiplicador ou unidades)
+      const how = cost && (cost.amount !== cost.base || cost.unit) ? ` (${costBreakdown(rs, ability, cost)})` : "";
       const pool = cost && cost.amount > 0 ? c.sheet.resources[cost.resource] : undefined;
       if (cost && cost.amount > 0) {
         if (!pool) return `Erro: recurso "${cost.resource}" não existe na ficha de ${c.name}.`;
-        if (pool.current < cost.amount)
-          return `FALHOU sem rolar: ${ability.name} custa ${cost.amount} ${cost.resource}${cost.mult !== 1 ? ` (base ${cost.base}, ${costAdjustText(cost.mult)})` : ""} e ${c.name} tem ${pool.current}. Nada foi gasto. Narre a falta de ${cost.resource}.`;
+        if (pool.current < cost.amount) {
+          // com unidade: quantas cabem no que resta (para o Mestre narrar menos cópias/rodadas em vez de nada)
+          let fit = cost.units - 1;
+          while (fit > 0 && effectiveCost(rs, ability, { sheet: c.sheet, units: fit })!.amount > pool.current) fit--;
+          return `FALHOU sem rolar: ${ability.name} custa ${cost.amount} ${cost.resource}${how} e ${c.name} tem ${pool.current}.${fit > 0 ? ` Dá para units ${fit} no máximo (por ${cost.unit}).` : ""} Nada foi gasto. Narre a falta de ${cost.resource}.`;
+        }
         pool.current -= cost.amount;
       }
       const attr = c.sheet.attributes[attrKey] ?? 0;
@@ -920,7 +954,12 @@ export async function executeGmTool(
       markGained(ctx, c, ability);
       await saveSheet(c.id, c.sheet);
       ctx.emit({ type: "state" });
-      if (pool) ctx.emit({ type: "tool", name, summary: `${c.name} usou ${ability.name}: −${cost!.amount} ${cost!.resource} (${pool.current}/${pool.max})` });
+      if (pool)
+        ctx.emit({
+          type: "tool",
+          name,
+          summary: `${c.name} usou ${ability.name}: −${cost!.amount} ${cost!.resource}${cost!.unit && cost!.units > 1 ? ` (${cost!.units} × ${cost!.base} por ${cost!.unit}${cost!.amount !== cost!.units * cost!.base ? ", ajustado" : ""})` : ""} (${pool.current}/${pool.max})`,
+        });
       ctx.emit({ type: "dice", result });
       // depois do dado: com a animação, só aparece quando o jogador rolar
       if (g.after > g.before || g.milestone)
@@ -931,11 +970,37 @@ export async function executeGmTool(
         });
       let msg = `${ability.name} (${c.name}${args.target ? ` → ${args.target}` : ""}): dados [${result.rolls.join(", ")}] + ${attrLabel} ${attr}${mult !== 1 ? `×${mult}` : ""} + domínio ${bonus} = TOTAL ${result.total}`;
       msg += result.dc !== undefined ? `${dcResultText(result, adj.note)}.` : `${adj.note} (disputa: compare com a rolagem oposta).`;
-      msg += pool ? ` Custo pago: ${cost!.amount} ${cost!.resource}${cost!.mult !== 1 ? ` (base ${cost!.base}, ${costAdjustText(cost!.mult)})` : ""}; resta ${pool.current}/${pool.max}.` : " Sem custo.";
+      msg += pool ? ` Custo pago: ${cost!.amount} ${cost!.resource}${how}; resta ${pool.current}/${pool.max}.` : " Sem custo.";
       msg += g.after > g.before ? ` Domínio ${g.before}% → ${g.after}%.` : g.capped ? ` Domínio ${g.after}% (já rendeu o máximo hoje).` : ` Domínio ${g.after}%.`;
       if (g.milestone) msg += ` NOVO MARCO ALCANÇADO: ${g.milestone.description} — narre esse avanço.`;
       if (ability.damage) msg += ` Dano registrado: ${ability.damage} (role com roll_dice se acertou).`;
       return msg;
+    }
+    case "set_cost_modifier": {
+      const rs = ctx.campaign.ruleset;
+      const c = await getChar(cid, String(args.character));
+      const mult = Math.round(Number(args.mult) * 100) / 100;
+      if (!Number.isFinite(mult) || mult < COST_MULT_MIN || mult > COST_MULT_MAX)
+        return `Erro: mult precisa ser um número entre ${COST_MULT_MIN} e ${COST_MULT_MAX} (1 = padrão).`;
+      const why = args.reason ? ` (${args.reason})` : "";
+      const fmt = (n: number) => String(n).replace(".", ",");
+      if (args.ability) {
+        const ability = findAbility(c.sheet, String(args.ability));
+        if (!ability) return `Erro: ${c.name} não tem "${args.ability}" na ficha.`;
+        const before = costMultOf(ability.costMult);
+        ability.costMult = mult === 1 ? undefined : mult;
+        await saveSheet(c.id, c.sheet);
+        ctx.emit({ type: "state" });
+        ctx.emit({ type: "tool", name, summary: `${c.name}: custo de ${ability.name} ×${fmt(mult)}${why}` });
+        const cost = effectiveCost(rs, ability, { sheet: c.sheet });
+        return `Custo de ${ability.name} para ${c.name}: ×${fmt(before)} → ×${fmt(mult)}.${cost ? ` Agora: ${costBreakdown(rs, ability, cost)} ${cost.resource}.` : ""}`;
+      }
+      const before = costMultOf(c.sheet.costMult);
+      c.sheet.costMult = mult === 1 ? undefined : mult;
+      await saveSheet(c.id, c.sheet);
+      ctx.emit({ type: "state" });
+      ctx.emit({ type: "tool", name, summary: `${c.name}: ${controlLabel(rs).toLowerCase()} ×${fmt(mult)}${why}` });
+      return `${controlLabel(rs)} de ${c.name}: ×${fmt(before)} → ×${fmt(mult)} (vale para todas as técnicas dele).`;
     }
     case "train": {
       const rs = ctx.campaign.ruleset;

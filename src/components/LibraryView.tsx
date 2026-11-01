@@ -6,7 +6,7 @@ import Loader from "./ui/Loader";
 import Skeleton from "./ui/Skeleton";
 import SearchBox, { fold } from "./ui/SearchBox";
 import { toast } from "./ui/Toast";
-import { abilityCost } from "@/lib/ruleset";
+import { abilityCost, consumptionOf } from "@/lib/ruleset";
 import p from "./SidePanels.module.css";
 import a from "./AbilitiesView.module.css";
 import s from "./LibraryView.module.css";
@@ -138,6 +138,7 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
   const entry = (e: LibraryEntry, i: number) => {
     const d = e.data as Data;
     const cost = kind === "ability" ? abilityCost(ruleset, d) : null;
+    const band = kind === "ability" ? consumptionOf(ruleset, d) : undefined;
     const marks = d.milestones ?? [];
     return (
       <details key={e.id} className={`${p.card} ${s.entry}`} style={{ animationDelay: `${Math.min(i, 8) * 25}ms` }}
@@ -160,9 +161,9 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
           {(cost || d.damage) && (
             <div className={a.stats}>
               {cost && (
-                <span className={a.stat} data-tip={d.costFree ? "Não gasta recurso" : "Custo base do rank; varia com o domínio de quem usa"}>
-                  <span className={a.statK}>custo</span>
-                  {cost.amount ? <span><b className="num">{cost.amount}</b> {resLabel(cost.resource)}</span> : <span>livre</span>}
+                <span className={a.stat} data-tip={d.costFree ? "Não gasta recurso" : `Custo base ${band ? `do consumo ${band.label.toLowerCase()}` : "do rank"}${d.costUnit ? `, por ${d.costUnit}` : ""}; varia com quem usa e com o domínio`}>
+                  <span className={a.statK}>custo{band ? ` · ${band.label.toLowerCase()}` : ""}</span>
+                  {cost.amount ? <span><b className="num">{cost.amount}</b> {resLabel(cost.resource)}{d.costUnit && ` por ${d.costUnit}`}</span> : <span>livre</span>}
                 </span>
               )}
               {d.damage && <span className={a.stat}><span className={a.statK}>dano</span><b className="num">{d.damage}</b></span>}

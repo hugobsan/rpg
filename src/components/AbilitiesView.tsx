@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
 import type { Ability, Character, Ruleset } from "@/lib/types";
-import { costsByRankText } from "@/lib/ruleset";
-import { costAdjustText, DEFAULT_MASTERY_BONUS, effectiveCost, mastery, masteryBonus } from "@/lib/progression";
+import { consumptionOf, costsByConsumptionText, costsByRankText } from "@/lib/ruleset";
+import { controlLabel, costBreakdown, costMultOf, DEFAULT_MASTERY_BONUS, effectiveCost, mastery, masteryBonus } from "@/lib/progression";
 import SearchBox, { fold } from "./ui/SearchBox";
 import s from "./AbilitiesView.module.css";
 
@@ -78,10 +78,10 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
     );
 
   const item = (a: Ability, i: number) => {
-    const cost = effectiveCost(ruleset, a);
+    const cost = effectiveCost(ruleset, a, { sheet: char.sheet });
     const progress = mastery(a);
     const bonus = masteryBonus(ruleset, a);
-    const adj = cost?.base ? costAdjustText(cost.mult) : "";
+    const band = consumptionOf(ruleset, a);
     const marks = [...(a.milestones || [])].sort((x, y) => x.threshold - y.threshold);
     const key = String(a.ref ?? a.name);
     const isOpen = open.has(key);
@@ -108,10 +108,13 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
         </div>
         <div className={s.stats}>
           {cost && (
-            <span className={s.stat} title={adj ? `Custo base ${cost.base}; ${adj}` : "Custo por uso"}>
-              <span className={s.statK}>custo</span>
+            <span className={s.stat} data-tip={cost.base ? `${resLabel(cost.resource)}: ${costBreakdown(ruleset, a, cost)}` : "Não gasta recurso"}>
+              <span className={s.statK}>custo{band ? ` · ${band.label.toLowerCase()}` : ""}</span>
               {cost.amount || cost.base ? (
-                <span><b className="num">{cost.amount}</b> {resLabel(cost.resource)}{adj && cost.amount !== cost.base && <del className={s.base}>{cost.base}</del>}</span>
+                <span>
+                  <b className="num">{cost.perUnit}</b> {resLabel(cost.resource)}{cost.unit && ` por ${cost.unit}`}
+                  {cost.perUnit !== cost.base && <del className={s.base}>{cost.base}</del>}
+                </span>
               ) : <span>livre</span>}
             </span>
           )}
@@ -158,7 +161,11 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
         <summary>Como funcionam {label.toLowerCase()}</summary>
         <p>
           {label} que {char.name} sabe usar. O Mestre registra aqui o que você usa ou aprende na história, com o custo e o efeito.
-          {costs && ` Custo por rank (${resLabel(costs.resource)}): ${costsByRankText(ruleset)}.`}
+          {costs &&
+            (costs.byConsumption
+              ? ` Custo pelo consumo da técnica (${resLabel(costs.resource)}): ${costsByConsumptionText(ruleset)}; sem consumo, pelo rank: ${costsByRankText(ruleset)}. Algumas custam por unidade (por rodada, por cópia...).`
+              : ` Custo por rank (${resLabel(costs.resource)}): ${costsByRankText(ruleset)}.`)}
+          {costs && costMultOf(char.sheet.costMult) !== 1 && ` ${controlLabel(ruleset)} de ${char.name}: custo ×${String(costMultOf(char.sheet.costMult)).replace(".", ",")}.`}
           {` O domínio sobe com o uso e o treino e dá bônus no teste (${(ruleset.masteryBonus ?? DEFAULT_MASTERY_BONUS)
             .map((b) => `${b.min}%: +${b.value}`)
             .join(", ")}); domínio baixo encarece o custo e domínio total o barateia.`}

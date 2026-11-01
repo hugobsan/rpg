@@ -40,7 +40,7 @@ const KEYS: (keyof Ruleset)[] = [
   "name", "description", "theme", "loreNotes", "canonBased", "startingPoint", "attributes", "resources",
   "abilityTypes", "abilityElements", "abilityRanks", "ranks", "powerLevels", "masteryBonus", "masteryCost", "xpPerAttributePoint",
   "attributeMultiplier", "abilityAttributes", "training", "creationPoints", "extraFields", "diceNotes",
-  "progressionNotes", "abilitiesLabel", "abilityCosts", "startingAbilities", "abilityNaming",
+  "progressionNotes", "abilitiesLabel", "abilityCosts", "costControlLabel", "startingAbilities", "abilityNaming",
 ];
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -166,6 +166,12 @@ export function draftIssues(d: Draft): string[] {
   const ac = d.abilityCosts;
   if (!isObj(ac) || !res.includes(ac.resource) || !isObj(ac.byRank)) out.push(`abilityCosts: {resource: uma de ${res.join(", ") || "resources"}, byRank: {rank: custo}}`);
   else for (const [k, v] of Object.entries(ac.byRank)) if (!ranks.includes(k) || !num(v)) out.push(`abilityCosts.byRank: "${k}" não é um abilityRank ou o custo não é número`);
+  // faixas de consumo (opcionais): lista de {key, label, cost}, keys sem repetir
+  const bands = isObj(ac) ? ac.byConsumption : undefined;
+  if (bands !== undefined && (!Array.isArray(bands) || !bands.length || !bands.every((b) => str(b?.key) && str(b?.label) && num(b?.cost) && b.cost >= 0)))
+    out.push("abilityCosts.byConsumption: lista de {key, label, cost} (cost número ≥ 0) ou omita");
+  else if (bands && new Set(bands.map((b) => b.key)).size !== bands.length) out.push("abilityCosts.byConsumption: key repetida");
+  const bandKeys = Array.isArray(bands) ? bands.map((b) => b?.key) : [];
   // todo tipo de habilidade testa algum atributo (sem isso, cai no primeiro atributo da lista)
   for (const t of types) {
     const mapped = d.abilityAttributes?.[t];
@@ -182,6 +188,7 @@ export function draftIssues(d: Draft): string[] {
       if (a?.rank !== undefined && !ranks.includes(a.rank)) out.push(`startingAbilities.${k}.${n}: rank "${a.rank}" não está em abilityRanks`);
       if (a?.costFree !== undefined && typeof a.costFree !== "boolean") out.push(`startingAbilities.${k}.${n}: costFree é true ou false`);
       if ("cost" in Object(a)) out.push(`startingAbilities.${k}.${n}: sem cost (o custo vem do rank); use costFree: true se não gasta recurso`);
+      if (a?.consumption !== undefined && !bandKeys.includes(a.consumption)) out.push(`startingAbilities.${k}.${n}: consumption "${a.consumption}" não está em abilityCosts.byConsumption`);
     }
   }
   for (const f of ["masteryBonus", "masteryCost"] as const) {
@@ -189,6 +196,7 @@ export function draftIssues(d: Draft): string[] {
     if (b !== undefined && (!Array.isArray(b) || !b.every((x) => num(x?.min) && num(x?.value)))) out.push(`${f}: lista de {min, value} ou omita`);
   }
   if (d.training !== undefined && !isObj(d.training)) out.push("training: objeto ou omita");
+  if (d.costControlLabel !== undefined && !str(d.costControlLabel)) out.push("costControlLabel: texto ou omita");
   return out;
 }
 
@@ -207,7 +215,15 @@ export function draftProgress(d: Draft): { label: string; value: string | null }
     { label: "Atributos", value: names(d.attributes) || null },
     { label: "Barras", value: names(d.resources) || null },
     { label: ab, value: d.abilityTypes?.length ? `${names(d.abilityTypes)}${d.abilityRanks?.length ? ` · níveis ${d.abilityRanks.join(" < ")}` : ""}` : null },
-    { label: "Custo", value: d.abilityCosts && res ? `${res} por nível: ${costsByRankText({ ...d, abilityRanks: d.abilityRanks || [] } as Ruleset).replace(/=/g, " ")}` : null },
+    {
+      label: "Custo",
+      value:
+        d.abilityCosts && res
+          ? `${res} por nível: ${costsByRankText({ ...d, abilityRanks: d.abilityRanks || [] } as Ruleset).replace(/=/g, " ")}${
+              d.abilityCosts.byConsumption?.length ? ` · por consumo: ${d.abilityCosts.byConsumption.map((b) => `${b.label} ${b.cost}`).join(", ")}` : ""
+            }${d.costControlLabel ? ` · ${d.costControlLabel} por personagem` : ""}`
+          : null,
+    },
     { label: "Cargos", value: d.ranks?.length ? d.ranks.map((r) => r.label).join(" → ") : null },
     { label: "Níveis de poder", value: d.powerLevels?.length ? d.powerLevels.map((p) => p.label).join(" → ") : null },
     { label: "Kit inicial", value: kitCount ? `${kitCount} ${kitCount === 1 ? "habilidade" : "habilidades"}` : null },

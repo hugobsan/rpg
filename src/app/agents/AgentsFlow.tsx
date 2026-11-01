@@ -325,11 +325,11 @@ const NODES: (FlowNode | LaneNode)[] = [
     fallback: "A incompleta aparece ao Mestre marcada (na ficha e no search_library) para ele completar com edit_ability.",
   }),
   n("b_lib", X[1], 880, "db", "Biblioteca do mundo", "fonte única das técnicas", {
-    oque: "A única descrição de cada técnica: nome no padrão do mundo, tradução, tipo, rank, costFree, efeito, dano, requisitos, marcos e quem usa. Não guarda custo (é calculado na ficha). Também os itens. É por mundo (Ruleset.world, ex.: naruto), não por campanha: as campanhas do mesmo mundo usam as mesmas entradas, e cada nome existe uma vez por mundo. Excluir na aba Biblioteca é soft delete: some da lista e da busca, mas quem já tem continua tendo, marcada como fora da biblioteca. Fonte do add_ability, do add_item e do Criador de personagens.",
+    oque: "A única descrição de cada técnica: nome no padrão do mundo, tradução, tipo, rank, costFree, efeito, dano, requisitos, marcos e quem usa. Não guarda o valor do custo: só a faixa de consumo e a unidade (o valor é regra do mundo e o ajuste é de quem usa). Também os itens. É por mundo (Ruleset.world, ex.: naruto), não por campanha: as campanhas do mesmo mundo usam as mesmas entradas, e cada nome existe uma vez por mundo. Excluir na aba Biblioteca é soft delete: some da lista e da busca, mas quem já tem continua tendo, marcada como fora da biblioteca. Fonte do add_ability, do add_item e do Criador de personagens.",
     custo: "Local (Postgres).",
   }),
   n("b_abil", X[2], 880, "abil", "Criador de habilidades", "técnica nova, validada", {
-    oque: "Cria a técnica seguindo a mecânica da campanha (tipos, ranks, recursos, faixas de domínio), o cânone e o padrão de nomes do mundo (abilityNaming; no Naruto, o nome romanizado oficial, com a tradução à parte). Não define custo: só costFree, se não gasta recurso. O código valida tipo, rank, dano e marcos e guarda na biblioteca do mundo. Com padrão de nomes vale o nome do Criador, que pode ser outro que o do Mestre (e já estar na biblioteca).",
+    oque: "Cria a técnica seguindo a mecânica da campanha (tipos, ranks, recursos, faixas de domínio), o cânone e o padrão de nomes do mundo (abilityNaming; no Naruto, o nome romanizado oficial, com a tradução à parte). Não define o valor do custo: só costFree, a faixa de consumo do mundo (pela energia que gasta, não pelo rank) e a unidade, se o gasto é por unidade. O código valida tipo, rank, dano e marcos e guarda na biblioteca do mundo. Com padrão de nomes vale o nome do Criador, que pode ser outro que o do Mestre (e já estar na biblioteca).",
     quando: "Na hora, quando o add_ability ou o Criador de personagens liga uma técnica que não está no mundo; em lotes, quando o jogador pede.",
     freq: "1 chamada por técnica nova; lotes de 6 até chegar ao total pedido.",
     custo: "Grátis com o modelo padrão; 70 a 120 s por chamada.",
@@ -350,13 +350,13 @@ const NODES: (FlowNode | LaneNode)[] = [
   }),
 
   n("b_edit", X[0], 1040, "gm", "Mestre: edit_ability", "no turno e fora do jogo", {
-    oque: "Corrige a técnica na biblioteca do mundo (tipo, rank, efeito, dano, marcos, quem usa, costFree, tradução ou o nome, no padrão do mundo), mandando só o que muda. Como as fichas apontam pela ref, vale na hora para todos que a têm, em todas as campanhas do mesmo mundo. Completar uma incompleta é editá-la (sai a marca). O que é de um personagem só não passa por aqui: domínio é update_ability_progress e tirar da ficha é remove_ability (fora do jogo).",
+    oque: "Corrige a técnica na biblioteca do mundo (tipo, rank, efeito, dano, marcos, quem usa, costFree, tradução ou o nome, no padrão do mundo), mandando só o que muda. Como as fichas apontam pela ref, vale na hora para todos que a têm, em todas as campanhas do mesmo mundo. Completar uma incompleta é editá-la (sai a marca). O que é de um personagem só não passa por aqui: domínio é update_ability_progress, gastar mais ou menos é set_cost_modifier e tirar da ficha é remove_ability (fora do jogo).",
     quando: "Técnica incompleta ou errada: o Mestre no turno, ou o Mestre fora do jogo a pedido do jogador.",
     custo: "Sem IA: só SQL.",
     fallback: "Nome que já existe no mundo ou tipo inválido: a edição é recusada com o motivo e nada muda.",
   }),
   n("b_sheet", X[1], 1040, "code", "Ficha: ref + domínio", "completada na leitura", {
-    oque: "Sem IA: a ficha de cada personagem (jogador e NPC) guarda só a ligação com a entrada da biblioteca (ref) e o domínio. Toda leitura completa as técnicas pela biblioteca numa consulta só (as excluídas vêm marcadas como fora da biblioteca) e toda gravação volta a reduzir a ref e domínio. O custo é calculado na hora: o do rank na mecânica (abilityCosts) × o multiplicador do domínio, ou 0 se costFree; é o que as telas e o Mestre veem e o que o use_ability cobra.",
+    oque: "Sem IA: a ficha de cada personagem (jogador e NPC) guarda só a ligação com a entrada da biblioteca (ref) e o domínio. Toda leitura completa as técnicas pela biblioteca numa consulta só (as excluídas vêm marcadas como fora da biblioteca) e toda gravação volta a reduzir a ref e domínio. O custo é calculado na hora: o valor da faixa de consumo da técnica (ou, sem faixa, o do rank) nas regras do mundo (abilityCosts) × as unidades, se a técnica custa por unidade × o multiplicador geral do personagem (costMult da ficha) × o da técnica para ele (costMult do vínculo) × o do domínio, ou 0 se costFree; é o que as telas e o Mestre veem e o que o use_ability cobra. A ficha guarda ref, domínio e, se houver, o costMult do vínculo.",
   }),
   n("b_new", X[2], 1040, "player", "Criar campanha", "kit inicial e extras", {
     oque: "Sem IA: o kit do rank inicial (startingAbilities) e as técnicas extras da tela entram na biblioteca do mundo (a que já existe pelo nome é reaproveitada) e a ficha do jogador recebe as refs com o domínio. Mecânica sem world ganha o slug do nome, fixo desde a criação.",

@@ -16,7 +16,7 @@ import {
   searchMemories,
 } from "./retrieval";
 import { decideCast, decideElapsed, decideMoved, decideTurn, scoreImportance } from "./decisions";
-import { attributeCap, attributePoints, powerLevel } from "./progression";
+import { attributeCap, attributePoints, controlLabel, costMultOf, powerLevel } from "./progression";
 import { formatClock, getClock, period } from "./clock";
 import { hydrateSheets } from "./library";
 import { getObjectives, objectivesPromptBlock, objectiveXp } from "./objectives";
@@ -105,12 +105,13 @@ export function sheetSummary(c: Character, full: boolean, rs: Ruleset, compact =
     .map(([k, v]) => `${k}: ${v}`)
     .join("; ");
   if (extra) lines.push(`  ${extra}`);
+  if (costMultOf(s.costMult) !== 1) lines.push(`  ${controlLabel(rs).toLowerCase()}: custo das técnicas ×${String(costMultOf(s.costMult)).replace(".", ",")} (já no custo abaixo)`);
   if (s.abilities.length)
     lines.push(
       `  habilidades:\n` +
         s.abilities
           .map((a) => {
-            let line = `    - ${abilityPromptLine(rs, a, compact ? 160 : Infinity)}`;
+            let line = `    - ${abilityPromptLine(rs, a, compact ? 160 : Infinity, s)}`;
             const cur = currentMilestone(a);
             const next = nextMilestone(a);
             if (cur) line += ` — atual: ${cur.description}`;

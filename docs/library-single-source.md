@@ -35,29 +35,39 @@ Só o que é da técnica e não varia com quem usa nem com a mesa:
 | `type` | key de `abilityTypes` |
 | `element?` | key de `Ruleset.abilityElements` (Naruto: natureza do chakra: katon, suiton, futon, doton, raiton); vazio = sem elemento. Filtro "Elemento" na aba Jutsus e na Biblioteca |
 | `rank?` | rank da técnica (D/C/B/A/S) |
-| `costFree?` | `true` se a técnica não gasta recurso (taijutsu, armas, ofícios) |
+| `costFree?` | `true` se a técnica não gasta recurso (técnicas físicas, armas, ofícios, passivas) |
+| `consumption?` | key de `Ruleset.abilityCosts.byConsumption` (faixa de consumo do mundo): quanto recurso gasta, independente do rank. Validada contra as keys do ruleset |
+| `costUnit?` | texto livre: o custo é por unidade ("clone", "rodada", "invocação"); `use_ability` recebe `units` |
 | `description?`, `effect?`, `damage?`, `requirements?` | |
 | `milestones?` | marcos de domínio (o progresso é de cada personagem) |
 | `users?` | quem é conhecido por usar no cânone |
 | `incomplete?` | `true` quando foi registrada sem o Criador (só com o que o Mestre passou); o Mestre deve completar com `edit_ability` |
 
-Sai da biblioteca: `cost` (o custo depende do ninja e da mesa).
+Sai da biblioteca: `cost` (o valor é regra do mundo e o ajuste é de quem usa).
 
 ### 4. Habilidade na ficha
 
-- Formato gravado em `characters.sheet.abilities`: `{ ref: number; progress?: number }[]` (`ref` = `library.id`).
+- Formato gravado em `characters.sheet.abilities`: `{ ref: number; progress?: number; costMult?: number }[]` (`ref` = `library.id`;
+  `costMult` = multiplicador de custo desta técnica para este personagem, ex.: linhagem por implante ×1,5; ausente = 1).
+- `Sheet.costMult?`: multiplicador geral de custo do personagem (rótulo do mundo em `Ruleset.costControlLabel`; sem ele, "Eficiência").
 - Formato em memória (`Ability`): a entrada da biblioteca hidratada + `ref` + `progress` + `removed?: true` se a entrada foi excluída (soft delete).
 - `hydrateSheets(chars)` / `hydrateSheet(sheet)` em `library.ts`: uma consulta por lote (`WHERE id = ANY($1)`), mantém a ordem da ficha.
   Toda leitura de `characters` que use `sheet.abilities` passa por ela. Entrada sem `ref` (formato antigo) é mantida
   como está, para não quebrar, e a checagem acusa.
-- `dehydrateSheet(sheet)`: reduz cada habilidade a `{ ref, progress }`. Todo `UPDATE/INSERT` de `characters.sheet` passa por ela.
+- `dehydrateSheet(sheet)`: reduz cada habilidade a `{ ref, progress, costMult? }` (costMult 1 não é gravado). Todo `UPDATE/INSERT` de `characters.sheet` passa por ela.
 - `turn_snapshots` guardam o formato gravado (com `ref`); a migração converte os antigos.
 
 ### 5. Custo
 
-- `abilityCost(r, a)`: `costFree` → `{ resource, amount: 0 }`; senão `r.abilityCosts.byRank[a.rank]`; sem rank → `null`.
-- `effectiveCost` continua aplicando o multiplicador do domínio (`masteryCost`). Afinidade por personagem fica para depois
-  (entraria como dado variável na ficha, ao lado de `progress`).
+- `abilityCost(r, a)`: `costFree` → `{ resource, amount: 0 }`; senão o `cost` da faixa `a.consumption` em
+  `r.abilityCosts.byConsumption` (lista `{ key, label, cost, description? }` do mundo, opcional); sem faixa,
+  `r.abilityCosts.byRank[a.rank]`; sem rank → `null`; mundo sem `abilityCosts` → `null` (sem custo).
+- `effectiveCost(r, a, { sheet, units })`: base × units (só com `costUnit`, 1 a 1000) × `sheet.costMult` × `a.costMult` (vínculo,
+  0,5 a 2) × multiplicador do domínio (`masteryCost`), arredondado no total (acréscimo para cima, desconto para baixo),
+  nunca abaixo de 1 se a base > 0. `costBreakdown` escreve a conta (tooltip da aba, resposta do `use_ability`).
+- `set_cost_modifier { character, ability?, mult, reason }` (Mestre e fora do jogo) ajusta o geral ou o do vínculo.
+- Naruto: faixas e rótulo em `naruto-ruleset.json`; consumo de cada técnica e costMult dos NPCs canônicos em
+  `scripts/data/naruto-costs.json` (aplicado por `scripts/library-consumption.ts`); praticabilidade em `scripts/cost-check.ts`.
 
 ### 6. Padrão de nomes (Naruto)
 
@@ -94,14 +104,14 @@ Cada item diz como é conferido. "Banco" = consulta SQL no banco local; "check" 
 
 | # | resultado esperado | como conferir |
 |---|---|---|
-| A1 | Nenhuma ficha guarda definição de habilidade: toda entrada de `sheet.abilities` tem só `ref` e `progress` | banco: `jsonb_object_keys` das entradas de todas as fichas ⊆ {ref, progress} |
+| A1 | Nenhuma ficha guarda definição de habilidade: toda entrada de `sheet.abilities` tem só `ref`, `progress` e `costMult` | banco: `jsonb_object_keys` das entradas de todas as fichas ⊆ {ref, progress, costMult} |
 | A2 | Toda `ref` aponta para uma linha existente da biblioteca do mesmo mundo da campanha | banco: join fichas × library por id e world, zero órfãs |
 | A3 | Os mesmos dois critérios valem para `turn_snapshots` | banco |
 | A4 | A biblioteca não tem `cost` em nenhuma entrada; técnicas que não gastam recurso têm `costFree` | banco |
 | A5 | Toda linha da biblioteca tem `world`; a da campanha atual é `naruto` | banco |
 | A6 | Nenhum nome fora do padrão: sem parênteses, todos os nomes de `library-names.json` aplicados, duplicadas juntadas | banco × `scripts/data/library-names.json` |
 | A7 | Nenhuma habilidade se perdeu: cada personagem tem as mesmas habilidades (pelo mapa de nomes) e o mesmo domínio de antes | banco atual × backup restaurado num banco temporário |
-| A8 | Custo exibido e cobrado = `byRank[rank]` × multiplicador do domínio, ou 0 se `costFree` | check (`use_ability` via `executeGmTool`) |
+| A8 | Custo exibido e cobrado = (faixa de consumo ou `byRank[rank]`) × units × costMult da ficha × costMult do vínculo × multiplicador do domínio, ou 0 se `costFree` | check (`use_ability` via `executeGmTool`; `scripts/cost-check.ts`) |
 | A9 | `add_ability` sempre liga uma `ref`: jutsu da biblioteca, jutsu novo pelo Criador e jutsu com Criador falhando (`incomplete: true`) | check, com o Criador simulado |
 | A10 | `edit_ability` muda a entrada e a mudança aparece na ficha de todos que a têm, inclusive de outra campanha do mesmo mundo | check com duas campanhas de teste no mesmo mundo |
 | A11 | Excluir na biblioteca é soft delete: some da lista e da busca, continua na ficha marcado como removido | check + tela |

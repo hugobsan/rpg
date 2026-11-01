@@ -5,7 +5,7 @@ import { chat } from "./openrouter";
 import { startJob } from "./jobs";
 import { dehydrateSheet, hydrateSheet, linkAbility, listLibrary } from "./library";
 import { rulesetPromptSummary } from "./ruleset";
-import { powerLevels } from "./progression";
+import { controlLabel, COST_MULT_MAX, COST_MULT_MIN, costMultOf, powerLevels } from "./progression";
 import type { Ability, Campaign, Character, Item, LibraryItem, Persona, Ruleset, Sheet } from "./types";
 
 /**
@@ -27,7 +27,7 @@ export interface Snapshot {
 /** Saída do Criador já limpa e coerente com o ruleset. */
 export interface Draft {
   persona: Partial<Persona>;
-  sheet: Partial<Pick<Sheet, "rank" | "xp" | "attributes" | "resources" | "extra" | "inventory">>;
+  sheet: Partial<Pick<Sheet, "rank" | "xp" | "attributes" | "resources" | "extra" | "inventory" | "costMult">>;
   /** do Criador: nome + domínio (+ definição, que só vale como fallback incompleto do linkAbility); depois de createProfile, ligadas à biblioteca (com ref) */
   abilities: Ability[];
 }
@@ -37,6 +37,11 @@ const str = (v: unknown, max = 1500) => (typeof v === "string" && v.trim() ? v.t
 const num = (v: unknown) => {
   const n = typeof v === "string" && v.trim() ? Number(v) : v;
   return typeof n === "number" && Number.isFinite(n) ? n : undefined;
+};
+/** multiplicador de custo do Criador: dentro dos limites e diferente de 1, senão nada (padrão) */
+const mult = (v: unknown) => {
+  const n = num(v);
+  return n === undefined || n <= 0 ? undefined : costMultOf(n) === 1 ? undefined : Math.round(costMultOf(n) * 100) / 100;
 };
 const list = (v: unknown) => (Array.isArray(v) ? v.map(obj).filter((x) => str(x.name, 80)) : []);
 
@@ -101,6 +106,7 @@ export function normalizeDraft(raw: unknown, r: Ruleset): Draft {
         type: types.has(String(a.type)) ? String(a.type) : "",
         rank: r.abilityRanks.includes(String(a.rank)) ? String(a.rank) : undefined,
         progress: Math.max(0, Math.min(100, Math.round(num(a.progress) ?? 50))),
+        costMult: mult(a.costMult),
         description: str(a.description, 600),
         effect: str(a.effect, 600),
         damage: str(a.damage, 40),
@@ -116,6 +122,7 @@ export function normalizeDraft(raw: unknown, r: Ruleset): Draft {
   });
 
   const sheet: Draft["sheet"] = { attributes, resources, extra, inventory };
+  if (mult(s.costMult)) sheet.costMult = mult(s.costMult);
   const rank = r.ranks.find((k) => k.key === s.rank)?.key;
   if (rank) sheet.rank = rank;
   if (level) sheet.xp = level.xpRequired;
@@ -168,6 +175,7 @@ export function mergeProfile(base: Snapshot, cur: Snapshot, d: Draft): Snapshot 
   sheet.extra = perKey(d.sheet.extra, b.sheet.extra, cur.sheet.extra);
   if (d.sheet.rank && untouched(b.sheet.rank, cur.sheet.rank)) sheet.rank = d.sheet.rank;
   if (d.sheet.xp !== undefined && untouched(b.sheet.xp, cur.sheet.xp)) sheet.xp = d.sheet.xp;
+  if (d.sheet.costMult !== undefined && untouched(b.sheet.costMult, cur.sheet.costMult)) sheet.costMult = d.sheet.costMult;
   sheet.abilities = byRef(cur.sheet.abilities, d.abilities);
   sheet.inventory = byName(cur.sheet.inventory, d.sheet.inventory);
   return { sheet, persona };
@@ -212,7 +220,11 @@ function keysBlock(r: Ruleset): string {
     `recursos (máximo padrão): ${r.resources.map((x) => `${x.key}=${x.defaultMax}`).join(", ")}`,
     `tipos de habilidade: ${r.abilityTypes.map((t) => t.key).join(", ")} | níveis: ${r.abilityRanks.join(", ")}`,
     `campos extras: ${r.extraFields.map((f) => `${f.key}=${f.label}${f.description ? ` (${f.description})` : ""}`).join("; ") || "-"}`,
-  ].join("\n");
+    r.abilityCosts &&
+      `costMult (${controlLabel(r)}): multiplicador de custo, ${COST_MULT_MIN} a ${COST_MULT_MAX}, padrão 1 (omita): na ficha, o geral do personagem; numa habilidade, só daquela técnica para ele`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** Chama o Criador e devolve o rascunho com as habilidades já resolvidas na biblioteca. */
@@ -244,7 +256,7 @@ async function createProfile(
   const r = campaign.ruleset;
   const arc = campaign.script?.arcs.find((a) => a.status === "active");
   const { voiceFx: _fx, ...known } = base.persona;
-  const sheetNow = { ...baseSheet, abilities: baseSheet.abilities.map((a) => ({ name: a.name, progress: a.progress })) };
+  const sheetNow = { ...baseSheet, abilities: baseSheet.abilities.map((a) => ({ name: a.name, progress: a.progress, costMult: a.costMult })) };
   const user = [
     `MECÂNICA E CENÁRIO\n${rulesetPromptSummary(r)}`,
     `KEYS PARA O JSON\n${keysBlock(r)}`,
@@ -299,7 +311,7 @@ async function createProfile(
       });
       if (!linked) return null;
       const { entry } = linked;
-      return { ...(entry.data as Ability), name: entry.name, ref: entry.id, progress: a.progress } as Ability;
+      return { ...(entry.data as Ability), name: entry.name, ref: entry.id, progress: a.progress, costMult: a.costMult } as Ability;
     })
   );
   d.abilities = resolved.filter((a): a is Ability => !!a);

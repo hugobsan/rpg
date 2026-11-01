@@ -2,7 +2,8 @@
  * Biblioteca como fonte única (docs/library-single-source.md, A8–A12), sem IA: o Criador de habilidades responde
  * por roteiro (rede falsa: entrada pronta, erro ou resposta atrasada) e os agentes, a chave e api_logs do banco não
  * são lidos nem mexidos. Confere:
- *   A8  custo cobrado em use_ability = byRank[rank] × multiplicador do domínio; 0 com costFree
+ *   A8  custo cobrado em use_ability = byRank[rank] × multiplicador do domínio; 0 com costFree; faixa de consumo,
+ *       units × costUnit e costMult da ficha e do vínculo (set_cost_modifier)
  *   A9  add_ability sempre liga uma ref: da biblioteca, nova pelo Criador, Criador falhando (incomplete);
  *       Criador atrasado completa a entrada incompleta (mesmo id, sem duplicar)
  *   A10 edit_ability muda a entrada e a mudança aparece na ficha de duas campanhas do mesmo mundo; rename com colisão
@@ -232,7 +233,7 @@ async function main() {
     assert.equal(await chakra(A.c.id, "Ana"), 50);
     const line = await A.run("search_library", { kind: "ability", query: "academia" });
     assert.match(line, /rank S, sem custo/);
-    assert.match(await A.run("search_library", { kind: "ability", query: "Gōkakyū" }), /custo 6 chakra/);
+    assert.match(await A.run("search_library", { kind: "ability", query: "Gōkakyū" }), /custo base 6 chakra/);
   });
 
   // nomes no padrão têm mácrons (Gōkakyū, Doryūheki): o Mestre digita sem eles
@@ -324,7 +325,7 @@ async function main() {
     const [camp] = await q<Campaign>(`SELECT * FROM campaigns WHERE id = $1`, [c1]);
     assert.equal(camp.ruleset.world, W2);
     const stored = (await raw(c1, "Hugo")).sheet.abilities;
-    assert.ok(stored.every((a) => Object.keys(a).every((k) => k === "ref" || k === "progress")), "ficha só com { ref, progress }");
+    assert.ok(stored.every((a) => Object.keys(a).every((k) => k === "ref" || k === "progress" || k === "costMult")), "ficha só com { ref, progress, costMult? }");
     const byName = new Map(lib.map((r) => [r.name, Number(r.id)]));
     const progressOf = (name: string) => stored.find((a) => a.ref === byName.get(name))?.progress;
     assert.equal(stored.length, kit.length + 1);
@@ -367,6 +368,59 @@ async function main() {
     );
     assert.deepEqual(rows.map((r) => r.k).sort(), ["progress", "ref"]);
     assert.equal((await raw(A.c.id, "Ana")).sheet.abilities.find((a) => a.ref === ids.soco)!.progress, 42);
+  });
+
+  // ---------- custo separado do rank: faixa de consumo, unidades e multiplicadores do personagem ----------
+  await check("custo: faixa de consumo da biblioteca, units × costUnit, costMult da ficha e do vínculo (set_cost_modifier), gravado só { ref, progress, costMult? }", async () => {
+    const kb = (await ensureLibraryAbility(A.c, { name: "Kage Bunshin de Teste", type: "ninjutsu", rank: "B", consumption: "Baixo", costUnit: "Clone" }))!;
+    assert.deepEqual([(kb.data as LibraryAbility).consumption, (kb.data as LibraryAbility).costUnit], ["baixo", "clone"], "faixa pela key ou pelo nome; unidade em minúsculas");
+    assert.equal((await ensureLibraryAbility(A.c, { name: "Faixa Errada", type: "ninjutsu", consumption: "absurdo" }))!.data.hasOwnProperty("consumption"), false, "faixa fora do mundo cai fora");
+    await A.run("add_ability", { character: "Ana", name: "Kage Bunshin de Teste", progress: 50 });
+    await A.run("update_resource", { character: "Ana", resource: "chakra", set: 50 });
+    let out = await A.run("use_ability", { character: "Ana", ability: "Kage Bunshin de Teste", dc: 10, units: 10 });
+    assert.match(out, /Custo pago: 30 chakra \(base 3 \(baixo\) por clone × 10 = 30\)/, out);
+    assert.match(A.events.filter((e) => e.type === "tool").map((e) => (e as { summary: string }).summary).join("\n"), /−30 chakra \(10 × 3 por clone\)/);
+    assert.equal(await chakra(A.c.id, "Ana"), 20);
+    out = await A.run("use_ability", { character: "Ana", ability: "Kage Bunshin de Teste", dc: 10, units: 10 });
+    assert.match(out, /FALHOU sem rolar.*Dá para units 6 no máximo \(por clone\)/, out);
+    assert.equal(await chakra(A.c.id, "Ana"), 20, "sem recurso não gasta nada");
+    // sem costUnit, units é ignorado (Katon, renomeada e editada nos A10)
+    const paid = async (args: Record<string, unknown>) => {
+      await A.run("update_resource", { character: "Ana", resource: "chakra", set: 50 });
+      return Number((await A.run("use_ability", { character: "Ana", ability: "Katon: Gōkakyū", dc: 10, ...args })).match(/Custo pago: (\d+) chakra;/)?.[1]);
+    };
+    await A.run("update_ability_progress", { character: "Ana", name: "Katon: Gōkakyū", set: 50 });
+    const one = await paid({});
+    assert.ok(one > 0);
+    assert.equal(await paid({ units: 5 }), one, "units não multiplica técnica sem costUnit");
+    // faixa na técnica vence o rank; vazio volta ao rank
+    await A.run("edit_ability", { name: "Katon: Gōkakyū", consumption: "minimo" });
+    assert.match(await A.run("search_library", { kind: "ability", query: "Gōkakyū" }), /custo base 1 chakra \(consumo mínimo\)/);
+    assert.equal(await paid({}), 1);
+    await A.run("edit_ability", { name: "Katon: Gōkakyū", consumption: "" });
+    assert.equal(await paid({}), one, "sem faixa, de volta ao rank");
+    // controle geral da ficha e da técnica
+    assert.match(await A.run("set_cost_modifier", { character: "Ana", mult: 3 }), /^Erro: mult/);
+    assert.match(await A.run("set_cost_modifier", { character: "Ana", mult: 1.5, reason: "teste" }), /×1 → ×1,5/);
+    assert.equal((await raw(A.c.id, "Ana")).sheet.costMult, 1.5);
+    await A.run("update_resource", { character: "Ana", resource: "chakra", set: 50 });
+    out = await A.run("use_ability", { character: "Ana", ability: "Kage Bunshin de Teste", dc: 10, units: 2 });
+    assert.match(out, /Custo pago: 9 chakra \(base 3 \(baixo\) por clone × 2 × controle de chakra ×1,5 = 9\)/, out);
+    await A.run("set_cost_modifier", { character: "Ana", ability: "Kage Bunshin de Teste", mult: 0.5 });
+    const kbRef = (await raw(A.c.id, "Ana")).sheet.abilities.find((a) => a.ref === kb.id)!;
+    assert.deepEqual(kbRef, { ref: kb.id, progress: (await abilityOf(A.c.id, "Ana", kb.id))!.progress, costMult: 0.5 }, "vínculo grava costMult");
+    await A.run("update_resource", { character: "Ana", resource: "chakra", set: 50 });
+    assert.match(await A.run("use_ability", { character: "Ana", ability: "Kage Bunshin de Teste", dc: 10, units: 4 }), /× 4 × controle de chakra ×1,5 × técnica ×0,5 = 9\)/, "3 × 4 × 1,5 × 0,5 = 9");
+    await A.run("add_ability", { character: "Ana", name: "Kage Bunshin de Teste" });
+    assert.equal((await abilityOf(A.c.id, "Ana", kb.id))!.costMult, 0.5, "re-ligar mantém o costMult do vínculo");
+    assert.equal((await hydrateSheet((await raw(A.c.id, "Ana")).sheet)).abilities.find((a) => a.ref === kb.id)!.costMult, 0.5, "hidratação traz o costMult");
+    const line = (await A.run("add_ability", { character: "Ana", name: "Kage Bunshin de Teste" }));
+    assert.match(line, /custo 2 chakra por clone/, line);
+    await A.run("set_cost_modifier", { character: "Ana", mult: 1 });
+    await A.run("set_cost_modifier", { character: "Ana", ability: "Kage Bunshin de Teste", mult: 1 });
+    const back = (await raw(A.c.id, "Ana")).sheet;
+    assert.ok(!("costMult" in back), "1 tira o costMult da ficha");
+    assert.deepEqual(Object.keys(back.abilities.find((a) => a.ref === kb.id)!).sort(), ["progress", "ref"], "1 tira o costMult do vínculo");
   });
 }
 

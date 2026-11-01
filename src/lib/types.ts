@@ -57,6 +57,14 @@ export interface TrainingRules {
   hoursPerAttributePoint: number;
 }
 
+/** Faixa de consumo do mundo (Ruleset.abilityCosts.byConsumption): key gravada na técnica, nome exibido e custo base */
+export interface ConsumptionDef {
+  key: string;
+  label: string;
+  cost: number;
+  description?: string;
+}
+
 export interface Ruleset {
   name: string;
   description: string;
@@ -103,8 +111,13 @@ export interface Ruleset {
   progressionNotes?: string;
   /** Nome da aba/seção de habilidades na UI (ex: "Jutsus"). Padrão: "Habilidades" */
   abilitiesLabel?: string;
-  /** Custo por rank de habilidade (a habilidade não tem custo próprio; costFree = 0) */
-  abilityCosts?: { resource: string; byRank: Record<string, number> };
+  /**
+   * Custo das habilidades no recurso `resource`. Com byConsumption (faixas de consumo do mundo, na ordem da mais
+   * barata para a mais cara), a técnica com `consumption` custa o da faixa; sem faixa, vale byRank[rank]; costFree = 0
+   */
+  abilityCosts?: { resource: string; byRank: Record<string, number>; byConsumption?: ConsumptionDef[] };
+  /** Rótulo do multiplicador de custo do personagem (Sheet.costMult; Naruto: "Controle de chakra"). Sem ele: "Eficiência" */
+  costControlLabel?: string;
   /** Kit que todo personagem sabe ao atingir cada rank (key de RankDef). Cumulativo: um rank inclui os anteriores */
   startingAbilities?: Record<string, Ability[]>;
 }
@@ -128,6 +141,8 @@ export interface Ability extends LibraryAbility {
   ref?: number;
   /** 0-100: domínio/aprendizado desta habilidade especificamente (não do personagem) */
   progress?: number;
+  /** multiplicador de custo desta técnica para este personagem (ex.: técnica de linhagem usada por implante ×1,5); padrão 1 */
+  costMult?: number;
   /** a entrada foi excluída da biblioteca (soft delete); quem já tinha continua tendo */
   removed?: true;
 }
@@ -136,6 +151,7 @@ export interface Ability extends LibraryAbility {
 export interface StoredAbility {
   ref: number;
   progress?: number;
+  costMult?: number;
 }
 
 export interface Item {
@@ -158,6 +174,8 @@ export interface Sheet {
   trainingHours?: Record<string, number>;
   /** treino e ganho de domínio do dia do jogo atual (zera quando o dia muda) */
   trainingLog?: { day: number; hours: number; mastery: Record<string, number> };
+  /** multiplicador geral de custo das habilidades (Ruleset.costControlLabel; ex.: 0,75 controle excelente, 1,25 ruim); padrão 1 */
+  costMult?: number;
 }
 
 /** Ficha como fica gravada (dehydrateSheet): habilidades só com ref; sem ref só no formato antigo. */
@@ -372,8 +390,12 @@ export interface LibraryAbility {
   /** key de Ruleset.abilityElements (Naruto: natureza do chakra); sem elemento = vazio */
   element?: string;
   rank?: string; // D/C/B/A/S
-  /** não gasta recurso (taijutsu, armas, ofícios) */
+  /** não gasta recurso (técnicas físicas, armas, ofícios, passivas) */
   costFree?: boolean;
+  /** key de Ruleset.abilityCosts.byConsumption: quanto recurso a técnica gasta, independente do rank */
+  consumption?: string;
+  /** o custo é por unidade (texto livre: "clone", "rodada", "invocação"); use_ability multiplica pelas unidades */
+  costUnit?: string;
   description?: string;
   /** o que a habilidade faz em jogo (alcance, duração, teste) */
   effect?: string;

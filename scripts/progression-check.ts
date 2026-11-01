@@ -168,7 +168,7 @@ async function dbChecks() {
     assert.equal(dice.result.dc, 18);
     assert.equal(c.sheet.resources.chakra.current, 50 - 9);
     assert.equal(c.sheet.abilities.find((a) => a.name === "Katon Novo")!.progress, 15); // +5 na faixa < 25
-    assert.match(out, /Custo pago: 9 chakra \(base 6, \+50% pelo domínio\)/);
+    assert.match(out, /Custo pago: 9 chakra \(base 6 \(rank C\) × domínio ×1,5 = 9\)/);
     console.log(`✔ use_ability: ${out}`);
     n++;
 
