@@ -283,10 +283,9 @@ async function main() {
     assert.ok(tail <= 1000, `janela cabe no orçamento (${tail})`);
   }
   assert.equal(windowStart([400, 300], 1000), 0, "cabe tudo: começa do início");
-  assert.equal(windowStart([400, 300, 500], 1000), 2, "passou: pula meio orçamento de uma vez");
-  assert.equal(windowStart([400, 300, 500, 200], 1000), 2, "o começo fica no turno seguinte");
-  assert.equal(windowStart([400, 300, 500, 200, 100], 1000), 2, "e no outro");
-  assert.equal(windowStart([400, 300, 500, 200, 100, 200], 1000), 3, "passou de novo: outro salto");
+  assert.equal(windowStart([400, 300, 500], 1000), 1, "passou: pula 1/4 do orçamento");
+  assert.equal(windowStart([400, 300, 500, 50], 1000), 1, "o começo fica no turno seguinte");
+  assert.equal(windowStart([400, 300, 500, 50, 200], 1000), 2, "passou de novo: outro salto");
 
   console.log("cache-check ok");
 }

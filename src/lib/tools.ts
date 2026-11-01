@@ -537,11 +537,11 @@ export const SCRIBE_TOOLS = new Set([
 ]);
 
 // anotações cujo resultado o Mestre não precisa para narrar: rodam depois da narração, sem outra rodada do modelo
-export const DEFERRED_TOOLS = new Set(["set_scene", "set_npc_active", "set_rank", "update_script", "note_objective", "map_brief"]);
+export const DEFERRED_TOOLS = new Set(["advance_time", "set_scene", "set_npc_active", "set_rank", "update_script", "note_objective", "map_brief"]);
 
-/** Ferramentas do turno do Mestre: sem as do Escrivão e sem advance_time (o relógio anda sozinho depois da narração). */
+/** Ferramentas do turno do Mestre: sem as do Escrivão (advance_time fica: o Mestre controla o ritmo; o Jev só cobre o esquecimento). */
 export const GM_TURN_TOOLS: ToolDef[] = [
-  ...GM_TOOLS.filter((t) => !SCRIBE_TOOLS.has(t.function.name) && t.function.name !== "advance_time"),
+  ...GM_TOOLS.filter((t) => !SCRIBE_TOOLS.has(t.function.name)),
   {
     type: "function",
     function: {

@@ -14,7 +14,7 @@ import { runTurn } from "../src/lib/engine";
 import { OOC_GAME_TOOLS } from "../src/lib/ooc";
 import { blankSheet, normalizeRuleset } from "../src/lib/ruleset";
 import { getObjectives } from "../src/lib/objectives";
-import { GM_TURN_TOOLS, SCRIBE_TOOLS } from "../src/lib/tools";
+import { DEFERRED_TOOLS, GM_TURN_TOOLS, SCRIBE_TOOLS } from "../src/lib/tools";
 import type { TurnEvent } from "../src/lib/types";
 
 // ---------- banco: o real, menos agentes, configurações de IA e api_logs ----------
@@ -74,10 +74,11 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
 const rs = normalizeRuleset(JSON.parse(fs.readFileSync("naruto-ruleset.json", "utf-8")));
 
 async function main() {
-  // ferramentas: o turno perde as do Escrivão e o advance_time, ganha note_objective; o fora do jogo fica com todas
+  // ferramentas: o turno perde as do Escrivão e ganha note_objective; advance_time fica, como anotação (o Mestre controla o ritmo)
   const turn = GM_TURN_TOOLS.map((t) => t.function.name);
   const ooc = OOC_GAME_TOOLS.map((t) => t.function.name);
-  for (const name of [...SCRIBE_TOOLS, "advance_time"]) {
+  assert.ok(turn.includes("advance_time") && DEFERRED_TOOLS.has("advance_time"), "advance_time no turno, depois da narração");
+  for (const name of SCRIBE_TOOLS) {
     assert.ok(!turn.includes(name), `${name} saiu do turno`);
     assert.ok(ooc.includes(name), `${name} continua no fora do jogo`);
   }

@@ -598,8 +598,9 @@ export async function getModelPricing(id: string, other = false) {
   };
 }
 
-// medido num turno do Mestre em pt-BR: ~2,2 caracteres por token no Claude; o GPT rende um pouco mais por token
-export const CHARS_PER_TOKEN = 2.5;
+// unidade dos orçamentos (janela do Mestre, compactação do Cronista), não a contagem real: no Claude, pt-BR dá ~2,2 caracteres
+// por token. Com 2,5 a janela e a compactação encolheram ~30% e o Mestre passou a esquecer o dia anterior; 3,5 mantém os tamanhos que funcionavam
+export const CHARS_PER_TOKEN = 3.5;
 
 /** Estimativa grosseira de tokens em pt-BR. */
 export function estimateTokens(text: string): number {

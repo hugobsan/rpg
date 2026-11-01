@@ -185,7 +185,7 @@ async function buildGmSystem(
     "search_history busca no chat inteiro da campanha (turnos e conversas com NPCs, com dia, hora e local): use para lembrar exatamente o que alguém disse ou fez, ou detalhes antigos que não viraram memória.",
     "O estado do turno (cena, hora, personagens, memórias) chega numa mensagem de contexto logo antes da ação do jogador.",
     // cada ferramenta chamada antes do texto custa outra rodada com o prompt inteiro
-    `Anotações (${[...DEFERRED_TOOLS].join(", ")}) só valem depois da narração: chame-as junto da narração, no fim da resposta, nunca antes dela. Dano, cura e gasto de recurso, itens ganhos ou perdidos, XP, domínio por evento, memórias e missões o Escrivão registra sozinho depois, pelo que a narração mostra: narre com números claros (quem perdeu quanto, o que pegou ou entregou). O relógio também anda sozinho pelo tempo que a narração mostra; set_time só em saltos explícitos.`,
+    `Anotações (${[...DEFERRED_TOOLS].join(", ")}) só valem depois da narração: chame-as junto da narração, no fim da resposta, nunca antes dela. Dano, cura e gasto de recurso, itens ganhos ou perdidos, XP, domínio por evento, memórias e missões o Escrivão registra sozinho depois, pelo que a narração mostra: narre com números claros (quem perdeu quanto, o que pegou ou entregou). advance_time também é anotação: faça o tempo andar em todo turno em que ele passa, é o que leva a cena adiante (se esquecer, o sistema estima).`,
   ];
   const parts = [
     tablePromptBlock(getTable(campaign.state)),
@@ -251,13 +251,13 @@ function webSources(raw: unknown): string {
 
 /**
  * Onde começa a janela de histórico (tamanhos em caracteres, do mais antigo ao mais novo). O começo só anda em
- * saltos de meio orçamento, contados desde a 1ª mensagem: fica igual por vários turnos, e o cache do histórico vale
+ * saltos de 1/4 do orçamento, contados desde a 1ª mensagem: fica igual por vários turnos, e o cache do histórico vale
  * de um turno para o outro (uma janela que perde a mais antiga a cada turno muda o começo e regrava tudo).
- * O que sobra fica entre metade do orçamento (menos uma mensagem) e o orçamento inteiro.
+ * O que sobra fica entre 3/4 do orçamento (menos uma mensagem) e o orçamento inteiro.
  */
 export function windowStart(lengths: number[], budget: number): number {
   const total = lengths.reduce((a, n) => a + n, 0);
-  const step = Math.max(Math.round(budget / 2), 1);
+  const step = Math.max(Math.round(budget / 4), 1); // saltos de 1/4: a janela nunca cai abaixo de 3/4 do orçamento
   const cut = Math.ceil(Math.max(total - budget, 0) / step) * step;
   let before = 0;
   for (let i = 0; i < lengths.length; i++) {
@@ -560,6 +560,7 @@ export async function runTurn(
 
   // depois da narração (o jogador já está lendo); antes do done, para o "gerar novamente" não cruzar com a gravação.
   // Anotações primeiro: só SQL, e o local e o elenco abaixo leem o que set_scene marcou (sceneChanged, castSet)
+  if (deferred.some((c) => /^(advance|set)_time$/.test(c.function.name))) timeMoved = true; // o Mestre mexeu no relógio: sem o Jev
   const applyNote = (call: ToolCall) =>
     executeGmTool(call.function.name, argsOf(call), toolCtx).catch((e) => console.warn(`[anotação] ${call.function.name}:`, e));
   for (const call of deferred) {
@@ -817,7 +818,7 @@ export async function maybeCompact(campaignId: string, scene: Scene): Promise<vo
      ORDER BY id`,
     [campaignId]
   );
-  const total = rows.reduce((a, r) => a + r.tokens, 0);
+  const total = rows.reduce((a, r) => a + estimateTokens(r.content), 0); // pelo texto: tokens gravados podem ser de outra estimativa
   if (total < threshold || rows.length <= keep) return;
 
   const toCompact = rows.slice(0, rows.length - keep);
