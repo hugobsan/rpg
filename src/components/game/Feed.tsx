@@ -6,6 +6,7 @@ import { playLine } from "../NpcModal";
 import { initials, portraitUrl } from "../Portrait";
 import Loader from "../ui/Loader";
 import Icon from "./Icon";
+import { CONTINUE_INPUT } from "@/lib/continueScene";
 import { chipIcon, chipText, draftSafe, excerpt, md, narrationBlocks, PHASES, speakerColor, type Phase } from "./feedModel";
 import s from "./Feed.module.css";
 
@@ -167,7 +168,8 @@ function ChipGroup({ items }: { items: FeedItem[] }) {
 export const FeedLine = memo(function FeedLine({ item, chips, cast }: { item?: FeedItem; chips?: FeedItem[]; cast: Cast }) {
   if (chips) return <ChipGroup items={chips} />;
   if (!item) return null;
-  if (item.kind === "player") return <div className="msg-player">{item.content}</div>;
+  // o "Continuar" é ação interna: fica no feed (o gerar novamente corta a partir dela), mas não aparece
+  if (item.kind === "player") return item.content === CONTINUE_INPUT ? null : <div className="msg-player">{item.content}</div>;
   if (item.kind === "dice") return <DiceLine item={item} />;
   if (item.kind === "chip") return <ChipGroup items={[item]} />;
   return <GmLine item={item} cast={cast} />;

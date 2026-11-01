@@ -183,7 +183,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
     [npcs, player?.name, campaignId]
   );
   const groups = useMemo(() => groupFeed(feed), [feed]);
-  // sua última mensagem: só ela pode ser editada (o servidor só desfaz o último turno)
+  // sua última mensagem: só ela pode ser editada (o servidor só desfaz o último turno; depois de um Continuar, nenhuma)
   const lastPlayer = useMemo(() => feed.findLast((i) => i.kind === "player"), [feed]);
   const idle = !busy && !pendingDice;
   // ações rápidas do composer: técnicas (com o custo efetivo) e itens da ficha
@@ -376,7 +376,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
               )}
 
               {groups.map((g) =>
-                g.key !== lastPlayer?.key ? <FeedLine key={g.key} item={g.item} chips={g.chips} cast={cast} />
+                g.key !== lastPlayer?.key || lastPlayer.content === CONTINUE_INPUT ? <FeedLine key={g.key} item={g.item} chips={g.chips} cast={cast} />
                 : editing && idle ? <EditLine key={g.key} text={lastPlayer.content} onSave={saveEdit} onCancel={() => setEditing(false)} />
                 : (
                   <Fragment key={g.key}>
