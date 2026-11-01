@@ -12,10 +12,9 @@ const CHATGPT_NOTE =
 
 type Draft = { id?: string; kind?: string; name: string; url: string; apiKey: string; auth?: "chatgpt" };
 type Test = { ok: boolean; text: string } | "testing";
-type Balance = { limit: number | null; remaining: number | null; usage: number; reset: string | null; error?: string } | { error: string } | "loading" | null;
+type Balance = { credits: number; usage: number; error?: string } | { error: string } | "loading" | null;
 
 const usd = (n: number) => `US$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const PERIOD: Record<string, string> = { daily: "diário", weekly: "semanal", monthly: "mensal" };
 
 /**
  * Fontes de modelos: o OpenRouter embutido (a chave dele) e as APIs compatíveis com a da OpenAI (adicionar, editar,
@@ -54,7 +53,7 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
     history.replaceState(null, "", "/settings#fontes");
   }, [notice]);
 
-  // saldo da chave do OpenRouter (GET /key é grátis): ao abrir e no Atualizar
+  // saldo da conta do OpenRouter (GET /credits é grátis): ao abrir e no Atualizar
   const loadBal = async () => {
     setBal("loading");
     const d = await fetch("/api/sources/balance").then((r) => r.json()).catch(() => ({ error: "erro de rede" }));
@@ -169,9 +168,7 @@ export default function SourcesPanel({ sources, setSources, openrouter, onOpenro
             <span className={s.srcMeta} role="status">
               {bal === "loading" ? "Lendo o saldo…"
                 : "error" in bal && bal.error ? <span className={s.err}>Saldo indisponível: {bal.error}</span>
-                : "usage" in bal && (bal.remaining != null && bal.limit != null
-                  ? <>Limite {bal.reset ? `${PERIOD[bal.reset] ?? bal.reset} ` : ""}da chave: restam <b>{usd(bal.remaining)}</b> de {usd(bal.limit)} · gasto total {usd(bal.usage)}</>
-                  : <>Chave sem limite · gasto total {usd(bal.usage)} · saldo da conta em <a href="https://openrouter.ai/settings/credits" target="_blank" rel="noreferrer">openrouter.ai</a></>)}
+                : "usage" in bal && <>Saldo da conta: <b>{usd(bal.credits - bal.usage)}</b> · gasto total {usd(bal.usage)}</>}
             </span>
           )}
         </div>
