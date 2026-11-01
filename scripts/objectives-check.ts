@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { pool, q } from "../src/lib/db";
-import { executeGmTool, GM_TOOLS, ToolContext } from "../src/lib/tools";
+import { executeGmTool, GM_TOOLS, SCRIBE_TOOLS, ToolContext } from "../src/lib/tools";
 import { formatRemaining, getObjectives, Objective, objectivesPromptBlock, objectiveXp } from "../src/lib/objectives";
 import { DEFAULT_TABLE } from "../src/lib/table";
 import { restoreSnapshot, takeSnapshot } from "../src/lib/turnSnapshot";
@@ -171,7 +171,34 @@ async function main() {
     assert.equal(await playerXp(), 420);
     assert.equal(objectivesPromptBlock([{ ...(await byTitle("Derrotar o Zabuza")), status: "aberto" }], 0, (o) => objectiveXp(o, rs, DEFAULT_TABLE, 0)).includes("≈ 400 XP"), true);
 
-    console.log("ok: prazos relativo/absoluto, vencer ao avançar, concluir, contexto e gerar novamente; XP por tamanho, oferecida, sem XP em dobro");
+    // ---- registro errado: aceitar oferecida com prazo vencido, recriar encerrada, fix_objective do Mestre ----
+    {
+      ctx.campaign = { ...ctx.campaign, state: await state() };
+      const sc = (n: string, a: Record<string, unknown>) => executeGmTool(n, a, { ...ctx, scribe: { briefs: 0 } });
+      // a oferta era o próprio bloco de treino: prazo = fim do bloco; o relógio passa e o Escrivão aceita depois
+      await run("add_objective", { title: "Bloco de treino", kind: "evento", description: "uma hora", status: "oferecida", inMinutes: 60 });
+      await run("advance_time", { minutes: 61, reason: "treino" });
+      assert.match(await sc("update_objective", { objective: "Bloco de treino", status: "aberto" }), /^Nada mudou: o prazo/, "aceitar com prazo vencido é recusado");
+      assert.equal((await byTitle("Bloco de treino")).status, "oferecida");
+      assert.match(await sc("update_objective", { objective: "Bloco de treino", status: "concluido" }), /concluido/, "mas concluir vale");
+      // o Escrivão concluiu por engano e tenta recriar: recusado, o Mestre corrige
+      await run("add_objective", { title: "Resposta do chefe", kind: "evento", description: "aguardar", inDays: 1 });
+      const resp = await byTitle("Resposta do chefe");
+      await sc("update_objective", { objective: resp.id, status: "concluido" });
+      assert.match(await sc("add_objective", { title: "Evento: Resposta do chefe", kind: "evento", description: "de novo", inDays: 1 }), /encerrada há pouco/);
+      assert.match(await run("fix_objective", { objective: resp.id }), /reason/, "sem motivo não corrige");
+      assert.match(await run("fix_objective", { objective: resp.id, reason: "não respondeu ainda", status: "aberto" }), /corrigido: aberto/);
+      assert.equal((await byTitle("Resposta do chefe")).status, "aberto");
+      assert.equal((await byTitle("Resposta do chefe")).closedAt, undefined);
+      // perdido por engano vira concluído; duplicado é removido
+      await run("fix_objective", { objective: "Bloco de treino", reason: "teste", status: "perdido" });
+      assert.match(await run("fix_objective", { objective: "Bloco de treino", reason: "foi cumprido", status: "concluido" }), /concluido/);
+      await run("add_objective", { title: "Duplicada por engano", kind: "outro", description: "x" });
+      assert.match(await run("fix_objective", { objective: "Duplicada por engano", reason: "duplicada", remove: true }), /removido/);
+      assert.equal(getObjectives(await state()).some((o) => o.title === "Duplicada por engano"), false);
+      assert.ok(GM_TOOLS.some((t) => t.function.name === "fix_objective") && !SCRIBE_TOOLS.has("fix_objective"), "fix_objective é do Mestre, não do Escrivão");
+    }
+    console.log("ok: prazos relativo/absoluto, vencer ao avançar, concluir, contexto e gerar novamente; XP por tamanho, oferecida, sem XP em dobro; registro errado e fix_objective");
   } finally {
     await q(`DELETE FROM campaigns WHERE id = $1`, [id]);
     await pool().end();

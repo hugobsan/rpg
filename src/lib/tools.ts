@@ -535,6 +535,31 @@ export const GM_TOOLS: ToolDef[] = [
   {
     type: "function",
     function: {
+      name: "fix_objective",
+      description:
+        "Corrige um REGISTRO ERRADO de missão: o painel diz concluída, perdida, cancelada ou com prazo algo que na história não aconteceu (o jogador apontou ou a narração contradiz). Pode reabrir, mudar o status, o prazo, a descrição ou remover um registro duplicado. Nunca use para desfazer uma perda ou um fracasso que aconteceu na história.",
+      parameters: S(
+        {
+          objective: { type: "string", description: "id (ex: o2) ou título" },
+          reason: { type: "string", description: "qual era o erro do registro" },
+          status: { type: "string", enum: ["oferecida", "aberto", "concluido", "cancelado", "perdido"] },
+          remove: { type: "boolean", description: "true: apaga o registro (duplicado ou criado por engano)" },
+          description: { type: "string" },
+          day: { type: "number" },
+          hour: { type: "number" },
+          minute: { type: "number" },
+          inMinutes: { type: "number" },
+          inHours: { type: "number" },
+          inDays: { type: "number" },
+          noDeadline: { type: "boolean" },
+        },
+        ["objective", "reason"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "get_character",
       description: "Lê a ficha completa e persona de um personagem (player ou NPC, ativo ou não).",
       parameters: S({ name: { type: "string" } }, ["name"]),
@@ -1314,6 +1339,11 @@ export async function executeGmTool(
         if (!title) return "Informe o title.";
         const same = list.find((x) => isLive(x) && titleKey(x.title) === titleKey(title));
         if (same) return `Nada mudou: já existe [${same.id}] "${same.title}" ${same.status === "oferecida" ? "oferecida" : "em aberto"}. Para mudar prazo, descrição ou status, use update_objective nele.`;
+        // o Escrivão recriava a missão que acabou de ser encerrada (por engano) em vez de deixar o Mestre corrigir
+        const closed =
+          ctx.scribe && now !== undefined && list.find((x) => !isLive(x) && titleKey(x.title) === titleKey(title) && (x.closedAt ?? -Infinity) >= now - 1440);
+        if (closed)
+          return `Nada mudou: [${closed.id}] "${closed.title}" foi encerrada há pouco (${closed.status}). Se o registro está errado, quem corrige é o Mestre (fix_objective); não crie outra igual.`;
         const kind = (["missao", "evento", "outro"].includes(String(args.kind)) ? args.kind : "outro") as ObjectiveKind;
         o = {
           id: `o${list.reduce((m, x) => Math.max(m, Number(x.id.slice(1)) || 0), 0) + 1}`,
@@ -1352,6 +1382,10 @@ export async function executeGmTool(
         else if (deadline !== undefined) (o.deadlineMinutes = deadline), changes.push(deadlineText(deadline, now));
         if (size !== undefined || xpArg !== undefined) changes.push(`tamanho ${o.xpSize}`);
         const accepted = args.status === "aberto" && found.status === "oferecida";
+        // aceitar com o prazo já vencido viraria perdida no próximo relógio (ex.: a oferta era o próprio bloco de treino)
+        const due = args.noDeadline === true ? undefined : deadline ?? found.deadlineMinutes; // prazo que vale depois desta chamada
+        if (accepted && due !== undefined && now !== undefined && due < now)
+          return `Nada mudou: o prazo de [${found.id}] já passou (${formatClock(due)}). Se a narração mostrou a missão cumprida, conclua (status concluido); se não vale mais, cancele ou dê um prazo novo.`;
         if (args.status === "concluido" || args.status === "cancelado") {
           o.status = args.status;
           o.closedAt = now ?? 0;
@@ -1378,6 +1412,44 @@ export async function executeGmTool(
       if (!player || !xp) return done;
       if (ctx.scribe) (ctx.missionXp ??= []).push({ charId: player.id, title: o.title, xp }); // a trava é só do Escrivão
       return `${done} A missão deu ${xp} XP: ${await grantXp(ctx, player, xp, `missão: ${o.title}`)}`;
+    }
+    case "fix_objective": {
+      const now = getClock(ctx.campaign.state)?.minutes;
+      const list = await loadObjectives(cid);
+      const key = String(args.objective || "").trim().toLowerCase();
+      const found =
+        list.find((x) => x.id.toLowerCase() === key) || list.find((x) => x.title.toLowerCase() === key) || list.find((x) => titleKey(x.title) === titleKey(key));
+      if (!found) return `Objetivo "${args.objective}" não existe. Registros: ${list.map((x) => `${x.id} ${x.title} (${x.status})`).join(", ") || "nenhum"}.`;
+      if (!String(args.reason || "").trim()) return "Informe reason: qual era o erro do registro.";
+      let chip: string;
+      let out: string;
+      if (args.remove === true) {
+        list.splice(list.indexOf(found), 1);
+        chip = `🛠 Registro removido: ${found.title}`;
+        out = `${found.id} "${found.title}" removido.`;
+      } else {
+        const deadline = parseDeadline(args, now);
+        if (typeof deadline === "string") return deadline;
+        const o: Objective = { ...found };
+        if (args.description) o.description = String(args.description);
+        if (args.noDeadline === true) o.deadlineMinutes = undefined;
+        else if (deadline !== undefined) o.deadlineMinutes = deadline;
+        const st = String(args.status || "");
+        if (["oferecida", "aberto", "concluido", "cancelado", "perdido"].includes(st)) {
+          o.status = st as Objective["status"];
+          if (st === "aberto" || st === "oferecida") delete o.closedAt;
+          else o.closedAt = now ?? 0;
+        }
+        list[list.indexOf(found)] = o;
+        const late = o.status === "aberto" && o.deadlineMinutes !== undefined && now !== undefined && o.deadlineMinutes < now;
+        chip = `🛠 Missão corrigida: ${o.title} → ${o.status}`;
+        out = `${o.id} "${o.title}" corrigido: ${o.status}, ${deadlineText(o.deadlineMinutes, now)}.${late ? " O prazo já passou: no próximo avanço do relógio vira perdido; mude o prazo se ainda vale." : ""}`;
+      }
+      await saveObjectives(cid, list);
+      ctx.campaign.state = { ...ctx.campaign.state, objectives: list };
+      ctx.emit({ type: "tool", name, summary: chip });
+      ctx.emit({ type: "state" });
+      return out;
     }
     case "get_character": {
       const c = await getChar(cid, String(args.name));
