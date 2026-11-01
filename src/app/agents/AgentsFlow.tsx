@@ -114,7 +114,7 @@ const NODES: (FlowNode | LaneNode)[] = [
   lane("L3", -430, 390, 1300, "3. Sob demanda: Roteirista, Ilustrador, Criador de aventuras, Voz e fora do jogo"),
   lane("L1", 0, 335, 1570, "1. Turno do jogador"),
   lane("L2", 370, 290, 1570, "2. Conversa particular com um NPC"),
-  lane("L4", 700, 560, 1570, "4. Criação em segundo plano: personagens, retratos, biblioteca e mapas"),
+  lane("L4", 700, 720, 1570, "4. Criação em segundo plano: personagens, retratos, biblioteca do mundo e mapas"),
 
   // --- sob demanda ---
   n("v_btn", X[0], -370, "player", "Botão “Ouvir a fala”", "fala de NPC no chat ou na conversa", {
@@ -131,7 +131,7 @@ const NODES: (FlowNode | LaneNode)[] = [
     oque: "Conversa com o Mestre fora da história: dúvidas de regra, correções de ficha, pedidos de como conduzir a mesa. Não entra no histórico do turno nem na foto do “gerar novamente”.",
   }),
   n("o_gm", X[4], -370, "gm", "Mestre fora do jogo", "diretrizes, regras da mesa, correções", {
-    oque: "O mesmo modelo do Mestre, com outro prompt: responde curto, sem narrar nem dar spoiler (não vê roteiro nem segredos de NPC). Vê a cena, missões, regras e modos de cena da mesa, a ficha completa, os últimos trechos da história e as diretrizes ativas. Orientação de como conduzir vira diretriz (save_directive), que entra no contexto de todo turno; dificuldade, críticos, ritmo de XP e o texto de cada modo de cena vão em set_table_rules; corrige fichas, relógio e missões com as ferramentas do turno (menos roteiro, get_character, npc_message e map_brief), mexe direto no mapa e pede lotes da biblioteca.",
+    oque: "O mesmo modelo do Mestre, com outro prompt: responde curto, sem narrar nem dar spoiler (não vê roteiro nem segredos de NPC). Vê a cena, missões, regras e modos de cena da mesa, a ficha completa, os últimos trechos da história e as diretrizes ativas. Orientação de como conduzir vira diretriz (save_directive), que entra no contexto de todo turno; dificuldade, críticos, ritmo de XP e o texto de cada modo de cena vão em set_table_rules; corrige fichas, relógio e missões com as ferramentas do turno (menos roteiro, get_character, npc_message e map_brief), corrige a técnica na biblioteca do mundo com edit_ability (vale para todas as campanhas do mundo), tira técnica de uma ficha com remove_ability (a entrada fica na biblioteca), mexe direto no mapa e pede lotes da biblioteca.",
     quando: "A cada mensagem na conversa fora do jogo.",
     freq: "1 a 4 chamadas por mensagem (outra rodada só para ler uma busca ou escrever a resposta).",
     custo: "O modelo principal do Mestre, sem Jev e sem busca web; contexto menor que o do turno.",
@@ -202,7 +202,7 @@ const NODES: (FlowNode | LaneNode)[] = [
     fallback: "Timeout de 7 s. Qualquer falha: modelo padrão do Mestre, web conforme a configuração dele e todas as memórias entram.",
   }),
   n("t_ctx", X[3], 60, "code", "Montagem do contexto", "ficha, cena, NPCs, roteiro", {
-    oque: "Sem IA, em três partes, na ordem que aproveita o cache: (1) o fixo da campanha: prompt do Mestre, estilo e mecânica; (2) o histórico recente; (3) o contexto do turno, numa mensagem logo antes da ação: regras da mesa, cena atual com hora e MODO DA CENA (o texto do modo, ajustável na Mesa), resumo compactado, missões e prazos, local, rotas e palco do mapa, ficha do jogador e dos NPCs em cena (efeito e requisito de cada técnica cortados em 160 caracteres e o passado em 300; o completo sai no get_character), arco ativo do roteiro, só as memórias e trechos antigos aprovados pelo Jev, o que o Escrivão registrou depois da narração anterior e as diretrizes do jogador.",
+    oque: "Sem IA, em três partes, na ordem que aproveita o cache: (1) o fixo da campanha: prompt do Mestre, estilo e mecânica (com o padrão de nomes das técnicas do mundo); (2) o histórico recente; (3) o contexto do turno, numa mensagem logo antes da ação: regras da mesa, cena atual com hora e MODO DA CENA (o texto do modo, ajustável na Mesa), resumo compactado, missões e prazos, local, rotas e palco do mapa, ficha do jogador e dos NPCs em cena (técnicas completadas pela biblioteca, com o custo calculado e a marca de INCOMPLETA ou de fora da biblioteca; efeito e requisito cortados em 160 caracteres e o passado em 300; o completo sai no get_character), arco ativo do roteiro, só as memórias e trechos antigos aprovados pelo Jev, o que o Escrivão registrou depois da narração anterior e as diretrizes do jogador.",
     quando: "Antes de cada turno do Mestre.",
   }),
   n("t_gm", X[4], 60, "gm", "Mestre", "narra e arbitra", {
@@ -212,7 +212,7 @@ const NODES: (FlowNode | LaneNode)[] = [
     custo: "O mais caro: cada rodada reenvia prompt, ficha, memórias, histórico (até ≈9 mil tokens) e as definições das ferramentas. A busca web (:online) vale só na 1ª rodada e é cobrada por busca.",
   }),
   n("t_tools", X[5], 60, "code", "Ferramentas", "dados, ficha, cena, delegações", {
-    oque: "Executadas pelo código a pedido do Mestre: rolar dados, resolver e treinar técnicas, atributos e habilidades novas, criar NPC, mensagem de NPC ao jogador (npc_message), relógio (advance_time, set_time), buscar memórias, buscar no chat inteiro da campanha (search_history: trechos curtos com dia, hora e local), consultar livros, ficha, roteiro e biblioteca, mandar o brief do mapa (map_brief). Dano, itens, XP, memórias e missões não estão aqui: ficam com o Escrivão. As escritas vão direto ao Postgres; criar NPC, técnica nova e mapa são delegados (lane 4). As anotações (advance_time, set_scene, set_npc_active, set_rank, update_script, note_objective, map_brief) respondem \"Anotado\" na hora e só rodam depois da narração.",
+    oque: "Executadas pelo código a pedido do Mestre: rolar dados, resolver (cobrando o custo calculado) e treinar técnicas, atributos, ligar técnica na ficha pela biblioteca (add_ability) e corrigir a técnica na biblioteca do mundo (edit_ability), criar NPC, mensagem de NPC ao jogador (npc_message), relógio (advance_time, set_time), buscar memórias, buscar no chat inteiro da campanha (search_history: trechos curtos com dia, hora e local), consultar livros, ficha, roteiro e biblioteca, mandar o brief do mapa (map_brief). Dano, itens, XP, memórias e missões não estão aqui: ficam com o Escrivão. As escritas vão direto ao Postgres; criar NPC, técnica nova e mapa são delegados (lane 4). As anotações (advance_time, set_scene, set_npc_active, set_rank, update_script, note_objective, map_brief) respondem \"Anotado\" na hora e só rodam depois da narração.",
     quando: "Sempre que o Mestre pedir, em qualquer rodada.",
     custo: "Sem IA: só SQL (e embeddings ao gravar ou buscar memórias e histórico).",
   }),
@@ -299,14 +299,14 @@ const NODES: (FlowNode | LaneNode)[] = [
     custo: "Só SQL (≈5 ms).",
   }),
   n("c_char", X[2], 760, "char", "Criador de personagens", "perfil rico e ficha", {
-    oque: "Lê a mecânica, o mundo (premissa, arco, cena, NPCs) e os nomes da biblioteca e devolve aparência, idade, papel, personalidade, jeito de falar, passado, objetivos, segredos, relações e manias, mais atributos, recursos, cargo, técnicas e itens coerentes com o poder. Personagem do cânone: fiel à obra no ponto da história.",
+    oque: "Lê a mecânica (com o padrão de nomes do mundo), o mundo (premissa, arco, cena, NPCs) e os nomes da biblioteca e devolve aparência, idade, papel, personalidade, jeito de falar, passado, objetivos, segredos, relações e manias, mais atributos, recursos, cargo, técnicas (de preferência as da biblioteca, com o nome exato; nova só no padrão de nomes) e itens coerentes com o poder. Cada técnica vira ref pela mesma regra do add_ability: a do mundo pelo nome; senão o Criador de habilidades a cria (sem prazo); se ele falhar, entra incompleta com a definição do Criador de personagens. Personagem do cânone: fiel à obra no ponto da história.",
     quando: "Em segundo plano, depois de cada create_npc de NPC novo e no botão Refazer perfil do modal do NPC.",
     freq: "1 chamada por NPC novo.",
     custo: "Grátis com o modelo padrão (o mesmo do Mestre); leva de 1,5 a 4 min.",
     fallback: "O NPC fica com o brief do Mestre e a tela avisa; o botão Refazer perfil tenta de novo.",
   }),
   n("c_merge", X[3], 760, "code", "Ficha gravada com merge", "preserva o que o Mestre mudou", {
-    oque: "Sem IA: grava o perfil e a ficha com a linha travada. O que o Mestre mudou nesse meio tempo (dano, gasto, cargo, sexo) fica como ele deixou; técnicas e itens se somam por nome.",
+    oque: "Sem IA: grava o perfil e a ficha com a linha travada. O que o Mestre mudou nesse meio tempo (dano, gasto, cargo, sexo) fica como ele deixou; técnicas se somam pela ref da biblioteca e itens por nome; a ficha é gravada só com ref e domínio.",
   }),
   n("c_pix", X[4], 760, "img", "Ilustrador", "retrato do personagem", {
     oque: "Pinta o retrato de busto do personagem com o modelo de imagem, a partir do cenário, do momento da história (arco ativo), do cargo, dos campos da ficha e da aparência. O estilo fixado no card do Ilustrador (vazio = pixel art 16-bit) vai no começo; com “Reescrever o prompt” ligado, um modelo de texto reescreve o pedido curto e em inglês antes. Só com a geração de imagens ligada nas Configurações; desligada, o botão avisa e nada é gerado.",
@@ -319,22 +319,24 @@ const NODES: (FlowNode | LaneNode)[] = [
     oque: "O retrato fica no Postgres com versão (cache longo no navegador) e aparece nos cartões de NPC, no modal, na ficha do jogador e ao lado das falas no chat.",
   }),
 
-  n("b_gm", X[0], 880, "gm", "Mestre: add_ability", "nome e brief da técnica", {
-    oque: "Quando o personagem aprende ou usa uma técnica que ainda não está na ficha, o Mestre só diz o nome e um brief. Antes de inventar, pode consultar a biblioteca (search_library). add_item completa a descrição pela biblioteca.",
+  n("b_gm", X[0], 880, "gm", "Mestre: add_ability", "nome e brief → ref na ficha", {
+    oque: "Quando o personagem aprende ou usa uma técnica que ainda não está na ficha, o Mestre só passa o nome e um brief (tipo, rank e costFree só como dica). O código procura no mundo pelo nome (sem diferenciar maiúsculas e acentos, sem as excluídas); se não acha, chama o Criador de habilidades; se ele falha ou passa do prazo, grava na biblioteca o que o Mestre passou, marcada como incompleta. A ficha sempre recebe a ref; se a técnica já estava nela, só ajusta o domínio. Antes de inventar, pode consultar a biblioteca (search_library). add_item completa a descrição pelo item da biblioteca.",
+    quando: "No turno, antes de resolver uma técnica que não está na ficha; também no fora do jogo.",
+    fallback: "A incompleta aparece ao Mestre marcada (na ficha e no search_library) para ele completar com edit_ability.",
   }),
-  n("b_lib", X[1], 880, "db", "Biblioteca", "técnicas e itens do mundo", {
-    oque: "Técnicas (com tipo, rank, custo, efeito, dano, requisitos, marcos e quem usa) e itens da campanha, do cânone ou criados no jogo. Fonte do add_ability, do add_item e do Criador de personagens, para ninguém adivinhar na hora o que existe. Aba Biblioteca na tela de jogo.",
+  n("b_lib", X[1], 880, "db", "Biblioteca do mundo", "fonte única das técnicas", {
+    oque: "A única descrição de cada técnica: nome no padrão do mundo, tradução, tipo, rank, costFree, efeito, dano, requisitos, marcos e quem usa. Não guarda custo (é calculado na ficha). Também os itens. É por mundo (Ruleset.world, ex.: naruto), não por campanha: as campanhas do mesmo mundo usam as mesmas entradas, e cada nome existe uma vez por mundo. Excluir na aba Biblioteca é soft delete: some da lista e da busca, mas quem já tem continua tendo, marcada como fora da biblioteca. Fonte do add_ability, do add_item e do Criador de personagens.",
     custo: "Local (Postgres).",
   }),
   n("b_abil", X[2], 880, "abil", "Criador de habilidades", "técnica nova, validada", {
-    oque: "Cria a técnica seguindo a mecânica da campanha (tipos, ranks, recursos, custos por rank, faixas de domínio) e o cânone; o código valida tipo, rank, custo, dano e marcos e guarda na biblioteca.",
-    quando: "Na hora, quando o add_ability ou o Criador de personagens pede uma técnica que não existe; em lotes, quando o jogador pede.",
+    oque: "Cria a técnica seguindo a mecânica da campanha (tipos, ranks, recursos, faixas de domínio), o cânone e o padrão de nomes do mundo (abilityNaming; no Naruto, o nome romanizado oficial, com a tradução à parte). Não define custo: só costFree, se não gasta recurso. O código valida tipo, rank, dano e marcos e guarda na biblioteca do mundo. Com padrão de nomes vale o nome do Criador, que pode ser outro que o do Mestre (e já estar na biblioteca).",
+    quando: "Na hora, quando o add_ability ou o Criador de personagens liga uma técnica que não está no mundo; em lotes, quando o jogador pede.",
     freq: "1 chamada por técnica nova; lotes de 6 até chegar ao total pedido.",
     custo: "Grátis com o modelo padrão; 70 a 120 s por chamada.",
-    fallback: "Prazo de 90 s no turno: estourou, a técnica entra com o que o Mestre deu e o Criador termina em segundo plano para a próxima vez.",
+    fallback: "No add_ability o prazo é 90 s: falhou ou estourou, a técnica entra incompleta com o que o Mestre passou; se o Criador responde depois, a resposta completa essa mesma entrada (que as fichas já apontam). No Criador de personagens não há prazo; se falhar, entra incompleta com a definição dele.",
   }),
   n("b_player", X[3], 880, "player", "Gerar biblioteca", "aba Biblioteca ou Fora do jogo", {
-    oque: "O jogador pede N técnicas ou itens com um foco (ex.: jutsus canônicos de Konoha até o Exame Chūnin), pela aba Biblioteca ou pedindo ao Mestre fora do jogo.",
+    oque: "O jogador pede N técnicas ou itens com um foco (ex.: jutsus canônicos de Konoha até o Exame Chūnin), pela aba Biblioteca ou pedindo ao Mestre fora do jogo. O que entra vale para todas as campanhas do mesmo mundo.",
   }),
   n("b_items", X[4], 880, "items", "Criador de itens", "ferramentas, armas, consumíveis", {
     oque: "Cria itens e equipamentos do mundo em lotes, recebendo os nomes que já existem para não repetir. O código valida e descarta repetidos.",
@@ -347,30 +349,44 @@ const NODES: (FlowNode | LaneNode)[] = [
     fallback: "Se o servidor reinicia no meio, a tarefa vira erro depois de 15 min sem sinal.",
   }),
 
-  n("m_gm", X[0], 1000, "gm", "Mestre: map_brief", "o que mudou no espaço", {
+  n("b_edit", X[0], 1040, "gm", "Mestre: edit_ability", "no turno e fora do jogo", {
+    oque: "Corrige a técnica na biblioteca do mundo (tipo, rank, efeito, dano, marcos, quem usa, costFree, tradução ou o nome, no padrão do mundo), mandando só o que muda. Como as fichas apontam pela ref, vale na hora para todos que a têm, em todas as campanhas do mesmo mundo. Completar uma incompleta é editá-la (sai a marca). O que é de um personagem só não passa por aqui: domínio é update_ability_progress e tirar da ficha é remove_ability (fora do jogo).",
+    quando: "Técnica incompleta ou errada: o Mestre no turno, ou o Mestre fora do jogo a pedido do jogador.",
+    custo: "Sem IA: só SQL.",
+    fallback: "Nome que já existe no mundo ou tipo inválido: a edição é recusada com o motivo e nada muda.",
+  }),
+  n("b_sheet", X[1], 1040, "code", "Ficha: ref + domínio", "completada na leitura", {
+    oque: "Sem IA: a ficha de cada personagem (jogador e NPC) guarda só a ligação com a entrada da biblioteca (ref) e o domínio. Toda leitura completa as técnicas pela biblioteca numa consulta só (as excluídas vêm marcadas como fora da biblioteca) e toda gravação volta a reduzir a ref e domínio. O custo é calculado na hora: o do rank na mecânica (abilityCosts) × o multiplicador do domínio, ou 0 se costFree; é o que as telas e o Mestre veem e o que o use_ability cobra.",
+  }),
+  n("b_new", X[2], 1040, "player", "Criar campanha", "kit inicial e extras", {
+    oque: "Sem IA: o kit do rank inicial (startingAbilities) e as técnicas extras da tela entram na biblioteca do mundo (a que já existe pelo nome é reaproveitada) e a ficha do jogador recebe as refs com o domínio. Mecânica sem world ganha o slug do nome, fixo desde a criação.",
+    quando: "Ao criar a campanha.",
+  }),
+
+  n("m_gm", X[0], 1160, "gm", "Mestre: map_brief", "o que mudou no espaço", {
     oque: "No lugar das ferramentas do mapa, o Mestre manda uma frase: começo e movimentos de uma luta (quem está onde, distância, cobertura), um lugar de que o jogador ouviu falar, um lugar que merece mapa 3D. Não espera o resultado para narrar. Os lugares visitados entram no mapa do mundo sozinhos pelo set_scene.",
   }),
-  n("m_surv", X[1], 1000, "surv", "Topógrafo", "brief → ferramentas do mapa", {
+  n("m_surv", X[1], 1160, "surv", "Topógrafo", "brief → ferramentas do mapa", {
     oque: "Lê o brief com o estado do mapa (local, rotas, palco, mapas 3D, quem está em cena) e chama as ferramentas: set_stage (zonas e posições do palco), update_map (lugar conhecido, direção, distância, rota) e local_map (pede ao Cartógrafo gerar ou editar o mapa 3D de um lugar; não regera um mapa que já existe, e a iniciativa pode ser desligada nas Configurações). Os pontos de interesse do mapa 3D viram as zonas do palco.",
     quando: "Quando o Mestre manda um map_brief (em batalha, no começo e a cada movimento relevante): é uma anotação, roda depois da narração, em paralelo com o Escrivão, já no local que o set_scene marcou.",
     freq: "1 chamada por brief; poucas por campanha fora de batalha.",
     custo: "Modelo barato e rápido: ~3 mil tokens de entrada, cerca de US$ 0,002 e poucos segundos por brief. Tira ~1,6 mil tokens de cada chamada do Mestre.",
     fallback: "Erro em uma ferramenta não derruba o turno; o palco e o mapa ficam como estavam.",
   }),
-  n("m_btn", X[2], 1120, "player", "Botões da aba Mapa", "gerar, regerar, editar, remover", {
+  n("m_btn", X[2], 1280, "player", "Botões da aba Mapa", "gerar, regerar, editar, remover", {
     oque: "O jogador pode pedir o mapa de qualquer lugar por onde passou, regerar, editar com uma instrução ou remover.",
   }),
-  n("m_carto", X[2], 1000, "carto", "Cartógrafo", "mapa 3D de um lugar", {
+  n("m_carto", X[2], 1160, "carto", "Cartógrafo", "mapa 3D de um lugar", {
     oque: "Compõe a maquete 3D de um lugar a partir da obra, da narração e da cena: relevo, contornos extrudados, caminhos e rios, espalhamento de árvores e casas, materiais, luz do horário e pontos de interesse. Devolve uma descrição declarativa, nunca código.",
     quando: "Quando o Mestre ou o jogador pede gerar ou editar o mapa de um lugar.",
     freq: "1 chamada por geração ou edição; um mapa desenhado por vez.",
     custo: "Opus 5.5 com raciocínio médio: o mais caro dos criadores. Cerca de US$ 0,14 e 1 min por mapa novo; US$ 0,18 por edição (recebe o mapa atual compacto).",
     fallback: "A tarefa vira erro com aviso; o mapa anterior (se houver) continua.",
   }),
-  n("m_spec", X[3], 1000, "code", "Mapa validado", "limites, cores, contagens", {
+  n("m_spec", X[3], 1160, "code", "Mapa validado", "limites, cores, contagens", {
     oque: "Sem IA: o código valida e limita o que o Cartógrafo devolveu (quantidades, faixas, cores) e guarda o mapa ligado ao lugar do mapa do mundo.",
   }),
-  n("m_view", X[4], 1000, "code", "Aba Mapa", "o da cena em destaque", {
+  n("m_view", X[4], 1160, "code", "Aba Mapa", "o da cena em destaque", {
     oque: "Mostra em destaque o mapa 3D do lugar da cena atual (girar, zoom, pontos clicáveis) e a galeria dos mapas dos outros lugares por onde o jogador passou. O diorama do mundo continua na visão Mundo.",
   }),
 ];
@@ -451,13 +467,16 @@ const EDGES: Edge[] = [
   e("c_char", "sr", "c_merge", "tl", "JSON"),
   e("c_merge", "sr", "c_pix", "tl", "botão de retrato", { dashed: true }),
   e("c_pix", "sr", "c_out", "tl", "imagem"),
-  e("c_char", "sb", "b_lib", "tt", "técnicas e itens"),
-  e("b_gm", "sr", "b_lib", "tl", "consulta"),
-  e("b_lib", "sr", "b_abil", "tl", "não existe"),
-  e("b_abil", "sb", "b_lib", "tb", "guarda"),
+  e("c_char", "sb", "b_lib", "tt", "liga por ref"),
+  e("b_gm", "sr", "b_lib", "tl", "procura no mundo"),
+  e("b_lib", "sr", "b_abil", "tl", "não existe ⇄ guarda", { both: true }),
+  e("b_lib", "sb", "b_sheet", "tt", "completa a ficha"),
+  e("b_edit", "st", "b_lib", "tb1", "edita para o mundo"),
+  e("b_new", "st", "b_lib", "tb2", "kit e extras"),
+  e("b_new", "sl", "b_sheet", "tr", "refs"),
   e("b_player", "sl", "b_abil", "tr", "N com foco"),
   e("b_player", "sr", "b_items", "tl", "N com foco"),
-  e("b_items", "sb", "b_lib", "tb"),
+  e("b_items", "sb", "b_lib", "tb2"),
   e("m_gm", "sr", "m_surv", "tl", "brief"),
   e("m_surv", "sr", "m_carto", "tl", "local_map"),
   e("m_btn", "st", "m_carto", "tb", "botões"),
@@ -467,9 +486,12 @@ const EDGES: Edge[] = [
 
 // ---------- componentes dos nós ----------
 const hidden: CSSProperties = { opacity: 0, pointerEvents: "none" };
-const SIDES: [string, Position][] = [
+// b1/b2: pontos extras embaixo (20% e 80%), para mais de uma seta sair ou chegar por baixo sem se sobrepor
+const SIDES: [string, Position, string?][] = [
   ["t", Position.Top],
   ["b", Position.Bottom],
+  ["b1", Position.Bottom, "20%"],
+  ["b2", Position.Bottom, "80%"],
   ["l", Position.Left],
   ["r", Position.Right],
 ];
@@ -494,10 +516,10 @@ function FlowNodeView({ data }: NodeProps<FlowNode>) {
         cursor: "help",
       }}
     >
-      {SIDES.map(([k, pos]) => (
+      {SIDES.map(([k, pos, left]) => (
         <span key={k}>
-          <Handle id={`s${k}`} type="source" position={pos} style={hidden} />
-          <Handle id={`t${k}`} type="target" position={pos} style={hidden} />
+          <Handle id={`s${k}`} type="source" position={pos} style={left ? { ...hidden, left } : hidden} />
+          <Handle id={`t${k}`} type="target" position={pos} style={left ? { ...hidden, left } : hidden} />
         </span>
       ))}
       <div style={{ fontSize: 10.5, color: c, textTransform: "uppercase", letterSpacing: 0.4 }}>
