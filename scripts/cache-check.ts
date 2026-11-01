@@ -205,6 +205,23 @@ async function main() {
   await chat(orGm);
   assert.deepEqual(sent[1].body.cache_control, { type: "ephemeral" }, "anthropic/* no OpenRouter leva o cache");
 
+  // 10. provedor que recusa temperature (GPT-5 image mini pela OpenAI): repete uma vez sem ela
+  const realFetch = globalThis.fetch;
+  const bodies: Record<string, unknown>[] = [];
+  globalThis.fetch = (async (_u: string, init?: RequestInit) => {
+    const b = JSON.parse(String(init?.body));
+    bodies.push(b);
+    return "temperature" in b
+      ? new Response(JSON.stringify({ error: { message: "Unsupported parameter: 'temperature' is not supported with this model." } }), { status: 400 })
+      : Response.json({ choices: [{ message: { content: "ok" } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0.01 } });
+  }) as typeof fetch;
+  const noTemp = await chat({ ...GM, model: "openai/gpt-5-image-mini", tools: undefined });
+  globalThis.fetch = realFetch;
+  assert.equal(noTemp.content, "ok");
+  assert.equal(bodies.length, 2, "uma repetição");
+  assert.ok("temperature" in bodies[0] && !("temperature" in bodies[1]), "a repetição vai sem temperature");
+  assert.equal(lastLog().error, null);
+
   // 9. janela do histórico: começo estável por vários turnos, cabe no orçamento e anda em saltos
   const lens = [400, 300, 500, 200, 600, 300, 400];
   for (let n = 1; n <= lens.length; n++) {

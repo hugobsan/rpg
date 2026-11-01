@@ -258,7 +258,16 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   let responseJson: Record<string, unknown> | null = null;
   let error: string | null = null;
   try {
-    const res = native ? null : await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    const post = () => fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+    let res = native ? null : await post();
+    // modelo que recusa temperature (família GPT-5, mesmo quando o catálogo diz que aceita): repete uma vez sem ela
+    if (res?.status === 400 && "temperature" in body) {
+      const text = await res.clone().text();
+      if (/temperature/i.test(text) && /not supported|unsupported/i.test(text)) {
+        delete body.temperature;
+        res = await post();
+      }
+    }
     if (!res) responseJson = await anthropicChat(opts, src, cache);
     else if (!img && (opts.onDelta || resp) && res.ok && res.body)
       responseJson = await (resp ? readResponses : readStream)(res.body, opts.onDelta ?? (() => {}));
