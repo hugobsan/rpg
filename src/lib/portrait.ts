@@ -70,19 +70,39 @@ export function imageFromDataUrl(url: string): { mime: string; data: Buffer } | 
   return { mime: m[1], data: Buffer.from(text) };
 }
 
-const REWRITE = `Reescreva o pedido de ilustração abaixo como um prompt para um modelo de geração de imagem, em inglês, com até 80 palavras. Mantenha o estilo pedido (ex.: pixel art 16-bit, anime cinematográfico), o enquadramento e o formato; descreva só o que se vê: quem aparece e sua aparência concreta, roupa, expressão, o lugar, a luz e o clima. Mantenha os nomes da obra e dos personagens e escreva junto a aparência de cada um: a da lista de personagens quando houver; para personagem da obra sem aparência registrada, o visual oficial (roupa, cores, acessórios, idade) da fase indicada em "Momento da história", nunca de fases posteriores. Sem texto na imagem. Responda só o prompt.`;
+// estilos padrão (o card do Ilustrador pode fixar outro, em sceneStyle / portraitStyle)
+const STYLES = {
+  scene: "ilustração em estilo anime cinematográfico detalhado",
+  portrait: "pixel art estilo 16-bit, pixels grandes e nítidos, paleta limitada, contorno escuro",
+};
+
+const rewriteRules = (fixedStyle: boolean) =>
+  `Reescreva o pedido de ilustração abaixo como um prompt para um modelo de geração de imagem, em inglês, com até 150 palavras. ${
+    fixedStyle
+      ? "O estilo é fixo e vai separado, antes do seu texto: não descreva estilo, só o conteúdo."
+      : "Comece por uma frase de estilo completa, fiel ao estilo pedido e detalhada: traço, renderização, luz, paleta e nível de detalhe."
+  } Mantenha o enquadramento e o formato; descreva só o que se vê: quem aparece e sua aparência concreta, roupa, expressão, o lugar, a luz e o clima. Mantenha os nomes da obra e dos personagens e escreva junto a aparência de cada um: a da lista de personagens quando houver; para personagem da obra sem aparência registrada, o visual oficial (roupa, cores, acessórios, idade) da fase indicada em "Momento da história", nunca de fases posteriores. Sem texto na imagem. Responda só o prompt.`;
 
 /**
- * Prompt do Ilustrador. Com params.promptModel (modelo de texto da mesma fonte), ele é reescrito curto e em inglês antes:
- * os modelos de difusão (FLUX, Recraft...) rendem mais assim do que com a narração longa em português. Falhou = o original.
+ * Prompt do Ilustrador: estilo + conteúdo (em português). O estilo fixado no card (params.sceneStyle / portraitStyle) vai
+ * no começo sem passar pela reescrita, para toda imagem sair igual; vazio, vale o padrão. Com params.promptModel (modelo de
+ * texto da mesma fonte) o conteúdo é reescrito curto e em inglês antes: os modelos de difusão rendem mais assim.
+ * Falhou a reescrita = estilo + conteúdo originais.
  */
-export async function imagePrompt(agent: Awaited<ReturnType<typeof getAgent>>, prompt: string, campaignId: string): Promise<string> {
+export async function imagePrompt(
+  agent: Awaited<ReturnType<typeof getAgent>>,
+  kind: keyof typeof STYLES,
+  content: string,
+  campaignId: string
+): Promise<string> {
+  const fixed = String(agent.params[`${kind}Style`] ?? "").trim();
+  const original = `${fixed || STYLES[kind]}.\n\n${content}`;
   const model = String(agent.params.promptModel ?? "").trim();
-  if (!model) return prompt;
+  if (!model) return original;
   try {
     const r = await chat({
       model,
-      messages: [{ role: "system", content: REWRITE }, { role: "user", content: prompt }],
+      messages: [{ role: "system", content: rewriteRules(!!fixed) }, { role: "user", content: fixed ? content : original }],
       // modelo que raciocina (Nemotron e afins) gastava os 2000 tokens pensando e não escrevia nada: raciocínio curto e folga
       reasoning: { effort: "low" },
       max_tokens: 4000,
@@ -91,9 +111,10 @@ export async function imagePrompt(agent: Awaited<ReturnType<typeof getAgent>>, p
       campaignId,
       purpose: "prompt da imagem (reescrita)",
     });
-    return r.content.trim() || prompt;
+    const text = r.content.trim();
+    return text ? (fixed ? `${fixed}. ${text}` : text) : original;
   } catch {
-    return prompt;
+    return original;
   }
 }
 
@@ -122,7 +143,8 @@ export async function drawPortrait(campaignId: string, characterId: string): Pro
       role: "user",
       content: await imagePrompt(
         agent,
-        `Retrato de busto de personagem de RPG em pixel art (estilo 16-bit, pixels grandes e nítidos, paleta limitada, contorno escuro), formato quadrado, rosto e ombros centralizados, fundo liso de uma cor só, sem texto e sem moldura. Roupa, cabelo e acessórios coerentes com o cenário e a época do mundo.\n\n${describe(campaign, c)}`,
+        "portrait",
+        `Retrato de busto de personagem de RPG, formato quadrado, rosto e ombros centralizados, fundo liso de uma cor só, sem texto e sem moldura. Roupa, cabelo e acessórios coerentes com o cenário e a época do mundo.\n\n${describe(campaign, c)}`,
         campaignId
       ),
     }],

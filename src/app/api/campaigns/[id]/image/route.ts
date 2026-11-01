@@ -40,13 +40,13 @@ export async function POST(
     // quem está em cena, com a aparência da ficha, e a fase da obra: sem isso o modelo inventa roupas e visual de outra época
     const present = chars.filter((c) => c.kind === "player" || c.active).map(appearanceLine).join("\n");
     const moment = storyMoment(campaign);
-    const prompt = `Ilustração de cena de RPG, estilo anime cinematográfico detalhado. Cenário: ${campaign.ruleset.name}. Local: ${scene.location || "desconhecido"}. Modo da cena: ${scene.mode}.${light}${
+    const prompt = `Cena de RPG. Cenário: ${campaign.ruleset.name}. Local: ${scene.location || "desconhecido"}. Modo da cena: ${scene.mode}.${light}${
       moment ? `\n${moment}` : ""
     }\n\nPersonagens em cena (desenhe só quem a narração mostra ali, com esta aparência):\n${present || "- (nenhum registrado)"}\n\nDescrição do momento atual (ilustre fielmente o ambiente e a atmosfera; sem texto na imagem):\n${context}`;
 
     const result = await chat({
       model: agent.model,
-      messages: [{ role: "user", content: await imagePrompt(agent, prompt, id) }],
+      messages: [{ role: "user", content: await imagePrompt(agent, "scene", prompt, id) }],
       modalities: ["image", "text"],
       max_tokens: agent.max_tokens,
       temperature: agent.temperature,

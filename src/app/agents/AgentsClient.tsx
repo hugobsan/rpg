@@ -283,6 +283,17 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose
                   onChange={(e) => setForm({ ...form, params: { ...form.params, promptModel: e.target.value } })} />
               </label>
             )}
+            {agent.id === "image" && ([
+              ["sceneStyle", "Estilo das imagens de cena", "vazio = ilustração em estilo anime cinematográfico detalhado", "highly detailed cinematic anime illustration, painterly background, volumetric lighting, rich colors"],
+              ["portraitStyle", "Estilo dos retratos", "vazio = pixel art 16-bit", "16-bit pixel art, large crisp pixels, limited palette, dark outline"],
+            ] as const).map(([k, label, empty, example]) => (
+              <label key={k} className={`field ${s.full}`}>
+                <span>{label}: vai no começo de todo prompt, sem passar pela reescrita, para toda imagem sair igual; de preferência em inglês ({empty})</span>
+                <input type="text" spellCheck={false} placeholder={`ex.: ${example}`}
+                  value={String(form.params[k] ?? "")}
+                  onChange={(e) => setForm({ ...form, params: { ...form.params, [k]: e.target.value } })} />
+              </label>
+            ))}
             {agent.id === "voice" && ([["maleVoice", "Voz masculina padrão"], ["femaleVoice", "Voz feminina padrão"]] as const).map(([k, label]) => (
               <label key={k} className="field">
                 <span>{label}</span>

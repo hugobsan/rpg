@@ -6,7 +6,7 @@ import assert from "node:assert";
 import { catalogCost, catalogMatch, chat, chatRequest, mergeSystem, moderationError, type ChatOptions, type Source } from "../src/lib/openrouter";
 import { anthropicParams, toChatJson } from "../src/lib/anthropicApi";
 import { windowStart } from "../src/lib/engine";
-import { imageFromDataUrl } from "../src/lib/portrait";
+import { imageFromDataUrl, imagePrompt } from "../src/lib/portrait";
 import type Anthropic from "@anthropic-ai/sdk";
 
 const ANT: Source = { id: "anthropic", name: "Anthropic", url: "https://api.anthropic.com/v1", apiKey: "sk-ant-test-0001", kind: "anthropic" };
@@ -256,6 +256,22 @@ async function main() {
   globalThis.fetch = (async () => new Response(bfl, { status: 400 })) as typeof fetch;
   await assert.rejects(chat({ ...GM, model: "black-forest-labs/flux-3-image-klein", tools: undefined, modalities: ["image", "text"] }), /moderação de conteúdo.*Ilustrador/);
   globalThis.fetch = realFetch2;
+
+  // 14. prompt do Ilustrador: estilo padrão ou fixo no começo; com reescrita, o estilo fixo não passa pelo reescritor
+  type Agent = Parameters<typeof imagePrompt>[0];
+  const ag = (params: Record<string, unknown>) => ({ params } as unknown as Agent);
+  assert.equal(await imagePrompt(ag({}), "scene", "Cena X", "c"), "ilustração em estilo anime cinematográfico detalhado.\n\nCena X");
+  assert.equal(await imagePrompt(ag({ portraitStyle: "watercolor" }), "portrait", "Retrato Y", "c"), "watercolor.\n\nRetrato Y");
+  state.source = "openrouter";
+  sent.length = 0;
+  assert.equal(await imagePrompt(ag({ sceneStyle: "painterly anime", promptModel: "m/rw" }), "scene", "Cena X", "c"), "painterly anime. ok", "estilo fixo + texto reescrito");
+  const rw = sent.at(-1)!.body.messages as { role: string; content: string }[];
+  assert.match(rw[0].content, /estilo é fixo .* não descreva estilo/);
+  assert.equal(rw[1].content, "Cena X", "o reescritor recebe só o conteúdo");
+  await imagePrompt(ag({ promptModel: "m/rw" }), "scene", "Cena X", "c");
+  const rw2 = sent.at(-1)!.body.messages as { role: string; content: string }[];
+  assert.match(rw2[0].content, /Comece por uma frase de estilo completa/);
+  assert.match(rw2[1].content, /^ilustração em estilo anime/, "sem estilo fixo, o padrão vai para o reescritor detalhar");
 
   // 9. janela do histórico: começo estável por vários turnos, cabe no orçamento e anda em saltos
   const lens = [400, 300, 500, 200, 600, 300, 400];
