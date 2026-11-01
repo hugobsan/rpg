@@ -47,7 +47,7 @@
 /* gerar novamente / continuar: discretos, logo depois da última resposta */
 .turnActions { display: flex; gap: 2px; margin: -8px 0 -4px; }
 /* editar: logo abaixo da sua última mensagem */
-.editLast { align-self: flex-end; margin: -10px 0 -6px; }
+.regen.editLast { align-self: flex-end; margin: -10px 0 -6px; }
 .regen {
   align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 8px; border: 1px solid transparent; border-radius: var(--r-sm); background: none;
