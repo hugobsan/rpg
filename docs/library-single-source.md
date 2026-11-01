@@ -1,6 +1,6 @@
 # Biblioteca como fonte única de habilidades
 
-Status: em execução (2026-11-01). Backup do banco antes da migração: `backups/pre-library-migration-2026-11-01.dump` (`pg_restore -U rpg -d rpg --clean`).
+Status: concluído e migrado em 2026-11-01. Backups de antes da migração: `backups/pre-library-migration-2026-11-01.dump` e `backups/pre-library-migration-final-2026-11-01.dump` (`pg_restore -U rpg -d rpg --clean`); log da migração em `backups/library-migration-2026-11-01.log`.
 
 ## Objetivo
 
