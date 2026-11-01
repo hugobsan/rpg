@@ -61,7 +61,9 @@ export async function imagePrompt(agent: Awaited<ReturnType<typeof getAgent>>, p
     const r = await chat({
       model,
       messages: [{ role: "system", content: REWRITE }, { role: "user", content: prompt }],
-      max_tokens: 2000, // modelo que raciocina gasta antes da resposta curta
+      // modelo que raciocina (Nemotron e afins) gastava os 2000 tokens pensando e não escrevia nada: raciocínio curto e folga
+      reasoning: { effort: "low" },
+      max_tokens: 4000,
       temperature: 0.3,
       agentId: "image",
       campaignId,
