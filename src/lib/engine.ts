@@ -22,6 +22,7 @@ import { getObjectives, objectivesPromptBlock } from "./objectives";
 import { getStage, loadMap, mapPromptBlock, normName } from "./map";
 import { getTable, modeHint, tablePromptBlock, xpRuleText } from "./table";
 import { takeSnapshot } from "./turnSnapshot";
+import { CONTINUE_INPUT } from "./continueScene";
 import {
   DEFERRED_TOOLS,
   executeGmTool,
@@ -420,6 +421,14 @@ export async function runTurn(
     { role: "user", content: `(Contexto do turno, montado pelo sistema; não é fala do jogador)\n${turn}` },
     { role: "user", content: playerInput },
   ];
+  if (playerInput === CONTINUE_INPUT) {
+    messages[messages.length - 1].content =
+      "(Nota do sistema, fora do jogo: o jogador não age neste turno e pediu para você continuar a cena.\n" +
+      "Se a sua narração anterior terminou esperando uma ação, fala ou decisão do personagem dele, não avance por ele: " +
+      "responda só com uma linha curta mostrando que a cena segue aguardando, como \"Fulano ainda espera sua resposta.\" " +
+      "ou \"Eles continuam ali, aguardando sua reação.\", sem novas opções além das que já estavam na mesa.\n" +
+      "Se não, siga a cena adiante (o que os NPCs fazem, o que acontece, o tempo que passa) até um ponto em que o personagem tenha algo a fazer.)";
+  }
   if (regen) {
     // nota fora do jogo só no prompt; a mensagem salva continua sendo a ação original
     const last = messages[messages.length - 1];

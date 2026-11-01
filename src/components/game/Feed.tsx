@@ -173,6 +173,31 @@ export const FeedLine = memo(function FeedLine({ item, chips, cast }: { item?: F
   return <GmLine item={item} cast={cast} />;
 });
 
+/** Sua última mensagem em edição: Enter salva (desfaz o turno e o Mestre responde ao texto novo), Esc cancela. */
+export function EditLine({ text, onSave, onCancel }: { text: string; onSave: (t: string) => void; onCancel: () => void }) {
+  const [value, setValue] = useState(text);
+  const save = () => value.trim() && onSave(value);
+  return (
+    <div className={s.editLine}>
+      <textarea className="msg-player" autoFocus value={value} aria-label="Editar sua última mensagem"
+        rows={Math.min(10, value.split("\n").length + 1)}
+        onFocus={(e) => e.currentTarget.setSelectionRange(value.length, value.length)}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onCancel();
+          else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            save();
+          }
+        }} />
+      <div className={s.editActions}>
+        <button className="btn ghost small" onClick={onCancel}>Cancelar</button>
+        <button className="btn primary small" disabled={!value.trim()} onClick={save}>Salvar e gerar</button>
+      </div>
+    </div>
+  );
+}
+
 /** Opções do turno como cartões; teclas 1 a 9 escolhem (fora de campo de texto e sem modal aberto). */
 export function Choices({ choices, onPick, onEdit }: { choices: string[]; onPick: (c: string) => void; onEdit: (c: string) => void }) {
   useEffect(() => {

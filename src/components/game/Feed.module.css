@@ -179,3 +179,9 @@ button.whoName:hover { text-decoration: underline; text-underline-offset: 3px; }
   margin: 0 0 12px; padding-left: 12px; border-left: 2px solid var(--accent-line);
   font-family: var(--font-narr); font-style: italic; color: var(--text-dim); font-size: 14.5px; line-height: 1.65;
 }
+
+/* edição da última mensagem do jogador, no lugar dela */
+.editLine { align-self: flex-end; width: min(82%, 640px); display: flex; flex-direction: column; gap: var(--s-2); }
+.editLine textarea { max-width: none; width: 100%; resize: vertical; color: inherit; font-family: inherit; outline: none; }
+.editLine textarea:focus { border-color: var(--accent); }
+.editActions { display: flex; justify-content: flex-end; gap: var(--s-2); }

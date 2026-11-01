@@ -28,6 +28,7 @@ import { diceText } from "../DiceRoller";
  *                  "O Mestre está pensando...", "Consultando memórias e livros...", "Escrevendo..."
  *   send(text)     envia a ação; devolve false se não enviou (ocupado ou texto vazio)
  *   regenerate(fb) "gerar novamente" a última resposta (fb = motivo, pode ser "")
+ *   edit(text)     troca a última ação do jogador por text e gera a resposta de novo
  *
  * Dados 3D: com a animação ligada (Configurações), a partir de um evento "dice" todo o resto do
  * turno (inclusive o streaming) fica retido até o jogador rolar, um botão por rolagem, em fila.
@@ -212,8 +213,9 @@ export function useTurn(
     drainHeld();
   };
 
-  // regen: gera de novo a resposta do último turno (o servidor volta o estado de antes dele)
-  const run = async (text: string, regen?: { feedback: string }) => {
+  // regen: gera de novo a resposta do último turno (o servidor volta o estado de antes dele);
+  // com edit, a ação do jogador também é trocada por text
+  const run = async (text: string, regen?: { feedback: string; edit?: boolean }) => {
     busyRef.current = true;
     setBusy(true);
     setError("");
@@ -225,6 +227,7 @@ export function useTurn(
       // tira do chat o que veio depois da última ação do jogador
       setFeed((f) => {
         const lastPlayer = f.map((i) => i.kind).lastIndexOf("player");
+        if (regen.edit) return [...(lastPlayer >= 0 ? f.slice(0, lastPlayer) : f), { key: nextKey(), kind: "player", content: text }];
         return lastPlayer >= 0 ? f.slice(0, lastPlayer + 1) : f;
       });
     } else setFeed((f) => [...f, { key: nextKey(), kind: "player", content: text }]);
@@ -234,7 +237,7 @@ export function useTurn(
       const res = await fetch(`/api/campaigns/${campaignId}/turn`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(regen ? { regenerate: true, feedback: regen.feedback } : { input: text }),
+        body: JSON.stringify(regen ? { regenerate: true, feedback: regen.feedback, input: regen.edit ? text : undefined } : { input: text }),
       });
       if (!res.ok || !res.body) throw new Error(`Erro ${res.status}`);
       const reader = res.body.getReader();
@@ -299,9 +302,15 @@ export function useTurn(
     return true;
   };
 
+  const edit = (text: string) => {
+    if (busyRef.current || !text.trim()) return false;
+    void run(text.trim(), { feedback: "", edit: true });
+    return true;
+  };
+
   return {
     state, setState, reload, error, setError,
-    feed, draft, choices, busy, status, send, regenerate,
+    feed, draft, choices, busy, status, send, regenerate, edit,
     pendingDice, rolling, roll, releaseDice,
     feedRef, hasMore, loadingOlder, loadOlder,
   };

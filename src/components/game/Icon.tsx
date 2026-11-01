@@ -20,6 +20,7 @@ const PATHS = {
   send: <path d="M12 19V5M6 11l6-6 6 6" />,
   speaker: <><path d="M4 9.5v5h3.5l5 4v-13l-5 4z" /><path d="M16 9a4.5 4.5 0 0 1 0 6" /><path d="M18.5 6.5a8 8 0 0 1 0 11" /></>,
   regen: <><path d="M4 4.5v5h5" /><path d="M5.6 14.5a7 7 0 1 0 1.7-7.3L4 9.5" /></>,
+  forward: <><path d="M5 6l6 6-6 6" /><path d="M12 6l6 6-6 6" /></>,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   pin: <><path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z" /><circle cx="12" cy="10" r="2.2" /></>,
   d20: <><path d="M12 2.5l8.5 5v9L12 21.5l-8.5-5v-9z" /><path d="M12 2.5L7 12h10zM7 12l5 9.5 5-9.5M3.5 7.5L7 12l-3.5 4.5M20.5 7.5L17 12l3.5 4.5" /></>,

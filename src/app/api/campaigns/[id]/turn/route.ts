@@ -6,7 +6,7 @@ import { TurnEvent } from "@/lib/types";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-/** POST { input } → SSE de eventos do turno (status, tools, dados, narração, opções). */
+/** POST { input } | { regenerate, feedback? } | { regenerate, input } (editar a última ação) → SSE de eventos do turno (status, tools, dados, narração, opções). */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -14,7 +14,7 @@ export async function POST(
   const { id } = await params;
   const { input, regenerate, feedback } = (await req.json()) as {
     input?: string;
-    regenerate?: boolean; // gerar de novo a resposta do último turno
+    regenerate?: boolean; // gerar de novo a resposta do último turno (com input: trocando a ação)
     feedback?: string;
   };
   const encoder = new TextEncoder();
@@ -31,8 +31,11 @@ export async function POST(
       try {
         if (regenerate) {
           // volta ao estado antes do último turno e roda a mesma ação de novo
+          // (com input: a ação editada pelo jogador, que entra no lugar da antiga)
           const lastInput = await restoreSnapshot(id);
-          await runTurn(id, lastInput, emit, { feedback: String(feedback || "").slice(0, 1000) });
+          const edited = String(input || "").trim();
+          if (edited) await runTurn(id, edited, emit);
+          else await runTurn(id, lastInput, emit, { feedback: String(feedback || "").slice(0, 1000) });
         } else {
           await runTurn(id, String(input || "").trim() || "(o jogador hesita)", emit);
         }

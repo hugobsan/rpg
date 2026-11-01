@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 import type { Character, TurnEvent } from "@/lib/types";
 import type { CampaignView } from "@/lib/campaignView";
@@ -31,7 +31,8 @@ import SceneHeader from "./game/SceneHeader";
 import Composer, { type ComposerHandle, type QuickGroup } from "./game/Composer";
 import SidePanel, { type PanelTab } from "./game/SidePanel";
 import Icon from "./game/Icon";
-import { Choices, Draft, FeedLine, Recap, TurnWait, type Cast } from "./game/Feed";
+import { Choices, Draft, EditLine, FeedLine, Recap, TurnWait, type Cast } from "./game/Feed";
+import { CONTINUE_INPUT } from "@/lib/continueScene";
 import { groupFeed, phaseOf, type Phase } from "./game/feedModel";
 import { stateToasts } from "./game/stateToasts";
 import s from "./GameClient.module.css";
@@ -85,7 +86,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
 
   const {
     state, setState, reload: reloadState, error, setError,
-    feed, draft, choices, busy, status, send, regenerate,
+    feed, draft, choices, busy, status, send, regenerate, edit,
     pendingDice, rolling, roll, releaseDice,
     feedRef, hasMore, loadingOlder, loadOlder,
   } = useTurn(campaignId, { initial, onEvent });
@@ -146,6 +147,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   const [imageBusy, setImageBusy] = useState(false);
   const [regenOpen, setRegenOpen] = useState(false);
   const [regenReason, setRegenReason] = useState("");
+  const [editing, setEditing] = useState(false);
   const [oocOpen, setOocOpen] = useState(false);
 
   const characters = state?.characters;
@@ -181,6 +183,9 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
     [npcs, player?.name, campaignId]
   );
   const groups = useMemo(() => groupFeed(feed), [feed]);
+  // sua última mensagem: só ela pode ser editada (o servidor só desfaz o último turno)
+  const lastPlayer = useMemo(() => feed.findLast((i) => i.kind === "player"), [feed]);
+  const idle = !busy && !pendingDice;
   // ações rápidas do composer: técnicas (com o custo efetivo) e itens da ficha
   const ruleset = state?.campaign.ruleset;
   const quick = useMemo<QuickGroup[]>(() => {
@@ -212,6 +217,10 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   const regen = (feedback: string) => {
     setRegenOpen(false);
     if (regenerate(feedback)) turnStarted();
+  };
+  const saveEdit = (text: string) => {
+    setEditing(false);
+    if (edit(text)) turnStarted();
   };
 
   const generateImage = async () => {
@@ -366,7 +375,20 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
                 </div>
               )}
 
-              {groups.map((g) => <FeedLine key={g.key} item={g.item} chips={g.chips} cast={cast} />)}
+              {groups.map((g) =>
+                g.key !== lastPlayer?.key ? <FeedLine key={g.key} item={g.item} chips={g.chips} cast={cast} />
+                : editing && idle ? <EditLine key={g.key} text={lastPlayer.content} onSave={saveEdit} onCancel={() => setEditing(false)} />
+                : (
+                  <Fragment key={g.key}>
+                    <FeedLine item={g.item} cast={cast} />
+                    {idle && (
+                      <button className={`${s.regen} ${s.editLast}`} onClick={() => setEditing(true)}
+                        title="Editar sua última mensagem (desfaz a resposta do Mestre e gera de novo)" aria-label="Editar sua última mensagem">
+                        <Icon name="edit" size={14} />
+                      </button>
+                    )}
+                  </Fragment>
+                ))}
               {draft ? <Draft text={draft} cast={cast} /> : ghost && busy ? <Draft text={ghost} cast={cast} ghost /> : null}
 
               {pendingDice && (
@@ -379,10 +401,17 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
               {busy && !pendingDice && <TurnWait status={status} phases={phases} />}
               {error && <div className="error-box">{error}</div>}
 
-              {!busy && !pendingDice && feed.some((i) => i.kind === "player") && (
-                <button className={s.regen} onClick={() => { setRegenReason(""); setRegenOpen(true); }}>
-                  <Icon name="regen" size={14} /> Gerar novamente
-                </button>
+              {idle && !editing && lastPlayer && (
+                <div className={s.turnActions}>
+                  <button className={s.regen} onClick={() => { setRegenReason(""); setRegenOpen(true); }}
+                    title="Gerar novamente" aria-label="Gerar novamente">
+                    <Icon name="regen" size={14} />
+                  </button>
+                  <button className={s.regen} onClick={() => sendTurn(CONTINUE_INPUT)}
+                    title="Continuar a cena sem ação do seu personagem" aria-label="Continuar a cena">
+                    <Icon name="forward" size={14} /> Continuar
+                  </button>
+                </div>
               )}
               {!busy && !pendingDice && choices.length > 0 && (
                 <Choices choices={choices} onPick={sendTurn} onEdit={(c) => composer.current?.fill(c)} />

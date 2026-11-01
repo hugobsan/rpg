@@ -44,9 +44,12 @@
 .roll { align-self: center; min-height: 48px; padding: 0 22px; font-size: 15px; gap: 10px; animation: pop var(--dur-slow) var(--ease-out); }
 .rollWhat { font-weight: 500; opacity: 0.75; font-size: 13px; }
 
-/* gerar novamente: discreto, logo depois da última resposta */
+/* gerar novamente / continuar: discretos, logo depois da última resposta */
+.turnActions { display: flex; gap: 2px; margin: -8px 0 -4px; }
+/* editar: logo abaixo da sua última mensagem */
+.editLast { align-self: flex-end; margin: -10px 0 -6px; }
 .regen {
-  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin: -8px 0 -4px;
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 8px; border: 1px solid transparent; border-radius: var(--r-sm); background: none;
   color: var(--text-faint); font: 500 12px/1.2 var(--font-body); cursor: pointer;
   transition: color var(--dur) var(--ease-out), background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
