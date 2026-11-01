@@ -33,6 +33,8 @@ const COLOR = {
   surv: "#2dd4bf",
   adv: "#e879f9",
   scribe: "#a3e635",
+  suggest: "#818cf8",
+  voice: "#f9a8d4",
 } as const;
 type Who = keyof typeof COLOR;
 
@@ -54,6 +56,8 @@ const KIND_LABEL: Record<Who, string> = {
   surv: "Topógrafo",
   adv: "Criador de aventuras",
   scribe: "Escrivão",
+  suggest: "Ações rápidas",
+  voice: "Voz",
 };
 
 interface Tip {
@@ -107,12 +111,31 @@ const lane = (id: string, y: number, h: number, w: number, label: string): LaneN
 });
 
 const NODES: (FlowNode | LaneNode)[] = [
-  lane("L3", -310, 270, 1300, "3. Sob demanda: Roteirista, Ilustrador e Criador de aventuras"),
+  lane("L3", -430, 390, 1300, "3. Sob demanda: Roteirista, Ilustrador, Criador de aventuras, Voz e fora do jogo"),
   lane("L1", 0, 335, 1570, "1. Turno do jogador"),
   lane("L2", 370, 290, 1570, "2. Conversa particular com um NPC"),
   lane("L4", 700, 560, 1570, "4. Criação em segundo plano: personagens, retratos, biblioteca e mapas"),
 
   // --- sob demanda ---
+  n("v_btn", X[0], -370, "player", "Botão “Ouvir a fala”", "fala de NPC no chat ou na conversa", {
+    oque: "O áudio só é gerado quando o jogador clica no alto-falante ao lado de uma fala de NPC (no chat da campanha ou na conversa particular) ou em Ouvir prévia, no modal do NPC.",
+  }),
+  n("v_voice", X[1], -370, "voice", "Voz", "fala do NPC em áudio (TTS)", {
+    oque: "Lê só a fala (o que está entre aspas, ou o texto sem as ações entre asteriscos) com o modelo de fala do agente, na voz escolhida no modal do NPC ou na padrão do sexo dele. Sexo nunca decidido: o Jev decide pela persona e o código grava. Não passa pelo Mestre e não entra no contexto de nenhum agente.",
+    quando: "Só no botão de ouvir.",
+    freq: "1 chamada por fala nova: o áudio fica em cache (modelo + voz + texto) e ouvir de novo não cobra.",
+    custo: "Grátis com o modelo padrão (HeyGen pelo OpenRouter). Fora do OpenRouter o custo não é informado.",
+    fallback: "A tela mostra o erro. Se o Jev falhar, vale a voz masculina e ele tenta de novo na próxima fala.",
+  }),
+  n("o_btn", X[3], -370, "player", "Fora do jogo", "o jogador fala como ele mesmo", {
+    oque: "Conversa com o Mestre fora da história: dúvidas de regra, correções de ficha, pedidos de como conduzir a mesa. Não entra no histórico do turno nem na foto do “gerar novamente”.",
+  }),
+  n("o_gm", X[4], -370, "gm", "Mestre fora do jogo", "diretrizes, regras da mesa, correções", {
+    oque: "O mesmo modelo do Mestre, com outro prompt: responde curto, sem narrar nem dar spoiler (não vê roteiro nem segredos de NPC). Vê a cena, missões, regras e modos de cena da mesa, a ficha completa, os últimos trechos da história e as diretrizes ativas. Orientação de como conduzir vira diretriz (save_directive), que entra no contexto de todo turno; dificuldade, críticos, ritmo de XP e o texto de cada modo de cena vão em set_table_rules; corrige fichas, relógio e missões com as ferramentas do turno (menos roteiro, get_character, npc_message e map_brief), mexe direto no mapa e pede lotes da biblioteca.",
+    quando: "A cada mensagem na conversa fora do jogo.",
+    freq: "1 a 4 chamadas por mensagem (outra rodada só para ler uma busca ou escrever a resposta).",
+    custo: "O modelo principal do Mestre, sem Jev e sem busca web; contexto menor que o do turno.",
+  }),
   n("s_btn1", X[0], -250, "player", "Criar ou replanejar campanha", "gera o roteiro", {
     oque: "O roteiro é gerado ao criar a campanha (se a opção estiver marcada) ou quando você pede para replanejar.",
   }),
@@ -124,17 +147,17 @@ const NODES: (FlowNode | LaneNode)[] = [
     fallback: "Sem JSON válido, nada é salvo e a tela mostra erro (502); o roteiro anterior continua.",
   }),
   n("s_script", X[2], -250, "code", "Roteiro da campanha", "campaigns.script", {
-    oque: "Fica salvo na campanha. O arco ativo entra no contexto do Mestre a cada turno; o Mestre consulta (get_script) e atualiza (update_script) o roteiro por ferramenta.",
+    oque: "Fica salvo na campanha. O arco ativo entra no contexto do Mestre a cada turno, na decisão do Jev e, como momento da história, no prompt do Ilustrador; o Mestre consulta (get_script) e atualiza (update_script, uma anotação) o roteiro por ferramenta.",
   }),
   n("s_btn2", X[0], -130, "player", "Botão “Ver ambiente”", "na tela da campanha", {
     oque: "A imagem só é gerada quando o jogador clica.",
   }),
   n("s_img", X[1], -130, "img", "Ilustrador", "imagem do ambiente", {
-    oque: "Gera uma imagem a partir do local, do modo da cena e das duas últimas narrações do Mestre. Não passa pelo Mestre e não entra no contexto de nenhum agente.",
-    quando: "Só quando o jogador clica em “Ver ambiente”.",
+    oque: "Gera uma imagem a partir do cenário, do local, do modo da cena, da hora (luz e céu), do momento da história (arco ativo), de quem está em cena com a aparência da ficha e das duas últimas narrações do Mestre. O estilo fixado no card do Ilustrador (vazio = anime cinematográfico) vai no começo; com “Reescrever o prompt” ligado, um modelo de texto reescreve o pedido curto e em inglês antes. Não passa pelo Mestre e não entra no contexto de nenhum agente.",
+    quando: "Só quando o jogador clica em “Ver ambiente”, com a geração de imagens ligada nas Configurações.",
     freq: "Sob demanda.",
-    custo: "Cobrado por imagem gerada: bem mais que uma chamada de texto curta. A entrada é pequena.",
-    fallback: "Se o modelo não devolver imagem, a tela mostra o erro e nada é salvo.",
+    custo: "Cobrado por imagem gerada: bem mais que uma chamada de texto curta. A entrada é pequena; a reescrita, se ligada, é uma chamada de texto curta a mais.",
+    fallback: "Se o modelo não devolver imagem ou a moderação recusar, a tela mostra o erro (com a sugestão de trocar o modelo) e nada é salvo. Reescrita que falha: vai o pedido original.",
   }),
   n("s_out", X[2], -130, "code", "Imagem salva na cena", "scene_images", {
     oque: "A imagem fica guardada no Postgres, ligada à cena, e a última aparece na ficha da tela da campanha.",
@@ -155,39 +178,46 @@ const NODES: (FlowNode | LaneNode)[] = [
   }),
 
   // --- turno ---
-  n("t_player", X[0], 60, "player", "Ação do jogador", "texto ou opção clicada", {
-    oque: "O jogador digita uma ação ou clica numa opção. A mensagem é salva no histórico da cena antes de qualquer IA rodar.",
+  n("t_player", X[0], 60, "player", "Ação do jogador", "texto, opção ou Continuar", {
+    oque: "O jogador digita uma ação, clica numa opção (do Mestre ou das Ações rápidas) ou aperta Continuar, que manda “(continuar a cena)”: essa ação fica salva mas não aparece no chat, e o Mestre a recebe trocada por uma nota de sistema. Antes de qualquer IA rodar, o código tira uma foto do estado e salva a mensagem no histórico da cena. Gerar novamente (com motivo opcional) e o lápis na última ação voltam à foto e rodam o turno de novo, com a mesma ação ou com o texto editado.",
     quando: "A cada turno.",
   }),
+  n("t_suggest", X[0], 230, "suggest", "Ações rápidas", "4 a 5 ações para o momento", {
+    oque: "Propõe de 4 a 5 ações curtas, em primeira pessoa, a partir do cenário, da cena (modo, local, título, fim do resumo), da ficha do jogador (recursos, técnicas com o custo, itens), dos NPCs em cena, das opções que o Mestre já ofereceu (para não repetir) e das últimas 6 mensagens. Não narra nem muda nada: as opções aparecem no lugar das do Mestre; clicar envia como ação, o lápis edita antes.",
+    quando: "Só quando o jogador clica em Ações rápidas, no campo da ação.",
+    freq: "1 chamada por clique.",
+    custo: "Baixo: modelo barato e rápido (Gemini Flash, raciocínio baixo), saída de até 1,5 mil tokens.",
+    fallback: "Erro ou resposta fora do formato: aviso na tela e as opções do Mestre continuam.",
+  }),
   n("t_mem", X[1], 60, "code", "Memórias candidatas", "6 parecidas + 8 importantes", {
-    oque: "Sem IA: busca no Postgres as 6 memórias mais parecidas com a ação (vetorial no pgvector, ou por texto se não houver embeddings) e junta as 8 de maior importância e mais recentes, sem repetir. Com embeddings, junta também até 2 trechos antigos do chat (fora da janela recente) muito parecidos com a ação, que só entram se o Jev aprovar com folga. Também lê o histórico recente (janela de ≈9 mil tokens).",
+    oque: "Sem IA: busca no Postgres as 6 memórias mais parecidas com a ação (vetorial no pgvector, ou por texto se não houver embeddings) e junta as 8 de maior importância e mais recentes, sem repetir. Com embeddings, junta também até 2 trechos antigos do chat (fora da janela recente) muito parecidos com a ação, que só entram se o Jev aprovar com folga. Também lê o histórico recente não compactado (janela de ≈9 mil tokens, cujo começo anda em saltos de 1/4 dela, para o cache valer de um turno para o outro).",
     quando: "Logo depois que a ação é salva.",
     custo: "Dois embeddings da ação (baratos) e consultas SQL.",
   }),
   n("t_jev", X[2], 60, "jev", "Jev: decide o turno", "modelo, web e memórias", {
     oque: "Uma única chamada devolve probabilidades, não texto: (1) turno complexo? Escolhe entre o modelo do Mestre e o caro de turnos complexos (se configurado). (2) Precisa de busca web (:online)? Só quando o turno depende de um fato do cânone que não está no contexto. (3) Cada memória candidata é relevante? As de importância 5 entram sem perguntar. Os limiares ficam em src/lib/decisions.ts.",
     quando: "No início de cada turno, depois das candidatas. Se não houver nada a perguntar (sem modelo caro, sem web, sem memórias), nem é chamado.",
-    freq: "No máximo 1 request por turno.",
+    freq: "No máximo 1 request por turno para esta decisão (depois da narração há outras: relógio, local e elenco).",
     custo: "Mínimo: cerca de US$ 0,00005 e ≈0,4 s por chamada; saída só em probabilidades.",
     fallback: "Timeout de 7 s. Qualquer falha: modelo padrão do Mestre, web conforme a configuração dele e todas as memórias entram.",
   }),
   n("t_ctx", X[3], 60, "code", "Montagem do contexto", "ficha, cena, NPCs, roteiro", {
-    oque: "Sem IA: monta o prompt do Mestre com regras, estilo da campanha, mecânica, cena atual (com o resumo compactado), ficha do jogador, NPCs ativos, só as memórias aprovadas pelo Jev e o arco ativo do roteiro. Soma o histórico recente.",
+    oque: "Sem IA, em três partes, na ordem que aproveita o cache: (1) o fixo da campanha: prompt do Mestre, estilo e mecânica; (2) o histórico recente; (3) o contexto do turno, numa mensagem logo antes da ação: regras da mesa, cena atual com hora e MODO DA CENA (o texto do modo, ajustável na Mesa), resumo compactado, missões e prazos, local, rotas e palco do mapa, ficha do jogador e dos NPCs em cena (efeito e requisito de cada técnica cortados em 160 caracteres e o passado em 300; o completo sai no get_character), arco ativo do roteiro, só as memórias e trechos antigos aprovados pelo Jev, o que o Escrivão registrou depois da narração anterior e as diretrizes do jogador.",
     quando: "Antes de cada turno do Mestre.",
   }),
   n("t_gm", X[4], 60, "gm", "Mestre", "narra e arbitra", {
-    oque: "Narra o mundo, arbitra as regras e altera o jogo por ferramentas. Usa o modelo escolhido pelo Jev, mantido em todas as rodadas do turno.",
+    oque: "Narra o mundo, arbitra as regras, controla o relógio e altera o jogo por ferramentas. Usa o modelo escolhido pelo Jev, mantido em todas as rodadas do turno. A narração vai ao jogador em streaming. No Continuar, segue a cena sem o personagem agir (ou, se a narração anterior esperava algo dele, responde só com uma linha curta de que a cena aguarda).",
     quando: "Em cada turno do jogador, em loop com as ferramentas.",
-    freq: "1 a 9 chamadas por turno. Termina quando responde só com texto, ou com a narração e só anotações (cena, elenco, cargo, roteiro, missão), que rodam depois dela sem outra chamada.",
+    freq: "1 a 9 chamadas por turno. Termina quando responde só com texto, ou com a narração e só anotações (relógio, cena, elenco, cargo, roteiro, missão, mapa), que rodam depois dela sem outra chamada. Fala de NPC com nome não registrado devolve a narração uma vez para ele registrar (create_npc) e reescrever.",
     custo: "O mais caro: cada rodada reenvia prompt, ficha, memórias, histórico (até ≈9 mil tokens) e as definições das ferramentas. A busca web (:online) vale só na 1ª rodada e é cobrada por busca.",
   }),
   n("t_tools", X[5], 60, "code", "Ferramentas", "dados, ficha, cena, delegações", {
-    oque: "Executadas pelo código a pedido do Mestre: rolar dados, resolver e treinar técnicas, atributos e habilidades novas, criar NPC, buscar memórias, buscar no chat inteiro da campanha (search_history: trechos curtos com dia, hora e local), consultar livros, roteiro e biblioteca, pedir mapas 3D. As escritas vão direto ao Postgres; criar NPC, técnica nova e mapa são delegados aos criadores (lane 4). As anotações (set_scene, set_npc_active, set_rank, update_script, note_objective) respondem \"Anotado\" na hora e só rodam depois da narração.",
+    oque: "Executadas pelo código a pedido do Mestre: rolar dados, resolver e treinar técnicas, atributos e habilidades novas, criar NPC, mensagem de NPC ao jogador (npc_message), relógio (advance_time, set_time), buscar memórias, buscar no chat inteiro da campanha (search_history: trechos curtos com dia, hora e local), consultar livros, ficha, roteiro e biblioteca, mandar o brief do mapa (map_brief). Dano, itens, XP, memórias e missões não estão aqui: ficam com o Escrivão. As escritas vão direto ao Postgres; criar NPC, técnica nova e mapa são delegados (lane 4). As anotações (advance_time, set_scene, set_npc_active, set_rank, update_script, note_objective, map_brief) respondem \"Anotado\" na hora e só rodam depois da narração.",
     quando: "Sempre que o Mestre pedir, em qualquer rodada.",
     custo: "Sem IA: só SQL (e embeddings ao gravar ou buscar memórias e histórico).",
   }),
   n("t_fx", X[4], 230, "code", "Efeitos persistidos", "narração e opções salvas", {
-    oque: "A narração e o bloco de opções são salvos e enviados ao jogador. Depois, antes do fim do turno: as anotações do Mestre e, em paralelo, o relógio (Jev) seguido do Escrivão, o local e o elenco.",
+    oque: "A narração e o bloco de opções são salvos e enviados ao jogador. Depois, antes do fim do turno: primeiro as anotações do Mestre (só SQL); então, em paralelo, a compactação (Cronista, se estourou o limite), cada map_brief (Topógrafo), o relógio seguido do Escrivão e o local seguido do elenco. Relógio: só se o Mestre não chamou advance_time, set_time nem train, o Jev estima o tempo que passou. Local: se o Mestre não trocou, o Jev julga se o jogador mudou de lugar e o Cronista dá o nome. Elenco: o Jev diz quem dos NPCs calados ainda está na cena. Por fim, o turno entra no histórico vetorial (search_history).",
     quando: "Quando o Mestre responde só com texto, ou com texto e só anotações (ou estoura as rodadas).",
   }),
   n("t_chron", X[3], 230, "chron", "Cronista: compacta", "só se estourar o limite", {
@@ -197,8 +227,8 @@ const NODES: (FlowNode | LaneNode)[] = [
     custo: "Baixo: modelo barato, mas lê de uma vez todo o trecho antigo (≈11 mil tokens de entrada).",
   }),
   n("t_scribe", X[1], 230, "scribe", "Escrivão", "registra o que a narração mostrou", {
-    oque: "Lê a ação, a narração, o que as ferramentas do Mestre já fizeram e as fichas, e registra só o que a narração estabeleceu: dano, cura e gasto, itens, XP, domínio por evento, campos da ficha, memórias e missões (as anotações de missão do Mestre viram objetivos com o prazo certo). Uma chamada com as ferramentas em paralelo.",
-    quando: "Depois de cada narração, logo depois do relógio, antes do fim do turno.",
+    oque: "Lê a ação, a narração, o que as ferramentas do Mestre já fizeram, as fichas, a hora, as missões e a regra de XP da mesa (Mesa > Ganho de XP), e registra só o que a narração estabeleceu: dano, cura e gasto, itens, XP, domínio por evento, campos da ficha, memórias e missões (as anotações de missão do Mestre viram objetivos com o prazo certo). Uma chamada com as ferramentas em paralelo. O que gravou fica junto da narração (meta.notes) e entra no contexto do turno seguinte, para o Mestre reconhecer na história o que for marcante (marco de domínio, nível novo); o “gerar novamente” apaga junto.",
+    quando: "Depois de cada narração, logo depois do relógio (do Jev, quando é ele quem anda com o tempo), antes do fim do turno.",
     freq: "1 chamada por turno (2 se alguma ferramenta deu erro).",
     custo: "Baixo: modelo barato e rápido, ≈3 mil tokens de entrada; ~US$ 0,001 e 1 a 3 s.",
     fallback: "Se falhar, nada é registrado; o jogador corrige pedindo ao Mestre fora do jogo.",
@@ -215,24 +245,24 @@ const NODES: (FlowNode | LaneNode)[] = [
     custo: "Local (Docker). Nenhuma chamada paga; só os embeddings das memórias passam pelo OpenRouter.",
   }),
   n("or", X[5], -250, "infra", "OpenRouter e outras fontes", "toda IA passa por aqui", {
-    oque: "Todas as chamadas de IA (Jev, Mestre, NPC, Cronista, Roteirista, Ilustrador e os criadores) saem pela fonte de modelos do agente: o OpenRouter (padrão) ou outra API compatível com a da OpenAI cadastrada em Fontes de modelos. Cada chamada vira uma linha no histórico do agente: fonte, tokens, duração, custo, request e resposta. O Jev usa a Decisions API (probabilidades); os demais, chat completions.",
+    oque: "Todas as chamadas de IA (Jev, Mestre, Escrivão, Ações rápidas, NPC, Cronista, Roteirista, Ilustrador, Voz, Topógrafo e os criadores) saem pela fonte de modelos do agente: o OpenRouter (padrão) ou outra fonte cadastrada em Fontes de modelos (OpenAI, Anthropic, Gemini, OpenCode, outra API compatível com a da OpenAI ou o Login com ChatGPT). Cada chamada vira uma linha no histórico do agente: fonte, tokens, duração, custo, request e resposta. O Jev usa a Decisions API (probabilidades), a Voz o endpoint de fala (audio/speech) e os demais, chat completions (modelo que só gera imagem vai pelo endpoint de imagens).",
     custo: "Você paga o preço do modelo escolhido em cada agente, direto à fonte. Só o OpenRouter informa o custo de cada chamada; das outras ficam os tokens.",
   }),
 
   // --- NPC ---
   n("n_player", X[0], 430, "player", "Jogador fala com o NPC", "conversa particular", {
-    oque: "Conversa fora da narração do Mestre. O histórico fica guardado por sessão de conversa.",
+    oque: "Conversa fora da narração do Mestre. O histórico fica guardado por sessão de conversa. A sessão também pode ser aberta pelo NPC: o Mestre manda npc_message (mensagem curta e um motivo oculto), que chega na caixa de entrada; se o jogador responde, a conversa segue com o agente do NPC, que sabe por que chamou.",
     quando: "A cada mensagem do jogador ao NPC.",
   }),
   n("n_jev", X[1], 430, "jev", "Jev: o NPC topa?", "só no início da conversa", {
     oque: "Decide se o NPC toparia conversar agora, olhando persona, objetivos, relação com o jogador, cena e se o NPC está presente.",
-    quando: "Antes da 1ª chamada do NPC da sessão (histórico vazio). Uma troca recusada não é gravada: se o jogador insistir, a checagem roda de novo. No meio de uma conversa aceita não há checagem: o NPC pode cortar sozinho, em personagem.",
+    quando: "Antes da 1ª chamada do NPC da sessão (histórico vazio). Uma troca recusada não é gravada: se o jogador insistir, a checagem roda de novo. No meio de uma conversa aceita não há checagem: o NPC pode cortar sozinho, em personagem. Sessão aberta pelo NPC (npc_message) não passa pela checagem.",
     freq: "1 request no início de cada conversa.",
     custo: "Mínimo: cerca de US$ 0,00005 e ≈0,4 s por chamada; saída só em probabilidades.",
     fallback: "Se falhar, o NPC conversa normalmente.",
   }),
   n("n_npc", X[2], 430, "npc", "NPC responde", "persona + memórias da relação", {
-    oque: "Interpreta o NPC em primeira pessoa com persona, ficha, cena atual, as 8 memórias mais ligadas ao NPC e as últimas 30 mensagens da conversa. A troca é gravada.",
+    oque: "Interpreta o NPC em primeira pessoa com persona, ficha, cenário, cena atual, as 8 memórias mais ligadas ao NPC, o motivo (se foi ele quem chamou) e as últimas 30 mensagens da conversa. A troca é gravada e entra no histórico vetorial (search_history do Mestre).",
     quando: "A cada mensagem do jogador, depois do aval do Jev.",
     freq: "1 chamada por mensagem.",
     custo: "Baixo: contexto pequeno e resposta curta (máx. 700 tokens).",
@@ -247,7 +277,7 @@ const NODES: (FlowNode | LaneNode)[] = [
   }),
   n("n_chron", X[4], 430, "chron", "Cronista: extrai memórias", "1 vez por conversa", {
     oque: "Lê a conversa inteira e guarda só o que o Mestre precisa saber (revelações, acordos, mudanças de relação) como memórias de tipo npc ou relationship. Só roda se houve ao menos uma troca.",
-    quando: "Ao encerrar a conversa com o NPC.",
+    quando: "Ao encerrar a conversa com o NPC, em segundo plano (o modal fecha na hora e o cabeçalho mostra a tarefa).",
     freq: "1 chamada por conversa.",
     custo: "Baixo: modelo barato; a entrada é a conversa toda.",
   }),
@@ -279,7 +309,7 @@ const NODES: (FlowNode | LaneNode)[] = [
     oque: "Sem IA: grava o perfil e a ficha com a linha travada. O que o Mestre mudou nesse meio tempo (dano, gasto, cargo, sexo) fica como ele deixou; técnicas e itens se somam por nome.",
   }),
   n("c_pix", X[4], 760, "img", "Ilustrador", "retrato do personagem", {
-    oque: "Pinta o retrato de busto do personagem com o modelo de imagem, a partir do cenário, do cargo, dos campos da ficha e da aparência. Só com a geração de imagens ligada nas Configurações; desligada, o botão avisa e nada é gerado.",
+    oque: "Pinta o retrato de busto do personagem com o modelo de imagem, a partir do cenário, do momento da história (arco ativo), do cargo, dos campos da ficha e da aparência. O estilo fixado no card do Ilustrador (vazio = pixel art 16-bit) vai no começo; com “Reescrever o prompt” ligado, um modelo de texto reescreve o pedido curto e em inglês antes. Só com a geração de imagens ligada nas Configurações; desligada, o botão avisa e nada é gerado.",
     quando: "Só nos botões Gerar e Regerar retrato (modal do NPC ou ficha).",
     freq: "1 imagem por clique.",
     custo: "Cobrado por imagem gerada, cerca de US$ 0,03 por retrato.",
@@ -322,7 +352,7 @@ const NODES: (FlowNode | LaneNode)[] = [
   }),
   n("m_surv", X[1], 1000, "surv", "Topógrafo", "brief → ferramentas do mapa", {
     oque: "Lê o brief com o estado do mapa (local, rotas, palco, mapas 3D, quem está em cena) e chama as ferramentas: set_stage (zonas e posições do palco), update_map (lugar conhecido, direção, distância, rota) e local_map (pede ao Cartógrafo gerar ou editar o mapa 3D de um lugar; não regera um mapa que já existe, e a iniciativa pode ser desligada nas Configurações). Os pontos de interesse do mapa 3D viram as zonas do palco.",
-    quando: "Quando o Mestre manda um map_brief (em batalha, no começo e a cada movimento relevante).",
+    quando: "Quando o Mestre manda um map_brief (em batalha, no começo e a cada movimento relevante): é uma anotação, roda depois da narração, em paralelo com o Escrivão, já no local que o set_scene marcou.",
     freq: "1 chamada por brief; poucas por campanha fora de batalha.",
     custo: "Modelo barato e rápido: ~3 mil tokens de entrada, cerca de US$ 0,002 e poucos segundos por brief. Tira ~1,6 mil tokens de cada chamada do Mestre.",
     fallback: "Erro em uma ferramenta não derruba o turno; o palco e o mapa ficam como estavam.",
@@ -394,6 +424,8 @@ const EDGES: Edge[] = [
   e("t_tools", "sb", "pg", "tt", "grava ficha, cena, memórias"),
   e("t_fx", "sr", "pg", "tl", "grava narração"),
   e("t_gm", "st", "or", "tb", "toda IA", { dashed: true }),
+  e("t_suggest", "st", "t_player", "tb", "opções"),
+  e("t_scribe", "st", "t_ctx", "tb", "o que gravou, no próximo turno", { dashed: true }),
   // NPC
   e("n_player", "sr", "n_jev", "tl"),
   e("n_jev", "sr", "n_npc", "tl", "topa"),
@@ -408,6 +440,8 @@ const EDGES: Edge[] = [
   e("s_script", "sr", "t_ctx", "tl", "arco ativo"),
   e("s_btn2", "sr", "s_img", "tl"),
   e("s_img", "sr", "s_out", "tl", "imagem"),
+  e("v_btn", "sr", "v_voice", "tl"),
+  e("o_btn", "sr", "o_gm", "tl", "conversa ⇄", { both: true }),
   // aventura
   e("a_btn", "sr", "a_adv", "tl", "conversa ⇄", { both: true }),
   e("a_adv", "sb", "a_out", "tr", "JSON"),
@@ -415,7 +449,7 @@ const EDGES: Edge[] = [
   e("c_gm", "sr", "c_reg", "tl"),
   e("c_reg", "sr", "c_char", "tl", "tarefa"),
   e("c_char", "sr", "c_merge", "tl", "JSON"),
-  e("c_merge", "sr", "c_pix", "tl", "retrato"),
+  e("c_merge", "sr", "c_pix", "tl", "botão de retrato", { dashed: true }),
   e("c_pix", "sr", "c_out", "tl", "imagem"),
   e("c_char", "sb", "b_lib", "tt", "técnicas e itens"),
   e("b_gm", "sr", "b_lib", "tl", "consulta"),

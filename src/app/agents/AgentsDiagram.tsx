@@ -18,7 +18,7 @@ export default function AgentsDiagram() {
       <summary>
         <div>
           <h2>Como os agentes trabalham</h2>
-          <p className="muted">Diagrama do turno, das conversas com NPC e do que roda sob demanda.</p>
+          <p className="muted">Diagrama do turno, das conversas com NPC, do que roda sob demanda e da criação em segundo plano.</p>
         </div>
         <svg className={s.chev} width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
           <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
