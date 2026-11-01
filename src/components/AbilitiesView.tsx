@@ -80,11 +80,11 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
     return (
       <article key={a.name} className={s.item} style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}>
         <div className={s.top}>
-          {isOpen && <Ring value={progress} estimated={a.progress === undefined} />}
+          <Ring value={progress} estimated={a.progress === undefined} />
           <button type="button" className={s.title} aria-expanded={isOpen} onClick={() => toggle(a.name)}>
             <h4 className={s.name}>{a.name}</h4>
             <div className={s.meta}>
-              {isOpen && a.rank && <span className={s.rank}>{a.rank}</span>}
+              {a.rank && <span className={s.rank}>{a.rank}</span>}
               <span>{typeLabel(a.type)}</span>
             </div>
           </button>

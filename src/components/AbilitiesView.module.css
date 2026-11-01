@@ -26,7 +26,7 @@
 }
 .item:hover { border-color: var(--border-strong); }
 .top { display: flex; align-items: center; gap: var(--s-3); }
-/* o título expande/recolhe o card (recolhido mostra só nome, tipo, custo e teste) */
+/* o título expande/recolhe o card (recolhido mostra domínio, nome, rank, tipo, custo e teste) */
 .title {
   min-width: 0; flex: 1; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
   display: grid; grid-template-columns: 1fr auto; grid-template-areas: "name chev" "meta chev"; column-gap: var(--s-2); align-items: center;
