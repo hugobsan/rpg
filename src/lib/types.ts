@@ -55,6 +55,11 @@ export interface TrainingRules {
   maxMasteryPerDay: number;
   /** horas para +1 num atributo = isto x valor atual */
   hoursPerAttributePoint: number;
+  /**
+   * treino simultâneo (opcional; sem ele o mundo não tem): outros alvos treinados nas mesmas horas, sem o relógio andar
+   * de novo. label = como o mundo faz (Naruto: clones das sombras); note = regra para o Mestre (custo, limites)
+   */
+  parallel?: { label: string; note?: string; max?: number };
 }
 
 /** Faixa de consumo do mundo (Ruleset.abilityCosts.byConsumption): key gravada na técnica, nome exibido e custo base */

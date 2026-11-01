@@ -24,6 +24,8 @@ import {
   powerLevel,
   raiseBlocked,
   train,
+  trainingRules,
+  type TrainResult,
   useGain,
 } from "./progression";
 import { clockParts, formatClock, formatDuration, getClock, period, toMinutes } from "./clock";
@@ -243,6 +245,11 @@ export const GM_TOOLS: ToolDef[] = [
           character: { type: "string" },
           target: { type: "string", description: "nome da habilidade da ficha ou key do atributo" },
           hours: { type: "number", description: "horas realistas de treino (inteiras, ex: 2, 4)" },
+          parallel: {
+            type: "array",
+            items: { type: "string" },
+            description: "só se o mundo tem Treino simultâneo (veja as regras): outros alvos treinados nas mesmas horas (ex. Naruto: um por clone das sombras)",
+          },
           note: { type: "string", description: "como treinou" },
         },
         ["character", "target", "hours"]
@@ -1032,10 +1039,27 @@ export async function executeGmTool(
       const c = await getChar(cid, String(args.character));
       const before = getClock(ctx.campaign.state)?.minutes;
       if (before === undefined) return "O relógio ainda não foi definido: chame set_time primeiro.";
-      const r = train(rs, c.sheet, String(args.target || ""), Number(args.hours), clockParts(before).day);
+      // treino simultâneo: outros alvos nas mesmas horas, se o mundo permite
+      const par = trainingRules(rs).parallel;
+      const others = (Array.isArray(args.parallel) ? args.parallel : []).map((x) => String(x).trim()).filter(Boolean);
+      if (others.length && !par) return "Este mundo não tem treino simultâneo: treine um alvo por vez (cada um avança o relógio).";
+      if (par?.max && others.length > par.max) return `Treino simultâneo (${par.label}): no máximo ${par.max} alvos além do principal.`;
+      const all = [String(args.target || ""), ...others];
+      if (new Set(all.map((x) => x.toLowerCase())).size < all.length) return "Cada alvo do treino simultâneo precisa ser diferente.";
+      // tudo ou nada: confere todos os alvos numa cópia antes de mexer na ficha
+      const day = clockParts(before).day;
+      const dry = structuredClone(c.sheet);
+      for (const [i, t] of all.entries()) {
+        const res = train(rs, dry, t, Number(args.hours), day, i > 0);
+        if ("error" in res) return others.length ? `${t}: ${res.error}` : res.error;
+      }
+      const r = train(rs, c.sheet, all[0], Number(args.hours), day);
       if ("error" in r) return r.error;
-      const trained = r.kind === "ability" ? findAbility(c.sheet, String(args.target || "")) : undefined;
-      if (trained) markGained(ctx, c, trained);
+      const extra = others.map((t) => train(rs, c.sheet, t, Number(args.hours), day, true)).filter((x): x is Exclude<TrainResult, { error: string }> => !("error" in x));
+      for (const t of all) {
+        const trained = findAbility(c.sheet, t);
+        if (trained) markGained(ctx, c, trained);
+      }
       const minutes = before + r.hours * 60;
       ctx.campaign.state = { ...ctx.campaign.state, clock: { minutes } };
       ctx.emit({ type: "time", minutes });
@@ -1043,24 +1067,26 @@ export async function executeGmTool(
       const lost = await saveClock(cid, minutes, ctx.emit);
       await saveSheet(c.id, c.sheet);
       ctx.emit({ type: "state" });
-      const gain =
-        r.kind === "ability"
-          ? `${r.label} ${r.before}% → ${r.after}%${r.milestone ? ` — novo marco: ${r.milestone.description}` : ""}`
-          : r.after > r.before
-            ? `${r.label} ${r.before} → ${r.after}`
-            : `${r.label}: ${r.atCap ? "no teto" : `${r.banked}/${r.need} h para +1`}`;
-      ctx.emit({ type: "tool", name, summary: `🏋️ ${c.name} treinou ${r.hours} h: ${gain}` });
-      let msg = `Treino de ${r.hours} h. Relógio: ${formatClock(minutes)} (${period(minutes)}). Hoje: ${r.hoursToday} h de treino.`;
-      if (r.kind === "ability") {
-        msg += ` Domínio de ${r.label}: ${r.before}% → ${r.after}%.`;
-        if (r.capped) msg += " Rendimento cortado: chegou ao máximo de domínio por dia nesta habilidade.";
-        if (r.milestone) msg += ` NOVO MARCO ALCANÇADO: ${r.milestone.description} — narre esse avanço.`;
-      } else {
-        msg += r.after > r.before ? ` ${r.label} subiu de ${r.before} para ${r.after}!` : ` ${r.label} continua ${r.after}.`;
-        msg += r.atCap
-          ? ` Chegou ao teto do nível de poder: as horas não acumulam mais até o próximo nível.`
-          : ` Horas acumuladas: ${r.banked}/${r.need} para o próximo +1.`;
-      }
+      type Done = Exclude<TrainResult, { error: string }>;
+      const gainOf = (x: Done) =>
+        x.kind === "ability"
+          ? `${x.label} ${x.before}% → ${x.after}%${x.milestone ? ` — novo marco: ${x.milestone.description}` : ""}`
+          : x.after > x.before
+            ? `${x.label} ${x.before} → ${x.after}`
+            : `${x.label}: ${x.atCap ? "no teto" : `${x.banked}/${x.need} h para +1`}`;
+      const detail = (x: Done) => {
+        if (x.kind === "ability")
+          return ` Domínio de ${x.label}: ${x.before}% → ${x.after}%.${x.capped ? " Rendimento cortado: chegou ao máximo de domínio por dia nesta habilidade." : ""}${
+            x.milestone ? ` NOVO MARCO ALCANÇADO: ${x.milestone.description} — narre esse avanço.` : ""
+          }`;
+        return (
+          (x.after > x.before ? ` ${x.label} subiu de ${x.before} para ${x.after}!` : ` ${x.label} continua ${x.after}.`) +
+          (x.atCap ? ` Chegou ao teto do nível de poder: as horas não acumulam mais até o próximo nível.` : ` Horas acumuladas: ${x.banked}/${x.need} para o próximo +1.`)
+        );
+      };
+      const how = extra.length ? ` (simultâneo: ${par!.label})` : "";
+      ctx.emit({ type: "tool", name, summary: `🏋️ ${c.name} treinou ${r.hours} h${how}: ${[r, ...extra].map(gainOf).join("; ")}` });
+      const msg = `Treino de ${r.hours} h${how}. Relógio: ${formatClock(minutes)} (${period(minutes)}). Hoje: ${r.hoursToday} h de treino.${[r, ...extra].map(detail).join("")}`;
       return msg + lost;
     }
     case "add_item": {

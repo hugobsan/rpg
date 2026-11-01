@@ -79,7 +79,8 @@
     "masteryPerHour": [{ "min": 0, "value": 3 }, { "min": 50, "value": 2 }, { "min": 75, "value": 1 }],
     "masteryPerUse": [{ "min": 0, "value": 5 }, { "min": 25, "value": 4 }, { "min": 50, "value": 3 }, { "min": 75, "value": 2 }],
     "maxMasteryPerDay": 25,
-    "hoursPerAttributePoint": 20
+    "hoursPerAttributePoint": 20,
+    "parallel": {"label": "clones das sombras (Kage Bunshin no Jutsu)", "note": "Cada clone treina um alvo diferente nas mesmas horas. Antes, cobre os clones com use_ability (Kage Bunshin no Jutsu, units = número de clones); sem chakra para eles, não há treino simultâneo. Ao desfazer os clones, a experiência de cada um volta ao original."}
   },
   "startingAbilities": {
     "estudante": [

@@ -245,12 +245,13 @@ export type TrainResult =
  * Treino de `hours` horas num jutsu (nome) ou atributo (key ou rótulo) no dia `day`.
  * Valida tudo antes de mutar: com erro, a ficha fica intacta e o relógio não deve andar.
  */
-export function train(r: Ruleset, s: Sheet, target: string, hours: number, day: number): TrainResult {
+// parallel: alvo do treino simultâneo (as mesmas horas já contadas no alvo principal: não somam no dia)
+export function train(r: Ruleset, s: Sheet, target: string, hours: number, day: number, parallel = false): TrainResult {
   const tr = trainingRules(r);
   const h = Math.round(hours);
   if (!(h >= 1)) return { error: "hours precisa ser >= 1 (horas inteiras)." };
   const usedToday = s.trainingLog?.day === day ? s.trainingLog.hours : 0;
-  if (usedToday + h > tr.maxHoursPerDay) {
+  if (!parallel && usedToday + h > tr.maxHoursPerDay) {
     const left = tr.maxHoursPerDay - usedToday;
     return {
       error: `Treino recusado: exausto. Já treinou ${usedToday} h hoje (máximo ${tr.maxHoursPerDay} h por dia)${
@@ -275,7 +276,7 @@ export function train(r: Ruleset, s: Sheet, target: string, hours: number, day: 
     let p = before;
     for (let i = 0; i < h; i++) p = Math.min(100, p + band(tr.masteryPerHour, p));
     const g = gainMastery(r, s, ability, p - before, day);
-    todayLog(s, day).hours += h;
+    if (!parallel) todayLog(s, day).hours += h;
     return { kind: "ability", label: ability.name, hours: h, ...g, hoursToday: todayLog(s, day).hours };
   }
 
@@ -296,7 +297,7 @@ export function train(r: Ruleset, s: Sheet, target: string, hours: number, day: 
   if (v >= cap) banked = 0; // no teto as horas não acumulam
   s.attributes[key] = v;
   s.trainingHours = { ...s.trainingHours, [key]: banked };
-  todayLog(s, day).hours += h;
+  if (!parallel) todayLog(s, day).hours += h;
   return {
     kind: "attribute",
     label: attr!.label,
@@ -327,5 +328,8 @@ export function progressionPromptLines(r: Ruleset): string[] {
       tr.masteryPerUse,
       (v) => `+${v}`
     )}; no máximo +${tr.maxMasteryPerDay}% de domínio por habilidade por dia; +1 de atributo a cada ${tr.hoursPerAttributePoint} h x valor atual.`,
+    ...(tr.parallel
+      ? [`Treino simultâneo (${tr.parallel.label}): train com parallel = outros alvos treinados nas mesmas horas${tr.parallel.max ? ` (até ${tr.parallel.max})` : ""}; o relógio anda uma vez e cada alvo ganha como se treinasse essas horas.${tr.parallel.note ? ` ${tr.parallel.note}` : ""}`]
+      : []),
   ];
 }

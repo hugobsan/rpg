@@ -206,6 +206,29 @@ async function dbChecks() {
     assert.equal((await char()).sheet.trainingHours!.taijutsu, 6);
     ok(`train: relógio 08:00 → 12:00 → 18:00, limite de 10 h/dia (${out.slice(0, 60)}...)`, () => {});
 
+    // treino simultâneo: só no mundo que tem training.parallel; o relógio anda uma vez, cada alvo ganha
+    const clockNow = async () => (await q<{ state: { clock: { minutes: number } } }>(`SELECT state FROM campaigns WHERE id = $1`, [camp.id]))[0].state.clock.minutes;
+    const prog = async (name: string) => (await char()).sheet.abilities.find((a) => a.name === name)!.progress!;
+    const camp0 = ctx.campaign;
+    ctx.campaign = { ...camp0, ruleset: { ...rs, training: { ...rs.training!, parallel: undefined } } };
+    assert.match(await run("train", { character: "Teste", target: "Bunshin no Jutsu", parallel: ["Henge no Jutsu"], hours: 2 }), /não tem treino simultâneo/);
+    ctx.campaign = camp0;
+    const day2 = 24 * 60 + 8 * 60;
+    ctx.campaign.state = { ...ctx.campaign.state, clock: { minutes: day2 } };
+    const [b0, h0, k0] = [await prog("Bunshin no Jutsu"), await prog("Henge no Jutsu"), await prog("Katon Novo")];
+    assert.match(await run("train", { character: "Teste", target: "Bunshin no Jutsu", parallel: ["bunshin no jutsu"], hours: 2 }), /diferente/);
+    assert.match(await run("train", { character: "Teste", target: "Bunshin no Jutsu", parallel: ["Henge no Jutsu", "Rasengan"], hours: 2 }), /^Rasengan:/);
+    assert.equal(await prog("Henge no Jutsu"), h0, "alvo inválido: nada aplicado");
+    out = await run("train", { character: "Teste", target: "Bunshin no Jutsu", parallel: ["Henge no Jutsu", "Katon Novo"], hours: 2 });
+    assert.equal(await clockNow(), day2 + 120, "relógio anda uma vez");
+    assert.ok((await prog("Bunshin no Jutsu")) > b0 && (await prog("Henge no Jutsu")) > h0 && (await prog("Katon Novo")) > k0, "cada alvo ganha");
+    assert.equal((await char()).sheet.trainingLog!.hours, 2, "horas do dia contadas uma vez");
+    assert.match(out, /simultâneo/);
+    // o Escrivão não repete o ganho de um alvo treinado em paralelo
+    const scribeCtx: ToolContext = { ...ctx, scribe: { briefs: 0 } };
+    assert.match(await executeGmTool("update_ability_progress", { character: "Teste", name: "Katon Novo", delta: 5 }, scribeCtx), /já/);
+    ok(`train simultâneo: recusa sem regra, alvo repetido ou inválido; relógio +2 h, três alvos sobem (${out.slice(0, 80)}...)`, () => {});
+
     // update_attribute respeita o teto
     assert.match(await run("update_attribute", { character: "Teste", attribute: "ninjutsu", value: 6 }), /recusado.*Genin/);
     assert.match(await run("update_attribute", { character: "Teste", attribute: "vigor", value: 7 }), /recusado/);
