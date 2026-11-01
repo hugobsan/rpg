@@ -38,7 +38,7 @@ export const FINISH_TEXT = "Pode fechar a aventura com o que já temos. Decida v
 // campos de topo que o patch pode mexer (o resto é ignorado)
 const KEYS: (keyof Ruleset)[] = [
   "name", "description", "theme", "loreNotes", "canonBased", "startingPoint", "attributes", "resources",
-  "abilityTypes", "abilityRanks", "ranks", "powerLevels", "masteryBonus", "masteryCost", "xpPerAttributePoint",
+  "abilityTypes", "abilityElements", "abilityRanks", "ranks", "powerLevels", "masteryBonus", "masteryCost", "xpPerAttributePoint",
   "attributeMultiplier", "abilityAttributes", "training", "creationPoints", "extraFields", "diceNotes",
   "progressionNotes", "abilitiesLabel", "abilityCosts", "startingAbilities", "abilityNaming",
 ];

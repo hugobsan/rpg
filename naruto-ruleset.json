@@ -30,6 +30,13 @@
     { "key": "medico", "label": "Ninjutsu Médico" },
     { "key": "arma", "label": "Bukijutsu (armas)" }
   ],
+  "abilityElements": [
+    { "key": "katon", "label": "Katon", "description": "Fogo" },
+    { "key": "suiton", "label": "Suiton", "description": "Água" },
+    { "key": "futon", "label": "Fūton", "description": "Vento" },
+    { "key": "doton", "label": "Doton", "description": "Terra" },
+    { "key": "raiton", "label": "Raiton", "description": "Relâmpago" }
+  ],
   "abilityRanks": ["D", "C", "B", "A", "S"],
   "abilitiesLabel": "Jutsus",
   "abilityNaming": "Técnica do cânone de Naruto: use o nome romanizado oficial da Narutopedia (naruto.fandom.com), em Hepburn com mácrons (ō, ū) e com o prefixo de natureza quando faz parte do nome oficial (Katon:, Suiton:, Doton:, Fūton:, Raiton:), sem parênteses e sem tradução no nome; ex.: \"Katon: Gōkakyū no Jutsu\". A tradução em português vai no campo translation, no estilo da dublagem e dos fãs brasileiros (ex.: \"Liberação de Fogo: Técnica da Grande Bola de Fogo\"). Técnica, perícia ou ofício sem nome no cânone: nome descritivo curto em português, sem translation e sem parênteses. O nome é da técnica, nunca de quem a usa nem do estágio de domínio (nada de \"de Kakashi\" ou \"Três Tomoe\" no nome).",

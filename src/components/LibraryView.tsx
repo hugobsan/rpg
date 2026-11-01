@@ -13,6 +13,7 @@ import s from "./LibraryView.module.css";
 
 type Lib = Record<LibraryKind, LibraryEntry[]>;
 type Data = LibraryAbility & LibraryItem;
+const NO_ELEMENT = "sem elemento";
 
 /**
  * Aba Biblioteca: técnicas e itens do mundo (cânone ou originais) que o Mestre e o Criador de
@@ -31,6 +32,7 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
   const [query, setQuery] = useState("");
   const [type, setType] = useState<string | null>(null);
   const [rank, setRank] = useState<string | null>(null);
+  const [element, setElement] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<number | null>(null);
   const [count, setCount] = useState(10);
   const [focus, setFocus] = useState("");
@@ -55,6 +57,7 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
     setKind(k);
     setType(null);
     setRank(null);
+    setElement(null);
     setConfirming(null);
     setGenError("");
   };
@@ -64,10 +67,15 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
   const order = (k: string) => (kind === "ability" ? ruleset.abilityTypes.findIndex((t) => t.key === k) : 0);
   const typeOpts = [...new Set(entries.map(typeOf).filter(Boolean))].sort((x, y) => order(x) - order(y) || x.localeCompare(y));
   const rankOpts = ruleset.abilityRanks.filter((r) => entries.some((e) => e.data.rank === r));
+  // elemento (Naruto: natureza do chakra), só nas habilidades e se o mundo define elementos
+  const elements = kind === "ability" ? ruleset.abilityElements ?? [] : [];
+  const elOf = (e: LibraryEntry) => (e.data as Data).element || NO_ELEMENT;
+  const elOpts = elements.length ? [...elements.map((x) => x.key), NO_ELEMENT].filter((k) => entries.some((e) => elOf(e) === k)) : [];
+  const elLabel = (k: string) => elements.find((x) => x.key === k)?.label || k;
   const qf = fold(query.trim());
   const shown = entries.filter((e) => {
     const d = e.data as Data;
-    return (!type || typeOf(e) === type) && (!rank || d.rank === rank) &&
+    return (!type || typeOf(e) === type) && (!rank || d.rank === rank) && (!element || elOf(e) === element) &&
       (!qf || fold(`${e.name} ${d.translation ?? ""} ${d.description ?? ""} ${d.effect ?? ""} ${d.users ?? ""}`).includes(qf));
   });
   const running = libJobs.filter((j) => j.status === "running" && j.target?.startsWith(`${kind}:`));
@@ -141,6 +149,7 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
             <div className={s.meta}>
               {d.rank && <span className={a.rank}>{d.rank}</span>}
               {typeOf(e) && <span>{typeLabel(typeOf(e))}</span>}
+              {d.element && <span>{elLabel(d.element)}</span>}
               {!e.canon && <span className={p.chip}>original</span>}
               {d.incomplete && <span className={`${p.chip} ${a.warn}`} data-tip="Registrada às pressas; o Mestre completa o efeito e os detalhes">incompleta</span>}
             </div>
@@ -249,10 +258,11 @@ export default function LibraryView({ campaignId, ruleset, jobs, onChange }: {
       {lib && entries.length > 0 && (
         <>
           <SearchBox value={query} onChange={setQuery} label="Buscar na biblioteca" placeholder={`Buscar ${what} por nome ou efeito`} />
-          {(typeOpts.length > 1 || rankOpts.length > 1) && (
+          {(typeOpts.length > 1 || rankOpts.length > 1 || elOpts.length > 1) && (
             <div className={a.filterBox}>
               {filterRow(kind === "ability" ? "Tipo" : "Categoria", typeOpts, type, setType, typeOf, typeLabel)}
               {filterRow("Rank", rankOpts, rank, setRank, (e) => e.data.rank, (o) => o)}
+              {filterRow("Elemento", elOpts, element, setElement, elOf, elLabel)}
             </div>
           )}
           <div className={p.head}>

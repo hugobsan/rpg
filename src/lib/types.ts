@@ -75,6 +75,8 @@ export interface Ruleset {
   attributes: AttributeDef[];
   resources: ResourceDef[];
   abilityTypes: AbilityTypeDef[];
+  /** Elementos das habilidades (Naruto: naturezas do chakra), opcional; filtro e campo element da biblioteca */
+  abilityElements?: AbilityTypeDef[];
   /** Níveis de maestria de habilidades (ex: D, C, B, A, S) */
   abilityRanks: string[];
   /** Cargos (posição na história); só mudam por set_rank */
@@ -367,6 +369,8 @@ export interface LibraryAbility {
   /** tradução para exibição (Naruto: em português); não entra na busca */
   translation?: string;
   type: string; // key de AbilityTypeDef
+  /** key de Ruleset.abilityElements (Naruto: natureza do chakra); sem elemento = vazio */
+  element?: string;
   rank?: string; // D/C/B/A/S
   /** não gasta recurso (taijutsu, armas, ofícios) */
   costFree?: boolean;

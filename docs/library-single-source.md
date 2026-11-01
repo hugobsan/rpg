@@ -33,6 +33,7 @@ Só o que é da técnica e não varia com quem usa nem com a mesa:
 | `name` | nome no padrão do mundo (seção 6) |
 | `translation?` | tradução para exibição (Naruto: em português). Não é um nome alternativo: ficha e biblioteca se ligam pelo id |
 | `type` | key de `abilityTypes` |
+| `element?` | key de `Ruleset.abilityElements` (Naruto: natureza do chakra: katon, suiton, futon, doton, raiton); vazio = sem elemento. Filtro "Elemento" na aba Jutsus e na Biblioteca |
 | `rank?` | rank da técnica (D/C/B/A/S) |
 | `costFree?` | `true` se a técnica não gasta recurso (taijutsu, armas, ofícios) |
 | `description?`, `effect?`, `damage?`, `requirements?` | |

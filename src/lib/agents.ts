@@ -256,6 +256,7 @@ CAMPOS DO RULESET (o exemplo completo de Naruto vem no contexto; siga o mesmo fo
 - attributes: 5 a 8 atributos [{key, label, min, max, default, description}]. description diz para que serve em jogo (que testes usa). Como Naruto: min 1, max 10, default 3 (o mais raro com default 2).
 - resources: barras da ficha [{key, label, defaultMax, color, description}]. Sempre a de vida com key "hp" e a energia do poder (chakra, magia, mana...); opcionalmente fôlego, sanidade etc. color em "#rrggbb".
 - abilityTypes: categorias de habilidade [{key, label, description}] (Naruto: ninjutsu, taijutsu, genjutsu...; Harry Potter: feitiços, transfiguração, poções...).
+- abilityElements (opcional): elementos das habilidades, quando o mundo tem [{key, label, description}] (Naruto: katon/Katon/Fogo, suiton, futon, doton, raiton; Avatar: as quatro dobras). Sem elementos no mundo, não inclua.
 - abilityRanks: níveis de habilidade, do mais fraco ao mais forte (Naruto: ["D","C","B","A","S"]). São textos que aparecem na ficha: escreva com acento normal.
 - abilitiesLabel: nome da aba de habilidades (Naruto: "Jutsus"; Harry Potter: "Feitiços").
 - abilityCosts: custo padrão por nível {"resource": key do recurso gasto, "byRank": {nível: custo}} com todos os níveis de abilityRanks.
@@ -525,6 +526,8 @@ const GM_PROMPT_FIXES: [string, string][] = [
 // biblioteca como fonte única (por mundo, ficha só com ref): edit_ability, padrão de nomes e nada de custo por técnica.
 // [agente, trecho exato de antes, novo]; o novo não contém o de antes, então rodar de novo não muda nada
 const LIBRARY_PROMPT_FIXES: [string, string, string][] = [
+  // elementos das habilidades (filtro e campo element da biblioteca)
+  ["adventure", "poções...).\n- abilityRanks: níveis de habilidade", "poções...).\n- abilityElements (opcional): elementos das habilidades, quando o mundo tem [{key, label, description}] (Naruto: katon/Katon/Fogo, suiton, futon, doton, raiton; Avatar: as quatro dobras). Sem elementos no mundo, não inclua.\n- abilityRanks: níveis de habilidade"],
   [
     "gm",
     "nem sobre as regras mecânicas.\n\nCENAS E RITMO",

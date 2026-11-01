@@ -7,6 +7,7 @@ import SearchBox, { fold } from "./ui/SearchBox";
 import s from "./AbilitiesView.module.css";
 
 const NO_RANK = "sem rank";
+const NO_ELEMENT = "sem elemento";
 
 /** Anel de domínio 0-100 com o número no meio. */
 function Ring({ value, estimated }: { value: number; estimated: boolean }) {
@@ -34,6 +35,7 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
   const abilities = char.sheet.abilities;
   const [rank, setRank] = useState<string | null>(null); // null = todos
   const [type, setType] = useState<string | null>(null);
+  const [element, setElement] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Set<string>>(new Set()); // cards expandidos; o padrão é recolhido
   const toggle = (name: string) =>
@@ -47,8 +49,13 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
     (x, y) => ruleset.abilityTypes.findIndex((t) => t.key === x) - ruleset.abilityTypes.findIndex((t) => t.key === y)
   );
   const typeLabel = (k: string) => ruleset.abilityTypes.find((t) => t.key === k)?.label || k;
+  // elemento (Naruto: natureza do chakra), só se o mundo define elementos
+  const elements = ruleset.abilityElements ?? [];
+  const elOf = (a: Ability) => a.element || NO_ELEMENT;
+  const elOpts = elements.length ? [...elements.map((e) => e.key), NO_ELEMENT].filter((k) => abilities.some((a) => elOf(a) === k)) : [];
+  const elLabel = (k: string) => elements.find((e) => e.key === k)?.label || k;
   const qf = fold(query.trim());
-  const shown = abilities.filter((a) => (!rank || rankOf(a) === rank) && (!type || a.type === type) &&
+  const shown = abilities.filter((a) => (!rank || rankOf(a) === rank) && (!type || a.type === type) && (!element || elOf(a) === element) &&
     (!qf || fold(`${a.name} ${a.translation ?? ""} ${a.effect ?? ""} ${a.description ?? ""}`).includes(qf)));
   const filterRow = (
     title: string,
@@ -88,6 +95,7 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
             <div className={s.meta}>
               {a.rank && <span className={s.rank}>{a.rank}</span>}
               <span>{typeLabel(a.type)}</span>
+              {a.element && <span>{elLabel(a.element)}</span>}
               {a.removed && <span className="pill err" data-tip="Saiu da biblioteca do mundo; continua na ficha">fora da biblioteca</span>}
               {a.incomplete && <span className={`pill ${s.warn}`} data-tip="Registrada às pressas; o Mestre completa o efeito e os detalhes">incompleta</span>}
             </div>
@@ -169,6 +177,7 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
         <div className={s.filterBox}>
           {filterRow("Rank", rankOpts, rank, setRank, (o) => abilities.filter((a) => rankOf(a) === o).length, (o) => o)}
           {filterRow("Tipo", typeOpts, type, setType, (o) => abilities.filter((a) => a.type === o).length, typeLabel)}
+          {filterRow("Elemento", elOpts, element, setElement, (o) => abilities.filter((a) => elOf(a) === o).length, elLabel)}
         </div>
       )}
       {abilities.length > 0 && !shown.length && <p className="muted">Nenhuma com essa busca ou esses filtros.</p>}

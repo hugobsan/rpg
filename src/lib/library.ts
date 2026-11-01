@@ -249,7 +249,7 @@ export function libraryLine(r: Ruleset, e: LibraryEntry): string {
   const d = e.data as LibraryAbility & LibraryItem;
   const c = e.kind === "ability" ? abilityCost(r, d) : null;
   const cost = c ? (c.amount ? `custo ${c.amount} ${c.resource}` : "sem custo") : "";
-  const bits = [d.type ?? d.category, d.rank && `rank ${d.rank}`, cost, d.damage && `dano ${d.damage}`, !e.canon && "original", d.incomplete && "incompleta: complete com edit_ability"].filter(Boolean);
+  const bits = [d.type ?? d.category, d.element, d.rank && `rank ${d.rank}`, cost, d.damage && `dano ${d.damage}`, !e.canon && "original", d.incomplete && "incompleta: complete com edit_ability"].filter(Boolean);
   const title = d.translation ? `${e.name} (${d.translation})` : e.name;
   return [`${title} [${bits.join(", ")}]`, d.effect || d.description, d.requirements && `requisitos: ${d.requirements}`, d.users && `usuários: ${d.users}`]
     .filter(Boolean)
@@ -295,6 +295,7 @@ export function normalizeAbility(r: Ruleset, raw: unknown): LibraryAbility | nul
     name,
     translation: str(a.translation, 160),
     type,
+    element: r.abilityElements ? pickKey(r.abilityElements, a.element) : undefined,
     rank: pickRank(r, a.rank),
     costFree: a.costFree === true || (oldCost.amount !== null && oldCost.amount !== "" && Number(oldCost.amount) === 0) || undefined,
     description: str(a.description),
@@ -377,6 +378,8 @@ export function creatorPrompt(r: Ruleset, kind: LibraryKind, req: CreateRequest)
     lines.push(
       `Tipos de ${label} (key: nome): ${r.abilityTypes.map((t) => `${t.key}: ${t.label}${t.description ? ` (${t.description})` : ""}`).join("; ")}`,
       r.abilityNaming && `Padrão de nomes: ${r.abilityNaming}`,
+      r.abilityElements &&
+        `Elementos (campo element, key: nome; omita se a técnica não tem elemento): ${r.abilityElements.map((t) => `${t.key}: ${t.label}${t.description ? ` (${t.description})` : ""}`).join("; ")}`,
       // o custo depende do ninja e da mesa: vem do nível; a biblioteca só sabe se gasta ou não
       `Campos além do formato: translation (tradução do nome para exibição, só quando o nome não está em português) e costFree (true só se não gasta recurso: taijutsu, armas, ofícios). NÃO inclua cost: o custo vem do nível.`,
       `Domínio: quem aprende tem 0-100% de domínio de cada técnica; bônus no teste por faixa: ${(r.masteryBonus ?? DEFAULT_MASTERY_BONUS)

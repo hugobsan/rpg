@@ -60,6 +60,11 @@ const ok = (label: string) => console.log(`✔ ${label} (${++n})`);
   assert.deepEqual(normalizeAbility(rs, { name: "P", type: "genjutsu", cost: { resource: "chakra", amount: 0 } }), { name: "P", type: "genjutsu", costFree: true });
   assert.deepEqual(normalizeAbility(rs, { name: "T", type: "taijutsu", costFree: true, translation: " Golpe " }), { name: "T", type: "taijutsu", costFree: true, translation: "Golpe" });
   assert.equal(normalizeAbility(rs, { name: "U", type: "taijutsu", costFree: "sim" })!.costFree, undefined, "costFree só com true");
+  // elemento: key ou label dos abilityElements do mundo; fora da lista cai fora; mundo sem elementos ignora
+  assert.equal(normalizeAbility(rs, { name: "E1", type: "ninjutsu", element: "Fūton" })!.element, "futon", "label vira key");
+  assert.equal(normalizeAbility(rs, { name: "E2", type: "ninjutsu", element: "katon" })!.element, "katon");
+  assert.equal(normalizeAbility(rs, { name: "E3", type: "ninjutsu", element: "madeira" })!.element, undefined, "fora da lista");
+  assert.equal(normalizeAbility({ ...rs, abilityElements: undefined }, { name: "E4", type: "ninjutsu", element: "katon" })!.element, undefined, "mundo sem elementos");
   assert.equal(normalizeAbility(rs, { name: "V", type: "taijutsu", incomplete: true })!.incomplete, true);
   assert.deepEqual(normalizeItem(rs, { name: "Kunai", category: "arma", damage: "1d4", rank: "z", qty: 3 }), { name: "Kunai", category: "arma", damage: "1d4" });
   assert.equal(normalizeItem(rs, { category: "arma" }), null);

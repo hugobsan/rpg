@@ -50,6 +50,7 @@ export function normalizeRuleset(input: unknown): Ruleset {
   if (!Array.isArray(r.resources) || r.resources.length === 0)
     throw new Error("Ruleset inválido: resources vazio");
   r.abilityTypes = Array.isArray(r.abilityTypes) ? r.abilityTypes : [];
+  r.abilityElements = Array.isArray(r.abilityElements) && r.abilityElements.length ? r.abilityElements : undefined;
   r.abilityRanks = Array.isArray(r.abilityRanks) ? r.abilityRanks : [];
   r.ranks = Array.isArray(r.ranks) ? r.ranks : [];
   r.extraFields = Array.isArray(r.extraFields) ? r.extraFields : [];
@@ -156,6 +157,7 @@ export function rulesetPromptSummary(r: Ruleset): string {
     `Atributos:\n${r.attributes.map((a) => `- ${a.label} (${a.key}, ${a.min}-${a.max})${a.description ? `: ${a.description}` : ""}`).join("\n")}`,
     `Recursos/barras: ${r.resources.map((x) => `${x.label} (${x.key})`).join(", ")}`,
     `Tipos de habilidade: ${r.abilityTypes.map((t) => `${t.label} (${t.key})`).join(", ")}`,
+    ...(r.abilityElements ? [`Elementos de habilidade: ${r.abilityElements.map((t) => `${t.label} (${t.key})`).join(", ")}`] : []),
     `Níveis de habilidade: ${r.abilityRanks.join(" < ")}`,
     `Cargos (posição na história; só mudam por set_rank, nunca sozinhos pela XP): ${r.ranks.map((k) => k.label).join(", ")}`,
     ...progressionPromptLines(r),

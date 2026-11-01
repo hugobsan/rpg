@@ -121,6 +121,7 @@ export const GM_TOOLS: ToolDef[] = [
           name: { type: "string", description: "nome da técnica como é conhecida no mundo" },
           brief: { type: "string", description: "o que é e faz, em uma frase, para o Criador (se não estiver na biblioteca)" },
           abilityType: { type: "string", description: "opcional: key do tipo, só como dica" },
+          element: { type: "string", description: "opcional: key do elemento (Naruto: natureza do chakra), só como dica" },
           rank: { type: "string", description: "opcional: nível, só como dica" },
           costFree: { type: "boolean", description: "opcional: true se não gasta recurso (taijutsu, armas, ofícios), só como dica" },
           progress: {
@@ -144,6 +145,7 @@ export const GM_TOOLS: ToolDef[] = [
           new_name: { type: "string", description: "novo nome, no padrão de nomes do mundo" },
           translation: { type: "string", description: "tradução para exibição, se o padrão do mundo usar" },
           type: { type: "string", description: "key do tipo" },
+          element: { type: "string", description: "key do elemento do mundo (Naruto: natureza do chakra); vazio = sem elemento" },
           rank: { type: "string" },
           costFree: { type: "boolean", description: "true se não gasta recurso (taijutsu, armas, ofícios)" },
           description: { type: "string" },
@@ -743,6 +745,7 @@ export async function executeGmTool(
       const brief = [
         args.brief,
         args.abilityType && `tipo sugerido: ${args.abilityType}`,
+        args.element && `elemento sugerido: ${args.element}`,
         args.rank && `nível sugerido: ${args.rank}`,
         args.costFree === true && "não gasta recurso",
       ]
