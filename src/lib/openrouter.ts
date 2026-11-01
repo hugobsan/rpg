@@ -128,6 +128,19 @@ export const sourceView = ({ id, name, url, apiKey, kind, auth }: Source): Sourc
 export const isClaude = (src: Source, model: string) =>
   src.kind === "anthropic" || (src.id === OPENROUTER && model.startsWith("anthropic/"));
 
+/**
+ * Recusa da moderação de conteúdo do provedor (ex.: "Black Forest Labs blocked this request through content moderation")
+ * → mensagem para o toast; null se o erro for outro. Em imagem, sugere trocar o modelo do Ilustrador.
+ */
+export function moderationError(text: string, model: string, image: boolean): string | null {
+  if (!/moderation|content polic|safety system|blocked this request/i.test(text)) return null;
+  const by = text.match(/"provider_name"\s*:\s*"([^"]+)"/)?.[1];
+  const who = `${model}${by ? ` (${by})` : ""}`;
+  return image
+    ? `O modelo de imagem ${who} bloqueou o pedido na moderação de conteúdo. Costuma acontecer com nomes de obras e personagens ou com cenas de luta. Tente gerar de novo ou troque o modelo do Ilustrador em Agentes: os do Google (ex.: google/gemini-3.1-flash-lite-image) costumam bloquear menos.`
+    : `O modelo ${who} bloqueou o pedido na moderação de conteúdo. Tente reformular ou troque o modelo do agente em Agentes.`;
+}
+
 /** Mensagens de sistema seguidas viram uma só, com o texto de antes (só o cache precisa delas separadas). */
 export function mergeSystem(messages: ChatMessage[]): ChatMessage[] {
   const out: ChatMessage[] = [];
@@ -293,7 +306,8 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       }
       if (!res.ok)
         throw new Error(
-          `${src.name} ${res.status}: ${resp ? responsesHttpError(text) : text.slice(0, 500)}`
+          moderationError(text, model, img || !!opts.modalities?.includes("image")) ??
+            `${src.name} ${res.status}: ${resp ? responsesHttpError(text) : text.slice(0, 500)}`
         );
       if (img) responseJson = imagesToChat(responseJson ?? {});
     }

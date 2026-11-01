@@ -3,7 +3,7 @@
 // mensagens de sistema juntadas sem cache, id do modelo no catálogo, conta do custo e chat() de ponta a ponta
 // (API nativa em streaming pelo SDK, com a rede falsa). Banco falso em global.__pgPool, como no sources-check.
 import assert from "node:assert";
-import { catalogCost, catalogMatch, chat, chatRequest, mergeSystem, type ChatOptions, type Source } from "../src/lib/openrouter";
+import { catalogCost, catalogMatch, chat, chatRequest, mergeSystem, moderationError, type ChatOptions, type Source } from "../src/lib/openrouter";
 import { anthropicParams, toChatJson } from "../src/lib/anthropicApi";
 import { windowStart } from "../src/lib/engine";
 import { imageFromDataUrl } from "../src/lib/portrait";
@@ -246,6 +246,16 @@ async function main() {
   assert.equal(imageFromDataUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`)?.data.toString(), svg);
   assert.equal(imageFromDataUrl(`data:image/svg+xml,${svg} 100%`)?.data.toString(), `${svg} 100%`, "% solto não quebra");
   assert.equal(imageFromDataUrl("data:text/html,<script>alert(1)</script>"), null);
+
+  // 13. recusa da moderação vira mensagem em português; em imagem, sugere trocar o modelo do Ilustrador
+  const bfl = `{"error":{"message":"Black Forest Labs blocked this request through content moderation.","code":400,"metadata":{"provider_name":"Black Forest Labs"}}}`;
+  assert.match(moderationError(bfl, "black-forest-labs/flux-3-image-klein", true)!, /flux-3-image-klein \(Black Forest Labs\) bloqueou .*troque o modelo do Ilustrador/);
+  assert.match(moderationError(bfl, "x/y", false)!, /troque o modelo do agente/);
+  assert.equal(moderationError(`{"error":{"message":"Rate limit exceeded","code":429}}`, "x/y", true), null, "outro erro passa como veio");
+  const realFetch2 = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(bfl, { status: 400 })) as typeof fetch;
+  await assert.rejects(chat({ ...GM, model: "black-forest-labs/flux-3-image-klein", tools: undefined, modalities: ["image", "text"] }), /moderação de conteúdo.*Ilustrador/);
+  globalThis.fetch = realFetch2;
 
   // 9. janela do histórico: começo estável por vários turnos, cabe no orçamento e anda em saltos
   const lens = [400, 300, 500, 200, 600, 300, 400];
