@@ -89,7 +89,9 @@ async function newCampaign(name: string, world: string) {
   const [scene] = await q<Scene>(`INSERT INTO scenes (campaign_id, seq, mode, title) VALUES ($1,1,'battle','t') RETURNING *`, [c.id]);
   const events: TurnEvent[] = [];
   const ctx: ToolContext = { campaign: c, scene, emit: (e) => events.push(e) };
-  return { c, events, run: (tool: string, args: Record<string, unknown>) => executeGmTool(tool, args, ctx) };
+  // turn(): contexto novo, como o de um turno de verdade (engine cria um por turno)
+  const turn = (): ToolContext => ({ campaign: c, scene, emit: (e) => events.push(e) });
+  return { c, events, turn, run: (tool: string, args: Record<string, unknown>) => executeGmTool(tool, args, ctx) };
 }
 const addPlayer = (cid: string, name: string) =>
   q(`INSERT INTO characters (campaign_id, kind, name, sheet, persona) VALUES ($1,'player',$2,$3,'{}')`, [cid, name, JSON.stringify(blankSheet(rs))]);
@@ -194,6 +196,22 @@ async function main() {
     assert.deepEqual([after.name, after.data, after.deleted], [before.name, before.data, false], "a outra entrada fica intacta");
   });
   creator = failing;
+
+  // ---------- domínio: o Escrivão não repete o ganho do uso no mesmo turno ----------
+  await check("domínio: depois de use_ability, update_ability_progress com delta no mesmo turno não soma de novo; em outro turno soma", async () => {
+    const ref = (await abilityOf(A.c.id, "Ana", (await findLibrary(A.c, "ability", "Katon: Gōkakyū no Jutsu"))!.id))!.ref!;
+    await A.run("update_ability_progress", { character: "Ana", name: "Katon: Gōkakyū no Jutsu", set: 30 });
+    await A.run("update_resource", { character: "Ana", resource: "chakra", set: 50 });
+    const turn = A.turn();
+    await executeGmTool("use_ability", { character: "Ana", ability: "Katon: Gōkakyū no Jutsu", dc: 10 }, turn);
+    const afterUse = (await abilityOf(A.c.id, "Ana", ref))!.progress!;
+    assert.ok(afterUse > 30, "o uso sobe o domínio");
+    const scribe = { ...turn }; // o Escrivão recebe uma cópia do contexto do turno (engine.runScribe)
+    assert.match(await executeGmTool("update_ability_progress", { character: "Ana", name: "Katon: Gōkakyū no Jutsu", delta: 3 }, scribe), /^Nada mudou/);
+    assert.equal((await abilityOf(A.c.id, "Ana", ref))!.progress, afterUse, "não somou de novo");
+    await executeGmTool("update_ability_progress", { character: "Ana", name: "Katon: Gōkakyū no Jutsu", delta: 3 }, A.turn());
+    assert.equal((await abilityOf(A.c.id, "Ana", ref))!.progress, afterUse + 3, "em outro turno soma");
+  });
 
   // ---------- A8: custo ----------
   await check("A8 custo: byRank[rank] × multiplicador do domínio (C=6: 10% → 9, 50% → 6, 100% → 4); costFree → 0; exibido igual", async () => {

@@ -583,7 +583,12 @@ export interface ToolContext {
   emit: (e: TurnEvent) => void;
   sceneChanged?: boolean; // set_scene abriu cena nova ou mudou o local neste turno
   castSet?: boolean; // set_scene informou present: o elenco já está certo
+  /** habilidades (personagem:ref) que já subiram de domínio neste turno por use_ability ou train: o Escrivão não repete */
+  masteryGained?: Set<string>;
 }
+
+const gainedKey = (c: Character, a: Ability) => `${c.id}:${a.ref ?? a.name.toLowerCase()}`;
+const markGained = (ctx: ToolContext, c: Character, a: Ability) => (ctx.masteryGained ??= new Set()).add(gainedKey(c, a));
 
 /** Chave para comparar nomes citados: 1º nome sem honorífico ("Iruka-sensei" = "Iruka Umino"); "Hugo (como Daiki)" = Hugo. */
 const nameKey = (s: string) =>
@@ -801,6 +806,9 @@ export async function executeGmTool(
       const ability = findAbility(c.sheet, String(args.name || ""));
       if (!ability)
         return `Erro: ${c.name} não possui a habilidade "${args.name}". Use add_ability para ligá-la primeiro.`;
+      // o modelo costuma repetir o ganho que use_ability/train já deram (a narração conta "subiu de 63% para 66%")
+      if (typeof args.delta === "number" && typeof args.set !== "number" && ctx.masteryGained?.has(gainedKey(c, ability)))
+        return `Nada mudou: o domínio de ${ability.name} já subiu neste turno pelo uso ou treino (${ability.progress ?? 0}%). Não repita o ganho de use_ability/train.`;
       const before = currentMilestone(ability);
       const prevProgress = ability.progress ?? 0;
       if (typeof args.set === "number") ability.progress = args.set;
@@ -856,6 +864,7 @@ export async function executeGmTool(
       };
       const clock = getClock(ctx.campaign.state);
       const g = gainMastery(rs, c.sheet, ability, useGain(rs, ability), clock ? clockParts(clock.minutes).day : 0);
+      markGained(ctx, c, ability);
       await saveSheet(c.id, c.sheet);
       ctx.emit({ type: "state" });
       if (pool) ctx.emit({ type: "tool", name, summary: `${c.name} usou ${ability.name}: −${cost!.amount} ${cost!.resource} (${pool.current}/${pool.max})` });
@@ -882,6 +891,8 @@ export async function executeGmTool(
       if (before === undefined) return "O relógio ainda não foi definido: chame set_time primeiro.";
       const r = train(rs, c.sheet, String(args.target || ""), Number(args.hours), clockParts(before).day);
       if ("error" in r) return r.error;
+      const trained = r.kind === "ability" ? findAbility(c.sheet, String(args.target || "")) : undefined;
+      if (trained) markGained(ctx, c, trained);
       const minutes = before + r.hours * 60;
       ctx.campaign.state = { ...ctx.campaign.state, clock: { minutes } };
       ctx.emit({ type: "time", minutes });
