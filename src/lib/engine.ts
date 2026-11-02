@@ -418,7 +418,9 @@ export async function runTurn(
   // ação salvas: quem chama volta a foto); depois da narração é ignorado e o pós-narração (Escrivão etc.) segue
   signal?: AbortSignal,
   // pergunta ao Jev se a ação é fala fora do jogo sobre o registro (não no gerar novamente nem ao editar a ação)
-  askMeta = !regen
+  askMeta = !regen,
+  // pergunta se a fala é só com um NPC (vai ao chat dele); false = o jogador já disse que era da cena
+  askTalk = askMeta
 ): Promise<void> {
   // status por fase: a tela acende "consultando", "dados" e "escrevendo" por estas palavras
   emit({ type: "status", text: "Lendo a cena..." });
@@ -477,7 +479,7 @@ export async function runTurn(
       askComplexity: !!complexModel && complexModel !== gm.model,
       askWeb: gm.web_search,
       askMeta: askMeta && playerInput !== CONTINUE_INPUT,
-      askTalk: askMeta && playerInput !== CONTINUE_INPUT && scene.mode !== "battle",
+      askTalk: askTalk && playerInput !== CONTINUE_INPUT && scene.mode !== "battle",
       books: books.map((b) => b.title),
     },
     campaignId

@@ -177,6 +177,14 @@ export async function npcTalk(
 }
 
 /**
+ * Descarta a conversa sem registrar: "não era uma conversa" (o Jev mandou ao chat do NPC uma fala que era da cena).
+ * As falas saem do banco e o histórico vetorial delas vai junto (FK com CASCADE); o NPC não lembra dela.
+ */
+export async function discardNpcChat(campaignId: string, npcId: string, sessionId: string): Promise<void> {
+  await q(`DELETE FROM npc_chats WHERE campaign_id = $1 AND npc_id = $2 AND session_id = $3`, [campaignId, npcId, sessionId]);
+}
+
+/**
  * Encerra a conversa. Antes de responder: o relógio anda pelo tempo dela e o Escrivão registra o que ela estabeleceu
  * (missão oferecida ou aceita, item comprado ou recebido...), uma chamada com a conversa inteira no lugar da narração;
  * depois uma linha 'talk' entra no chat da campanha com o fim da conversa, que vai uma vez ao próximo turno do Mestre.

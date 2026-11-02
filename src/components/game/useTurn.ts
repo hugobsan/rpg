@@ -244,7 +244,7 @@ export function useTurn(
 
   // regen: gera de novo a resposta do último turno (o servidor volta o estado de antes dele);
   // com edit, a ação do jogador também é trocada por text
-  const run = async (text: string, regen?: { feedback: string; edit?: boolean }) => {
+  const run = async (text: string, regen?: { feedback: string; edit?: boolean }, noTalk?: boolean) => {
     const before = choices; // a ação pode virar fala fora do jogo: aí as opções de antes voltam
     busyRef.current = true;
     setBusy(true);
@@ -271,7 +271,7 @@ export function useTurn(
       const res = await fetch(`/api/campaigns/${campaignId}/turn`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(regen ? { regenerate: true, feedback: regen.feedback, input: regen.edit ? text : undefined } : { input: text }),
+        body: JSON.stringify(regen ? { regenerate: true, feedback: regen.feedback, input: regen.edit ? text : undefined } : { input: text, noTalk }),
       });
       if (!res.ok || !res.body) throw new Error(`Erro ${res.status}`);
       const reader = res.body.getReader();
@@ -349,10 +349,11 @@ export function useTurn(
     }
   };
 
-  const send = (text: string) => {
+  // noTalk: a fala voltou do chat do NPC ("não era uma conversa"), o servidor não pergunta de novo se é conversa
+  const send = (text: string, noTalk?: boolean) => {
     if (busyRef.current || !text.trim()) return false;
     // depois de parar, a ação parada (salva sem resposta) dá lugar à nova
-    void (stopped.current ? run(text.trim(), { feedback: "", edit: true }) : run(text));
+    void (stopped.current ? run(text.trim(), { feedback: "", edit: true }) : run(text, undefined, noTalk));
     return true;
   };
 

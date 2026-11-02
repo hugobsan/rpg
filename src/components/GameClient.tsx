@@ -532,6 +532,12 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
             setNpcActive([n], !n.active);
           }}
           session={talk?.npcId === openNpc.id ? talk : undefined}
+          onBackToCampaign={() => {
+            const text = talk?.messages[0]?.content;
+            setOpenNpc(null);
+            setTalk(null);
+            if (text) send(text, true);
+          }}
           onClose={(saved) => {
             if (saved) talked(openNpc.name); // a linha que o servidor gravou no chat da campanha
             setOpenNpc(null);

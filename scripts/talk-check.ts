@@ -14,7 +14,7 @@ import fs from "node:fs";
 import { Pool } from "pg";
 import { DEFAULT_AGENTS } from "../src/lib/agents";
 import { runTurn } from "../src/lib/engine";
-import { endNpcChat } from "../src/lib/npc";
+import { discardNpcChat, endNpcChat } from "../src/lib/npc";
 import { messagePage } from "../src/lib/messages";
 import { CONTINUE_INPUT } from "../src/lib/continueScene";
 import { blankSheet, normalizeRuleset } from "../src/lib/ruleset";
@@ -181,6 +181,21 @@ async function main() {
     willing = 0.9;
     jevMeta = 0;
 
+    // 6. "não era uma conversa": a conversa é apagada e a mesma fala vira turno do Mestre, sem a pergunta talk
+    jevTalk = 0.9;
+    await turn(LINE);
+    const back = events.find((e) => e.type === "npc_talk") as Extract<TurnEvent, { type: "npc_talk" }>;
+    const chats = await count("npc_chats");
+    await discardNpcChat(id, teuchi.id, back.sessionId);
+    assert.equal(await count("npc_chats"), chats - 2, "as duas falas saem da conversa particular");
+    const msgsBack = await count("messages");
+    events = [];
+    const g = calls.gm;
+    await runTurn(id, LINE, (e) => events.push(e), undefined, undefined, true, false);
+    assert.equal(calls.gm - g, 1, "o Mestre narra");
+    assert.ok(!jevQuestions.at(-1)?.includes("talk"), "sem pergunta talk");
+    assert.equal(await count("messages"), msgsBack + 2, "a fala e a narração no chat da campanha");
+
     // 5. Continuar, ação editada (askMeta = false) e batalha: nem perguntam
     jevTalk = 0.9;
     for (const [input, askMeta] of [[CONTINUE_INPUT, undefined], [LINE, false]] as const) {
@@ -192,7 +207,7 @@ async function main() {
     assert.deepEqual(await turn(LINE), { gm: 1, scribe: 1, npc: 0 }, "batalha");
     assert.ok(!jevQuestions.at(-1)?.includes("talk"), "batalha: sem pergunta talk");
 
-    console.log("talk-check: ok (fala só com um NPC em cena vai ao chat dele sem Mestre, Escrivão nem mensagem salva; ao fechar, relógio, Escrivão e a linha no chat; o próximo turno do Mestre vê a conversa uma vez; limiar, Jev falhando, recusa, meta, Continuar, ação editada e batalha seguem o padrão)");
+    console.log("talk-check: ok (fala só com um NPC em cena vai ao chat dele sem Mestre, Escrivão nem mensagem salva; ao fechar, relógio, Escrivão e a linha no chat; o próximo turno do Mestre vê a conversa uma vez; \"não era uma conversa\" apaga e vira turno sem perguntar; limiar, Jev falhando, recusa, meta, Continuar, ação editada e batalha seguem o padrão)");
   } finally {
     await new Promise((r) => setTimeout(r, 500)); // índice do histórico e memórias da conversa rodam em segundo plano
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);

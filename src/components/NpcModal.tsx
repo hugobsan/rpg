@@ -83,6 +83,7 @@ export default function NpcModal({
   onChanged,
   onToggleActive,
   onClose,
+  onBackToCampaign,
 }: {
   campaignId: string;
   npc: Character;
@@ -93,6 +94,8 @@ export default function NpcModal({
   session?: { id: string; messages: ChatMsg[] };
   onToggleActive: (npc: Character) => void; // tirar/trazer da cena; quem chama fecha o modal
   onClose: (saved: boolean) => void; // saved: a conversa foi encerrada e registrada (linha no chat da campanha)
+  // "não era uma conversa": a conversa é apagada e quem chama manda a fala como turno da campanha (e fecha o modal)
+  onBackToCampaign?: () => void;
 }) {
   const [view, setView] = useState<(typeof TABS)[number][0]>("chat");
   const [redoing, setRedoing] = useState(false);
@@ -191,6 +194,23 @@ export default function NpcModal({
     }
     stopVoice();
     onClose(saved);
+  };
+
+  const backToCampaign = async () => {
+    if (ending || !sessionId) return;
+    setEnding(true);
+    const ok = await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}/end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, discard: true }),
+    }).then((r) => r.ok, () => false);
+    if (!ok) {
+      setEnding(false);
+      toast("Tente de novo.", { kind: "alerta", title: "Não deu para desfazer a conversa" });
+      return;
+    }
+    stopVoice();
+    onBackToCampaign?.();
   };
 
   // otimista: a tela já mudou; se o PUT falhar, `undo` desfaz e sai o aviso
@@ -295,6 +315,12 @@ export default function NpcModal({
                   <Svg d="M4 5h16v11H10l-5 4v-4H4z" />
                   <span>Você falou com <b>{npc.name}</b>: a conversa segue aqui, fora da narração do Mestre. Ao encerrar, o que ela mudou (itens, missões) é registrado e o Mestre retoma a cena de onde ela parou.</span>
                 </div>
+              )}
+              {/* só antes de seguir a conversa: depois dela, voltar apagaria falas que o jogador quis */}
+              {session && onBackToCampaign && msgs.length <= 2 && (
+                <button className={`btn ghost small ${s.back}`} disabled={busy || ending} onClick={backToCampaign}>
+                  Não era uma conversa? Continuar no chat da campanha
+                </button>
               )}
               {msgs.length === 0 && (
                 <p className={s.intro}>

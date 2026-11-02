@@ -14,7 +14,7 @@ export const maxDuration = 300;
 // com vários, precisaria de um lock no banco
 
 /**
- * POST { input } | { regenerate, feedback? } | { regenerate, input } (editar a última ação) → SSE de eventos do turno
+ * POST { input, noTalk? } | { regenerate, feedback? } | { regenerate, input } (editar a última ação) → SSE de eventos do turno
  * (status, tools, dados, narração, opções). Pergunta ou reclamação sobre o registro vai à conversa fora do jogo: evento ooc, sem turno.
  * POST { stop } → para o Mestre enquanto a narração não foi salva: o turno volta à foto, a ação do jogador fica (dá para
  * gerar novamente ou editar) e o SSE do turno termina sem narração. Depois da narração não faz nada (o pós-narração segue).
@@ -25,8 +25,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const { input, regenerate, feedback, stop } = (await req.json()) as {
+  const { input, regenerate, feedback, stop, noTalk } = (await req.json()) as {
     input?: string;
+    noTalk?: boolean; // "não era uma conversa": a fala foi do chat do NPC de volta à campanha, sem perguntar de novo
     regenerate?: boolean; // gerar de novo a resposta do último turno (com input: trocando a ação)
     feedback?: string;
     stop?: boolean;
@@ -67,7 +68,7 @@ export async function POST(
             if (edited) await runTurn(id, edited, emit, undefined, signal, false);
             else await runTurn(id, lastInput, emit, { feedback: String(feedback || "").slice(0, 1000) }, signal);
           } else {
-            await runTurn(id, String(input || "").trim() || "(o jogador hesita)", emit, undefined, signal);
+            await runTurn(id, String(input || "").trim() || "(o jogador hesita)", emit, undefined, signal, true, !noTalk);
           }
           // missão aceita ou recusada pelo painel antes deste turno: o Mestre já reconheceu na cena (fala fora do jogo não narra)
           // e as correções da ficha feitas antes dele (state.playerFixes)
