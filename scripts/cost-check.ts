@@ -2,14 +2,13 @@
  * Custo das habilidades sem banco e sem IA:
  *  - genérico: ruleset sem custo, só com byRank, e um mundo de magia com faixas próprias (fraco/moderado/forte, mana)
  *    e sem costControlLabel; normalização das faixas; arredondamento; unidades; multiplicadores; validação do Criador
- *    de aventuras; substituições de prompt idempotentes;
+ *    de aventuras;
  *  - praticabilidade no mundo naruto (naruto-ruleset.json + scripts/data/naruto-costs.json): quantos usos cada pool
  *    permite, com asserções de faixa pelo cânone, e a tabela impressa.
  * Rodar: npx tsx scripts/cost-check.ts
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { DEFAULT_AGENTS, LIBRARY_PROMPT_FIXES } from "../src/lib/agents";
 import { draftIssues, type Draft } from "../src/lib/adventure";
 import { normalizeAbility } from "../src/lib/library";
 import { controlLabel, costBreakdown, effectiveCost } from "../src/lib/progression";
@@ -102,22 +101,6 @@ const magic = normalizeRuleset({
   const kit = { ...naruto, startingAbilities: { ...naruto.startingAbilities, [firstRank]: [{ ...naruto.startingAbilities![firstRank][0], consumption: "nenhuma" }] } } as Draft;
   assert.ok(draftIssues(kit).some((i) => /consumption "nenhuma"/.test(i)));
   ok("Criador de aventuras: byConsumption e costControlLabel opcionais e validados");
-}
-
-// prompts gravados: as substituições valem uma vez só e o padrão já vem com o texto novo
-{
-  for (const [id, from, to] of LIBRARY_PROMPT_FIXES) {
-    assert.ok(!to.includes(from), `${id}: o novo contém o antigo (rodaria de novo)`);
-    const def = DEFAULT_AGENTS.find((a) => a.id === id)!.system_prompt;
-    const old = def.replace(to, from);
-    const fixed = old.replaceAll(from, to);
-    if (def.includes(to)) assert.equal(fixed, def, `${id}: aplicar no prompt antigo dá o padrão`);
-    assert.equal(fixed.replaceAll(from, to), fixed, `${id}: rodar de novo não muda`);
-  }
-  const mine = LIBRARY_PROMPT_FIXES.filter(([, , to]) => /set_cost_modifier|consumption|costMult|byConsumption/.test(to));
-  assert.ok(mine.length >= 6, "fixes do custo presentes");
-  for (const [id, , to] of mine) assert.ok(DEFAULT_AGENTS.find((a) => a.id === id)!.system_prompt.includes(to), `${id}: padrão com o texto novo`);
-  ok(`prompts: ${mine.length} substituições do custo idempotentes e iguais ao padrão`);
 }
 
 // ---------- praticabilidade no mundo naruto ----------

@@ -2,14 +2,14 @@
  * Prompts padrão versionados por hash (src/lib/agents.ts), sem IA, numa tabela agents descartável (schema
  * agents_check no banco local, apagado no fim). Confere: agente novo entra com o padrão e o hash; padrão mudou e o
  * prompt intocado é trocado; prompt editado à mão não é trocado e a API manda o padrão novo; restaurar pela rota troca e
- * grava prompt_base; migração (sem prompt_base: cadeia antiga uma última vez; bate com o padrão = intocado, senão editado).
+ * grava prompt_base; agente sem prompt_base (anterior a este controle): igual ao padrão = intocado, senão editado.
  * Rodar: npx tsx scripts/agents-check.ts
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { Pool } from "pg";
 import { NextRequest } from "next/server";
-import { DEFAULT_AGENTS, LIBRARY_PROMPT_FIXES, getAgent, insertDefaultAgents, listAgents, promptHash } from "../src/lib/agents";
+import { DEFAULT_AGENTS, getAgent, insertDefaultAgents, listAgents, promptHash } from "../src/lib/agents";
 import { lineDiff } from "../src/lib/lineDiff";
 import { PUT } from "../src/app/api/agents/[id]/route";
 
@@ -67,20 +67,14 @@ const row = async (id: string) =>
     assert.equal(restored.default_prompt, undefined);
     assert.equal((await row("chronicler")).prompt_base, promptHash(def("chronicler").system_prompt), "restaurar grava prompt_base");
 
-    // migração: gm numa versão antiga (antes da última correção da cadeia) e sem prompt_base vira intocado
-    const [, from, to] = LIBRARY_PROMPT_FIXES.findLast(([id]) => id === "gm")!;
-    const old = def("gm").system_prompt.replace(to, from);
-    assert.notEqual(old, def("gm").system_prompt);
-    await pool.query(`UPDATE agents SET system_prompt = $1, prompt_base = NULL WHERE id = 'gm'`, [old]);
-    // scribe sem prompt_base e com edição à mão: a cadeia roda, mas não bate com o padrão = editado
-    const [, sFrom, sTo] = LIBRARY_PROMPT_FIXES.findLast(([id]) => id === "scribe")!;
-    const edited = def("scribe").system_prompt.replace(sTo, sFrom) + "\nEdição minha.";
+    // sem prompt_base: gm igual ao padrão vira intocado; scribe diferente fica editado (NULL) e a tela oferece o padrão
+    await pool.query(`UPDATE agents SET prompt_base = NULL WHERE id = 'gm'`);
+    const edited = def("scribe").system_prompt + "\nEdição minha.";
     await pool.query(`UPDATE agents SET system_prompt = $1, prompt_base = NULL WHERE id = 'scribe'`, [edited]);
     await insertDefaultAgents();
-    assert.deepEqual(await row("gm"), { system_prompt: def("gm").system_prompt, prompt_base: promptHash(def("gm").system_prompt) }, "gm migrado = intocado");
+    assert.deepEqual(await row("gm"), { system_prompt: def("gm").system_prompt, prompt_base: promptHash(def("gm").system_prompt) }, "gm = intocado");
     const s = await row("scribe");
-    assert.equal(s.system_prompt, def("scribe").system_prompt + "\nEdição minha.", "scribe: cadeia aplicada, edição preservada");
-    assert.equal(s.prompt_base, null, "scribe editado fica sem prompt_base");
+    assert.deepEqual(s, { system_prompt: edited, prompt_base: null }, "scribe editado fica como está, sem prompt_base");
     assert.equal((await getAgent("scribe")).default_prompt, def("scribe").system_prompt, "e a tela oferece o padrão");
     // padrão novo do scribe não o atropela
     def("scribe").system_prompt += "\nMais uma do padrão.";
