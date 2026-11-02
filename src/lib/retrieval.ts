@@ -99,6 +99,25 @@ export async function searchMemories(
   );
 }
 
+/**
+ * Memórias dos NPCs ativos: por NPC, as marcadas com o primeiro nome dele e depois as que o citam, das mais importantes
+ * para as mais novas. Um NPC que volta à cena lembra do jogador mesmo quando a ação não diz o nome dele.
+ */
+export async function sceneNpcMemories(campaignId: string, perNpc = 3): Promise<MemoryHit[]> {
+  return q<MemoryHit>(
+    `SELECT DISTINCT ON (m.id) m.id, m.kind, m.subject, m.content, m.importance, m.created_at::text
+     FROM characters c CROSS JOIN LATERAL (
+       SELECT * FROM memories m
+       WHERE m.campaign_id = c.campaign_id AND m.kind <> 'directive'
+         AND (m.subject ~* ('\\m' || split_part(c.name, ' ', 1) || '\\M') OR m.content ~* ('\\m' || split_part(c.name, ' ', 1) || '\\M'))
+       ORDER BY (m.subject ~* ('\\m' || split_part(c.name, ' ', 1) || '\\M')) DESC, m.importance DESC, m.id DESC
+       LIMIT $2
+     ) m
+     WHERE c.campaign_id = $1 AND c.kind = 'npc' AND c.active`,
+    [campaignId, perNpc]
+  );
+}
+
 /** Memórias recentes/importantes independentes de query (contexto base do turno). */
 export async function recentMemories(
   campaignId: string,

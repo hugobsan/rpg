@@ -42,6 +42,8 @@ export interface ChatOptions {
   temperature?: number;
   max_tokens?: number;
   tools?: ToolDef[];
+  // true: as tools vão (o histórico com chamadas e o cache continuam valendo), mas o modelo só pode responder em texto
+  noTools?: boolean;
   webSearch?: boolean;
   modalities?: string[];
   aspectRatio?: string; // proporção da imagem ("1:1"), no POST /images do OpenRouter
@@ -185,6 +187,7 @@ export function chatRequest(opts: ChatOptions, src: Source, cache = false) {
   }
   if (!presetOf(src.kind)?.noTemperature) body.temperature = opts.temperature ?? 0.8;
   if (opts.tools?.length) body.tools = opts.tools;
+  if (opts.tools?.length && opts.noTools) body.tool_choice = "none";
   if (opts.modalities) body.modalities = opts.modalities;
   // reasoning é o parâmetro unificado do OpenRouter; na OpenAI vira reasoning_effort; nas outras fica de fora
   if (or && opts.reasoning) body.reasoning = opts.reasoning;

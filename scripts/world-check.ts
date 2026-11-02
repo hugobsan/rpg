@@ -13,6 +13,7 @@ import fs from "node:fs";
 import { Pool } from "pg";
 import { DEFAULT_AGENTS } from "../src/lib/agents";
 import { generateScript, getCampaign, getCurrentScene, maybeCompact } from "../src/lib/engine";
+import { sceneNpcMemories } from "../src/lib/retrieval";
 import { blankSheet, normalizeRuleset } from "../src/lib/ruleset";
 import type { TurnEvent } from "../src/lib/types";
 
@@ -142,12 +143,25 @@ async function main() {
     assert.deepEqual(re?.arcs[0].canonEvents, ["Time 7 aprovado no teste dos guizos (já aconteceu).", "Primeiras missões rank D."], "arco concluído intacto");
     assert.deepEqual(re?.arcs[1].notes, ["nota do Mestre"], "notas do arco que continua ficam");
 
+    // memórias dos NPCs em cena: as marcadas com o nome primeiro, depois as que o citam; NPC fora de cena não traz nada
+    await real.query(`UPDATE characters SET active = (name = 'Naruto Uzumaki') WHERE campaign_id = $1`, [id]);
+    const { rows: mems } = await real.query(
+      `INSERT INTO memories (campaign_id, kind, subject, content, importance) VALUES
+         ($1, 'event', 'Naruto Uzumaki', 'Naruto treinou com Hugo no Dia 3.', 2),
+         ($1, 'event', 'Time 7', 'Kakashi aprovou Naruto e o time.', 5),
+         ($1, 'event', 'Gaara', 'Gaara chegou à vila.', 5),
+         ($1, 'event', 'Hugo', 'Narutomaki no ramen.', 5)
+       RETURNING id`,
+      [id]
+    );
+    assert.deepEqual((await sceneNpcMemories(id)).map((m) => Number(m.id)).sort(), [Number(mems[0].id), Number(mems[1].id)].sort(), "do NPC em cena, pelo nome inteiro");
+
     // campanha sem narração: roteiro do zero, como antes
     await real.query(`DELETE FROM messages WHERE campaign_id = $1`, [id]);
     await generateScript(await getCampaign(id));
     assert.ok(request.includes("Monte o roteiro") && !request.includes("HISTÓRIA ATÉ AGORA"), "sem história: do zero");
 
-    console.log("world-check: ok (o Cronista recebe NPCs citados, arco e diretrizes; situação atual e cargo gravados, arco concluído abre o seguinte, diretriz desatualizada avisada uma vez; o Roteirista replaneja do ponto atual da história, mantendo concluídos e notas, e começa do zero sem narração)");
+    console.log("world-check: ok (o Cronista recebe NPCs citados, arco e diretrizes; situação atual e cargo gravados, arco concluído abre o seguinte, diretriz desatualizada avisada uma vez; o Roteirista replaneja do ponto atual da história, mantendo concluídos e notas, e começa do zero sem narração; memórias dos NPCs em cena)");
   } finally {
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);
     await real.end();

@@ -39,6 +39,7 @@ export function responsesRequest(opts: ChatOptions, src: Source) {
       // strict false: o mesmo comportamento do Chat Completions (a Responses tentaria o modo estrito)
       tools: opts.tools.map(({ function: f }) => ({ type: "function", name: f.name, description: f.description, parameters: f.parameters, strict: false })),
     }];
+  if (opts.tools?.length && opts.noTools) body.tool_choice = "none";
   if (opts.reasoning?.effort) body.reasoning = { effort: opts.reasoning.effort };
   return { url: `${src.url}/responses`, headers: { "Content-Type": "application/json", Authorization: `Bearer ${src.apiKey}` }, body };
 }

@@ -378,7 +378,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "create_npc",
       description:
-        "Registra um NPC novo na hora, ativo na cena. O Criador de personagens monta perfil e ficha em segundo plano a partir do brief. canon=true para personagens da obra.",
+        "Registra um NPC novo na hora, ativo na cena. O Criador de personagens monta perfil e ficha em segundo plano a partir do brief. canon=true para personagens da obra. Personagem da obra só entra se, neste ponto da linha do tempo, ele estaria ali: vivo, solto, na vila e já apresentado na obra (quem está preso, morto, viajando ou ainda não apareceu na história fica de fora; no lugar dele, use outro do cânone que estaria ali ou um NPC original).",
       parameters: S(
         {
           name: { type: "string" },

@@ -17,6 +17,7 @@ import {
   searchBookChunks,
   searchHistory,
   searchMemories,
+  sceneNpcMemories,
 } from "./retrieval";
 import { listBooks } from "./books";
 import { decideCast, decideElapsed, decideMoved, decideTurn, scoreImportance } from "./decisions";
@@ -237,7 +238,7 @@ async function buildGmSystem(
       ? `\n--- NPCs EM CENA ---\n${activeNpcs.map((n) => sheetSummary(n, true, campaign.ruleset, true)).join("\n")}`
       : "\n--- NPCs EM CENA ---\n(nenhum)",
     inactiveNames.length
-      ? `NPCs conhecidos fora de cena (não interagem; reative com set_npc_active): ${inactiveNames.join(", ")}`
+      ? `NPCs conhecidos fora de cena (não interagem; reative com set_npc_active, e antes de trazer um deles de volta consulte search_memories com subject = o nome dele: o que ele já viveu com o jogador): ${inactiveNames.join(", ")}`
       : "",
     activeArc
       ? [
@@ -428,6 +429,8 @@ export async function runTurn(
   // a busca de memórias (embedding da ação, ida à rede) corre junto da foto e das leituras do banco
   const adv = await getAdvanced(); // cache no processo
   const candidatesP = candidateMemories(campaignId, playerInput, adv);
+  // o que os NPCs em cena já viveram (com o jogador): não depende das palavras da ação, então não passa pelo filtro do Jev
+  const npcMemP = sceneNpcMemories(campaignId).catch((): MemoryHit[] => []);
   candidatesP.catch(() => {}); // o erro sobe no await abaixo, sem virar rejeição solta antes dele
   // até autoTopK (2) trechos antigos do chat muito parecidos com a ação: só entram se o Jev aprovar com folga
   const pastP = playerInput && adv.history.autoTopK
@@ -519,7 +522,8 @@ export async function runTurn(
   const turnModel = complexModel && decision.complex ? complexModel : gm.model;
   // falha do Jev = web conforme o agente
   const useWeb = gm.web_search && decision.web !== false;
-  const memories = candidates.filter((m) => decision.keepMemory(m.id, m.importance));
+  const keptMem = candidates.filter((m) => decision.keepMemory(m.id, m.importance));
+  const memories = [...keptMem, ...(await npcMemP).filter((m) => !keptMem.some((k) => k.id === m.id))];
   const past = pastHits.filter((h) => decision.keepHistory(h.id));
   // trechos curtos (~700 caracteres, a janela com mais termos da ação), com título e página para o read_pages
   const bookText = decision.book
@@ -604,6 +608,8 @@ export async function runTurn(
       temperature: gm.temperature,
       max_tokens: gm.max_tokens,
       tools: GM_TURN_TOOLS,
+      // última rodada só em texto: uma chamada pedida aqui seria descartada e a narração pararia no meio
+      noTools: round === maxRounds,
       webSearch: useWeb && round === 0,
       agentId: "gm",
       campaignId,
@@ -680,6 +686,9 @@ export async function runTurn(
     if (told.clean)
       messages[messages.length - 1].content +=
         "\n\n(Sistema, fora do jogo: o jogador já está lendo o texto que você escreveu junto destas ferramentas. Continue dele sem repetir nada; se a narração já estiver completa, escreva só o que faltar, como o bloco de opções.)";
+    if (round + 1 === maxRounds)
+      messages[messages.length - 1].content +=
+        "\n\n(Sistema, fora do jogo: acabaram as ferramentas deste turno. Narre agora o que já foi resolvido acima; o que ficou sem teste não aconteceu ainda e fica como opção para o próximo turno.)";
   }
 
   const choices = finalChoices;

@@ -70,6 +70,7 @@ export function anthropicParams(opts: ChatOptions, cache = true): Anthropic.Mess
       input_schema: f.parameters as Anthropic.Tool.InputSchema,
     }));
     if (cache) params.tools[params.tools.length - 1].cache_control = CACHE_LONG;
+    if (opts.noTools) params.tool_choice = { type: "none" };
   }
   return params;
 }
