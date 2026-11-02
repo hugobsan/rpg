@@ -144,3 +144,7 @@
 .search { position: relative; }
 .search input { padding-left: 34px; }
 .search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-faint); pointer-events: none; }
+
+/* missão: status corrigido à mão */
+.fixStatus { display: flex; align-items: center; justify-content: flex-end; gap: var(--s-2); margin-top: 4px; font-size: 12px; color: var(--text-dim); }
+.fixStatus select { width: auto; padding: 4px 8px; font-size: 12.5px; }

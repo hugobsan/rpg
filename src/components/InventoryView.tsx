@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Character } from "@/lib/types";
 import { toast } from "./ui/Toast";
 import SearchBox, { fold } from "./ui/SearchBox";
+import type { OnFix } from "./SheetView";
 import s from "./SidePanels.module.css";
 
 const BagIcon = ({ size = 18 }: { size?: number }) => (
@@ -11,20 +12,42 @@ const BagIcon = ({ size = 18 }: { size?: number }) => (
   </svg>
 );
 
-/** Aba Inventário: itens do personagem do jogador, com a opção de largar. */
+/** Aba Inventário: itens do personagem do jogador, com a opção de largar e a de corrigir à mão (onFix). */
 export default function InventoryView({
   char,
   campaignId,
   disabled,
   onChange,
   onUse,
+  onFix,
 }: {
   char: Character;
   campaignId: string;
   disabled?: boolean; // durante o turno do Mestre a ficha pode estar mudando
   onChange: () => void;
   onUse?: (name: string) => void; // põe o item no campo da ação
+  onFix?: OnFix; // correção do registro: tira, põe e muda a quantidade sem virar acontecimento da história
 }) {
+  const [fixing, setFixing] = useState(false);
+  const [adding, setAdding] = useState({ name: "", qty: "1" });
+  const fixQty = (name: string, qty: number) => onFix?.({ fix: "item", name, qty });
+  const fixToggle = onFix && (
+    <button className="btn ghost small" disabled={disabled && !fixing} aria-pressed={fixing} onClick={() => setFixing((f) => !f)}>
+      {fixing ? "Pronto" : "Corrigir"}
+    </button>
+  );
+  const addForm = fixing && (
+    <form className={s.row} onSubmit={async (e) => {
+      e.preventDefault();
+      if (adding.name.trim() && (await fixQty(adding.name.trim(), Math.max(1, Math.floor(Number(adding.qty)) || 1)))) setAdding({ name: "", qty: "1" });
+    }}>
+      <input type="text" className={s.grow} aria-label="Item a adicionar" placeholder="Item que faltou" value={adding.name}
+        onChange={(e) => setAdding((a) => ({ ...a, name: e.target.value }))} />
+      <input type="number" min={1} aria-label="Quantidade" style={{ width: 68 }} value={adding.qty}
+        onChange={(e) => setAdding((a) => ({ ...a, qty: e.target.value }))} />
+      <button className="btn small" disabled={disabled || !adding.name.trim()}>Adicionar</button>
+    </form>
+  );
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -68,10 +91,14 @@ export default function InventoryView({
 
   if (!items.length)
     return (
-      <div className={s.empty}>
-        <BagIcon size={26} />
-        <b>{char.name} não carrega nada</b>
-        Itens ganhos, comprados ou encontrados na história aparecem aqui.
+      <div className={s.wrap}>
+        <div className={s.empty}>
+          <BagIcon size={26} />
+          <b>{char.name} não carrega nada</b>
+          Itens ganhos, comprados ou encontrados na história aparecem aqui.
+          {!fixing && fixToggle}
+        </div>
+        {addForm}
       </div>
     );
   return (
@@ -79,7 +106,10 @@ export default function InventoryView({
       <div className={s.head}>
         <h4>Carregando</h4>
         <span className={s.count}>{items.reduce((n, i) => n + i.qty, 0)} no total</span>
+        {fixToggle}
       </div>
+      {fixing && <p className={s.sub}>Corrija o que ficou errado no registro: o item não é largado na história, e o Mestre fica sabendo no próximo turno.</p>}
+      {addForm}
       {items.length > 1 && <SearchBox value={query} onChange={setQuery} label="Buscar no inventário" placeholder="Buscar item por nome ou descrição" />}
       {error && <div className="error-box">{error}</div>}
       {!shown.length && <p className="muted">Nada com essa busca.</p>}
@@ -92,7 +122,12 @@ export default function InventoryView({
               {i.description && <div className={s.sub}>{i.description}</div>}
             </div>
             {i.qty > 1 && <span className={s.chip}>×{i.qty}</span>}
-            {confirming !== i.name && <>
+            {fixing && <>
+              <button className="btn ghost small" disabled={disabled} onClick={() => fixQty(i.name, -1)} aria-label={`Tirar 1 ${i.name}`}>−</button>
+              <button className="btn ghost small" disabled={disabled} onClick={() => fixQty(i.name, 1)} aria-label={`Pôr mais 1 ${i.name}`}>+</button>
+              {i.qty > 1 && <button className="btn ghost small" disabled={disabled} onClick={() => fixQty(i.name, -i.qty)}>Tirar todos</button>}
+            </>}
+            {!fixing && confirming !== i.name && <>
               {onUse && (
                 <button className="btn ghost small" onClick={() => onUse(i.name)} data-tip="Escrever no campo da ação" data-tip-align="end">Usar</button>
               )}

@@ -23,13 +23,15 @@ const StarIcon = () => (
 const urgency = (left: number | null) => (left === null ? "" : left < 6 * 60 ? "danger" : left < 24 * 60 ? "warn" : "");
 
 type Decide = (o: Objective, accept: boolean) => void;
+// correção do registro: aberto, concluído ou cancelado (perdida que foi cumprida vira concluída)
+type Fix = (o: Objective, status: "aberto" | "concluido" | "cancelado") => void;
 
 /** Oferecida com o prazo já vencido: não dá para aceitar (o update_objective também recusa). */
 const isLate = (o: Objective, now: number | undefined) => o.deadlineMinutes !== undefined && now !== undefined && o.deadlineMinutes < now;
 
 /** Aba "Missões": missões, eventos e prazos que o Mestre registra conforme a história. Oferecidas com Aceitar e Recusar. */
-export default function ObjectivesView({ state, ruleset, playerXp, onDecide, disabled }: {
-  state: Record<string, unknown>; ruleset: Ruleset; playerXp: number; onDecide: Decide; disabled?: boolean;
+export default function ObjectivesView({ state, ruleset, playerXp, onDecide, disabled, onFix }: {
+  state: Record<string, unknown>; ruleset: Ruleset; playerXp: number; onDecide: Decide; disabled?: boolean; onFix?: Fix;
 }) {
   const now = getClock(state)?.minutes;
   const all = getObjectives(state);
@@ -87,6 +89,17 @@ export default function ObjectivesView({ state, ruleset, playerXp, onDecide, dis
             </div>
             {used !== null && <div className={s.timebar}><span style={{ transform: `scaleX(${used})` }} /></div>}
           </>
+        )}
+        {onFix && !isOffer && (
+          <label className={s.fixStatus}>
+            Corrigir status
+            <select value={o.status} disabled={disabled} onChange={(e) => onFix(o, e.target.value as Parameters<Fix>[1])}>
+              {o.status === "perdido" && <option value="perdido" disabled>perdido</option>}
+              <option value="aberto">aberto</option>
+              <option value="concluido">concluído</option>
+              <option value="cancelado">cancelado</option>
+            </select>
+          </label>
         )}
       </div>
     );

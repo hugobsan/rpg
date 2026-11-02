@@ -1443,7 +1443,10 @@ export async function executeGmTool(
           ? await hydrateSheets(await q<Character>(`SELECT * FROM characters WHERE campaign_id = $1 AND kind = 'player' LIMIT 1`, [cid]))
           : [];
       const xp = player ? objectiveXp(o, ctx.campaign.ruleset, getTable(ctx.campaign.state), player.sheet.xp) : null;
-      if (xp) chip += ` (+${xp} XP)`;
+      if (xp) {
+        chip += ` (+${xp} XP)`;
+        o.xpGiven = xp; // a correção manual devolve esta XP se a missão sair de concluída
+      }
       await saveObjectives(cid, list);
       ctx.campaign.state = { ...ctx.campaign.state, objectives: list };
       ctx.emit({ type: "tool", name, summary: chip });

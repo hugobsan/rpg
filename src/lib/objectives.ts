@@ -24,6 +24,7 @@ export interface Objective {
   giver?: string; // quem ofereceu (NPC), se houver
   xpSize?: ObjectiveXpSize; // XP dada ao concluir, pela regra de XP da mesa
   xp?: number; // só com excepcional: valor livre
+  xpGiven?: number; // XP que a conclusão deu e não devolveu (0 = deu antes de existir este campo): não dá de novo
   createdAt: number; // minutos do relógio (0 se ainda não havia relógio)
   closedAt?: number;
   // aceita ou recusada pelo painel (Date.now): o Mestre reconhece na cena; sai quando o turno seguinte termina

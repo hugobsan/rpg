@@ -59,8 +59,62 @@ function Meter({ label, color, cur, max, hint }: { label: string; color: string;
   );
 }
 
-/** Ficha. Com onChange (só o jogador), mostra os pontos livres e o + por atributo. Também é a ficha do NPC no modal. */
-export default function SheetView({ char, campaign, onChange }: { char: Character; campaign: Campaign; onChange?: () => void }) {
+export type OnFix = (body: Record<string, unknown>) => Promise<boolean>;
+
+/** Correção manual, como numa mesa de verdade: recursos (atual e máximo) e XP, pelas regras do jogo (XP sobe nível). */
+function SheetFix({ char, campaign, onFix, onClose }: { char: Character; campaign: Campaign; onFix: OnFix; onClose: () => void }) {
+  const sh = char.sheet;
+  const res = campaign.ruleset.resources.filter((r) => sh.resources[r.key]);
+  const [vals, setVals] = useState<Record<string, string>>(() => ({
+    xp: String(sh.xp),
+    ...Object.fromEntries(res.flatMap((r) => [[`${r.key}.cur`, String(sh.resources[r.key].current)], [`${r.key}.max`, String(sh.resources[r.key].max)]])),
+  }));
+  const [saving, setSaving] = useState(false);
+  const field = (k: string, label: string, min: number) => (
+    <input type="number" inputMode="numeric" min={min} aria-label={label} value={vals[k]} onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))} />
+  );
+  const save = async () => {
+    setSaving(true);
+    for (const r of res) {
+      const v = sh.resources[r.key];
+      const cur = Number(vals[`${r.key}.cur`]);
+      const max = Number(vals[`${r.key}.max`]);
+      if (cur !== v.current || max !== v.max) await onFix({ fix: "resource", resource: r.key, current: cur, max: max !== v.max ? max : undefined });
+    }
+    if (Number(vals.xp) !== sh.xp) await onFix({ fix: "xp", xp: Number(vals.xp) });
+    setSaving(false);
+    onClose();
+  };
+  return (
+    <form className={s.fix} onSubmit={(e) => { e.preventDefault(); save(); }}>
+      <p className={s.fixHint}>Corrija o que ficou errado no registro. O Mestre fica sabendo no próximo turno.</p>
+      {res.map((r) => (
+        <div key={r.key} className={s.fixRow}>
+          <span className={s.fixLabel}>{r.label}</span>
+          {field(`${r.key}.cur`, `${r.label} atual`, 0)}
+          <span className="faint">/</span>
+          {field(`${r.key}.max`, `${r.label} máximo`, 1)}
+        </div>
+      ))}
+      <div className={s.fixRow}>
+        <span className={s.fixLabel}>XP</span>
+        {field("xp", "XP", 0)}
+      </div>
+      <div className={s.fixActions}>
+        <button type="button" className="btn ghost small" onClick={onClose}>Cancelar</button>
+        <button className="btn primary small" disabled={saving}>Salvar</button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Ficha. Com onChange (só o jogador), mostra os pontos livres e o + por atributo. Também é a ficha do NPC no modal.
+ * onFix (só o jogador): botão Corrigir, que edita recursos e XP; fixDisabled durante o turno.
+ */
+export default function SheetView({ char, campaign, onChange, onFix, fixDisabled }: {
+  char: Character; campaign: Campaign; onChange?: () => void; onFix?: OnFix; fixDisabled?: boolean;
+}) {
   const rs = campaign.ruleset;
   const sh = char.sheet;
   const rank = rs.ranks.find((r) => r.key === sh.rank);
@@ -70,6 +124,7 @@ export default function SheetView({ char, campaign, onChange }: { char: Characte
   const per = rs.xpPerAttributePoint ?? DEFAULT_XP_PER_POINT;
   const perHour = trainingRules(rs).hoursPerAttributePoint;
   const [busy, setBusy] = useState(false);
+  const [fixing, setFixing] = useState(false);
   // balão do atributo: hover no mouse, toque alterna, foco do teclado abre
   const [tip, setTip] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
@@ -108,12 +163,18 @@ export default function SheetView({ char, campaign, onChange }: { char: Characte
             <div className={s.rank}>{rank?.label || sh.rank || "sem cargo"}</div>
             {onChange && <div className={s.portraitAction}><PortraitButton char={char} onChange={onChange} /></div>}
           </div>
+          {onFix && !fixing && (
+            <button className={`btn ghost small ${s.fixBtn}`} disabled={fixDisabled} onClick={() => setFixing(true)}
+              data-tip="Corrigir recursos e XP à mão" data-tip-align="end">Corrigir</button>
+          )}
         </header>
       ) : (
         (rank || sh.rank) && <div className={s.rank}>Cargo: {rank?.label || sh.rank}</div>
       )}
 
-      {(!npc || sh.xp > 0) && <div className={s.level} title="O nível de poder vem só da XP e define o teto dos atributos. Não é cargo: o cargo só muda pela história.">
+      {fixing && onFix && <SheetFix char={char} campaign={campaign} onFix={onFix} onClose={() => setFixing(false)} />}
+
+      {!fixing && (!npc || sh.xp > 0) && <div className={s.level} title="O nível de poder vem só da XP e define o teto dos atributos. Não é cargo: o cargo só muda pela história.">
         <div className={s.levelHead}>
           <span><span className={s.levelLabel}>Nível de poder</span> <b>{level?.label || "inicial"}</b></span>
           <span className="num">{sh.xp} XP</span>
@@ -138,12 +199,12 @@ export default function SheetView({ char, campaign, onChange }: { char: Characte
         )
       )}
 
-      <div className={s.meters}>
+      {!fixing && <div className={s.meters}>
         {rs.resources.map((r) => {
           const v = sh.resources[r.key];
           return v ? <Meter key={r.key} label={r.label} color={r.color} cur={v.current} max={v.max} hint={r.description} /> : null;
         })}
-      </div>
+      </div>}
 
       {npc && !known && <p className={s.blank}>Ficha ainda em branco: o Mestre preenche conforme a história revela quem é {char.name}.</p>}
       {(!npc || known) && <div className={s.attrs} onPointerLeave={() => setHover(null)}>

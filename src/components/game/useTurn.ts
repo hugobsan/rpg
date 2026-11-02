@@ -50,6 +50,10 @@ import { diceText } from "../DiceRoller";
  * como npc_message) chegam depois de liberados pela rolagem; status, scene, state, error e done
  * chegam na hora. Serve para a tela reagir (toast, som, mapa) sem mexer no hook.
  *
+ * Registros do Escrivão (chips com `scribe`): undo(item) desfaz no servidor e marca o chip (e os do mesmo registro)
+ * como desfeito; devolve o erro ("" = ok). Só os do último turno: as etiquetas da última narração salva também voltam
+ * do servidor ao carregar a página.
+ *
  * ooc: a ação era pergunta ou reclamação sobre o registro e foi respondida na conversa fora do jogo (gm_notes),
  * sem turno. O hook tira a ação do chat e devolve as opções de antes; a tela abre a conversa no onEvent.
  */
@@ -62,16 +66,29 @@ export interface FeedItem {
   // só nos eventos ao vivo (mensagens salvas não têm): a rolagem inteira e o nome da ferramenta
   dice?: DiceResult;
   name?: string;
+  scribe?: { messageId: number; index: number; undone?: boolean }; // registro do Escrivão que dá para desfazer
 }
 
 // eventos que nunca ficam retidos pela rolagem
 const IMMEDIATE = new Set(["status", "scene", "state", "error", "done"]);
 
-const toFeed = (messages: ChatLine[]): FeedItem[] =>
-  messages.map((m) => ({ key: `m${m.id}`, kind: m.role === "player" ? "player" : "gm", content: m.content }));
+// scribe: as etiquetas do Escrivão da última narração (só elas se desfazem) vêm junto
+const toFeed = (messages: ChatLine[], scribe = false): FeedItem[] => {
+  const last = scribe ? messages.findLast((m) => m.role === "gm") : undefined;
+  return messages.flatMap((m): FeedItem[] => [
+    { key: `m${m.id}`, kind: m.role === "player" ? "player" : "gm", content: m.content },
+    ...(m === last ? m.meta.scribe ?? [] : [])
+      .map((e, index) => ({ e, index }))
+      .filter(({ e }) => e.undo || e.summary !== e.tool)
+      .map(({ e, index }): FeedItem => ({
+        key: `m${m.id}s${index}`, kind: "chip", content: e.summary, name: e.tool,
+        scribe: e.undo ? { messageId: Number(m.id), index, undone: e.undone } : undefined,
+      })),
+  ]);
+};
 
 // o feed guarda mensagens salvas com chave "m<id>"; os eventos ao vivo do turno usam "k<n>"
-const savedId = (i: FeedItem) => (i.key[0] === "m" ? Number(i.key.slice(1)) : null);
+const savedId = (i: FeedItem) => (i.key[0] === "m" && i.kind !== "chip" ? Number(i.key.slice(1)) : null);
 
 const lastChoices = (messages: ChatLine[]) => messages[messages.length - 1]?.meta?.choices ?? [];
 
@@ -81,7 +98,7 @@ export function useTurn(
 ) {
   const { initial } = opts;
   const [state, setState] = useState<CampaignView | null>(initial ?? null);
-  const [feed, setFeed] = useState<FeedItem[]>(() => (initial ? toFeed(initial.messages) : []));
+  const [feed, setFeed] = useState<FeedItem[]>(() => (initial ? toFeed(initial.messages, true) : []));
   const [draft, setDraft] = useState("");
   const [choices, setChoices] = useState<string[]>(() => (initial ? lastChoices(initial.messages) : []));
   const [busy, setBusy] = useState(false);
@@ -125,7 +142,7 @@ export function useTurn(
     if (initial) return; // já veio no HTML
     reload().then((data) => {
       if (!data) return;
-      setFeed(toFeed(data.messages));
+      setFeed(toFeed(data.messages, true));
       setHasMore(data.hasMore);
       setChoices(lastChoices(data.messages));
     });
@@ -175,7 +192,7 @@ export function useTurn(
   };
 
   const showEvent = (ev: TurnEvent) => {
-    if (ev.type === "tool") setFeed((f) => [...f, { key: nextKey(), kind: "chip", content: ev.summary, name: ev.name }]);
+    if (ev.type === "tool") setFeed((f) => [...f, { key: nextKey(), kind: "chip", content: ev.summary, name: ev.name, scribe: ev.scribe }]);
     else if (ev.type === "dice")
       setFeed((f) => [
         ...f,
@@ -323,7 +340,7 @@ export function useTurn(
       // (mantém as anteriores já carregadas, antes da janela recente)
       if (regen && failed && data) {
         const first = data.messages[0]?.id ?? 0;
-        setFeed((f) => [...f.filter((i) => (savedId(i) ?? Infinity) < first), ...toFeed(data.messages)]);
+        setFeed((f) => [...f.filter((i) => (savedId(i) ?? Infinity) < first), ...toFeed(data.messages, true)]);
       }
     }
   };
@@ -354,6 +371,22 @@ export function useTurn(
     return true;
   };
 
+  const undo = async (item: FeedItem): Promise<string> => {
+    const sc = item.scribe;
+    if (busyRef.current || !sc || sc.undone) return "";
+    const res = await fetch(`/api/campaigns/${campaignId}/corrections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ undo: { messageId: sc.messageId, index: sc.index } }),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    if (!res?.ok) return data?.error || "Não deu para desfazer.";
+    const same = (i: FeedItem) => i.scribe?.messageId === sc.messageId && i.scribe.index === sc.index;
+    setFeed((f) => f.map((i) => (same(i) ? { ...i, scribe: { ...i.scribe!, undone: true } } : i)));
+    void reload();
+    return "";
+  };
+
   const edit = (text: string) => {
     if (busyRef.current || !text.trim()) return false;
     void run(text.trim(), { feedback: "", edit: true });
@@ -362,7 +395,7 @@ export function useTurn(
 
   return {
     state, setState, reload, error, setError,
-    feed, draft, choices, setChoices, busy, status, send, regenerate, edit, canStop, stop,
+    feed, draft, choices, setChoices, busy, status, send, regenerate, edit, canStop, stop, undo,
     pendingDice, rolling, roll, releaseDice,
     feedRef, hasMore, loadingOlder, loadOlder,
   };

@@ -33,7 +33,7 @@ import SidePanel, { type PanelTab } from "./game/SidePanel";
 import Icon from "./game/Icon";
 import { Choices, Draft, EditLine, FeedLine, Recap, TurnWait, type Cast } from "./game/Feed";
 import { CONTINUE_INPUT } from "@/lib/continueScene";
-import { groupFeed, phaseOf, type Phase } from "./game/feedModel";
+import { chipText, groupFeed, phaseOf, type Phase } from "./game/feedModel";
 import { stateToasts } from "./game/stateToasts";
 import s from "./GameClient.module.css";
 
@@ -83,11 +83,13 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
 
   const {
     state, setState, reload: reloadState, error, setError,
-    feed, draft, choices, setChoices, busy, status, send, regenerate, edit, canStop, stop,
+    feed, draft, choices, setChoices, busy, status, send, regenerate, edit, canStop, stop, undo,
     pendingDice, rolling, roll, releaseDice,
     feedRef, hasMore, loadingOlder, loadOlder,
   } = useTurn(campaignId, { initial, onEvent });
   stateRef.current = state;
+  const undoRef = useRef(undo);
+  undoRef.current = undo;
 
   // retratos, mapas 3D, biblioteca, perfis de NPC: ao terminar, relê a campanha e avisa
   const jobs = useJobs(campaignId, state?.jobs, (ended) => {
@@ -161,6 +163,19 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
     setDeciding(false);
   };
 
+  // correção manual da ficha (corrections): o aviso do que mudou vem pela diferença de estado; só o erro avisa aqui
+  const fix = async (body: Record<string, unknown>) => {
+    const res = await fetch(`/api/campaigns/${campaignId}/corrections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    if (!res?.ok) toast(data?.error || "Tente de novo.", { kind: "alerta", title: "Correção da ficha" });
+    await reloadState();
+    return !!res?.ok;
+  };
+
   const characters = state?.characters;
   const npcs = useMemo(() => characters?.filter((c) => c.kind === "npc") ?? [], [characters]);
   const player = characters?.find((c) => c.kind === "player");
@@ -188,15 +203,24 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
     else toast(on ? `${list[0].name} entrou na cena.` : `${list[0].name} saiu de cena.`);
     reloadState();
   };
+  const idle = !busy && !pendingDice;
+  // etiquetas do Escrivão depois da última narração: só elas se desfazem (o servidor confere)
+  const undoFrom = useMemo(() => feed.slice(feed.findLastIndex((i) => i.kind === "gm") + 1).find((i) => i.scribe)?.scribe?.messageId, [feed]);
   // estável entre os pedaços do streaming: os itens do feed (memo) não re-renderizam
   const cast = useMemo<Cast>(
-    () => ({ npcs: new Map(npcs.map((n) => [n.name.toLowerCase(), n])), player: player?.name, campaignId, onNpc: setOpenNpc }),
-    [npcs, player?.name, campaignId]
+    () => ({
+      npcs: new Map(npcs.map((n) => [n.name.toLowerCase(), n])), player: player?.name, campaignId, onNpc: setOpenNpc,
+      undoFrom: idle ? undoFrom : undefined,
+      onUndo: async (item) => {
+        const err = await undoRef.current(item);
+        if (err) toast(err, { kind: "alerta", title: `Desfazer: ${chipText(item.content)}` });
+      },
+    }),
+    [npcs, player?.name, campaignId, idle, undoFrom]
   );
   const groups = useMemo(() => groupFeed(feed), [feed]);
   // sua última mensagem: só ela pode ser editada (o servidor só desfaz o último turno; depois de um Continuar, nenhuma)
   const lastPlayer = useMemo(() => feed.findLast((i) => i.kind === "player"), [feed]);
-  const idle = !busy && !pendingDice;
   // Ações rápidas: opções para o momento da cena, no lugar das do Mestre (mesmos cartões: clicar envia, lápis edita)
   const [suggesting, setSuggesting] = useState(false);
   const suggest = async () => {
@@ -320,17 +344,19 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
                   }}><Icon name="close" size={14} /></button>
               </div>
             )}
-            {player && <SheetView char={player} campaign={campaign} onChange={reloadState} />}
+            {player && <SheetView char={player} campaign={campaign} onChange={reloadState} onFix={fix} fixDisabled={!idle} />}
           </>
         );
       case "abilities":
-        return player && <AbilitiesView char={player} ruleset={campaign.ruleset} onUse={putOnComposer} />;
+        return player && <AbilitiesView char={player} ruleset={campaign.ruleset} onUse={putOnComposer}
+          onFix={(ability, progress) => fix({ fix: "mastery", ability, progress })} fixDisabled={!idle} />;
       case "inventory":
-        return player && <InventoryView char={player} campaignId={campaignId} disabled={busy} onChange={reloadState} onUse={putOnComposer} />;
+        return player && <InventoryView char={player} campaignId={campaignId} disabled={!idle} onChange={reloadState} onUse={putOnComposer} onFix={fix} />;
       case "library":
         return <LibraryView campaignId={campaignId} ruleset={campaign.ruleset} jobs={jobs} onChange={reloadState} />;
       case "objectives":
-        return <ObjectivesView state={campaign.state} ruleset={campaign.ruleset} playerXp={player?.sheet.xp ?? 0} onDecide={decide} disabled={!idle || deciding} />;
+        return <ObjectivesView state={campaign.state} ruleset={campaign.ruleset} playerXp={player?.sheet.xp ?? 0} onDecide={decide} disabled={!idle || deciding}
+          onFix={(o, status) => fix({ fix: "objective", objective: o.id, status })} />;
       case "npcs":
         return <NpcList npcs={npcs} onOpen={setOpenNpc} inbox={state.inbox} onSetActive={setNpcActive} />;
       case "map":
