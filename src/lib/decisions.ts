@@ -31,6 +31,8 @@ export const NPC_WILLING_MIN = D.jev.npcWillingMin;
 // Trecho antigo do chat (recuperação automática) só entra se P(precisa) >= limiar: bem acima do das memórias
 // ("com folga"), porque turno inteiro custa mais tokens que um fato. Sem probe ainda; refaça com scripts/jev-check.ts.
 export const HISTORY_MIN = D.history.jevMin;
+// Árbitro (use_ability/train antes do Mestre) se P(técnica da ficha ou treino) >= limiar. Sem probe ainda.
+export const MECHANIC_MIN = D.jev.mechanicMin;
 
 // ---------- tipos da API ----------
 
@@ -126,6 +128,7 @@ export interface TurnInput {
   playerAction: string;
   memories: { id: number; kind: string; subject: string | null; content: string; importance: number }[];
   history?: { id: number; text: string }[]; // trechos antigos do chat muito parecidos com a ação
+  playerAbilities?: string[]; // técnicas da ficha do jogador: presente = pergunta se a ação é do Árbitro
   askComplexity: boolean;
   askWeb: boolean;
 }
@@ -154,6 +157,17 @@ export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest
         true: "Sim: a ação depende de um detalhe canônico concreto que falta nesses dados e teria de ser conferido na obra.",
         false:
           "Não: a ação se resolve com o que está nos dados, é invenção livre da campanha, ou o cenário não é baseado em uma obra.",
+      },
+    };
+  if (t.playerAbilities)
+    questions.mechanic = {
+      type: "noul",
+      instructions:
+        "A `acao_do_jogador` é o personagem do jogador usando agora uma técnica que está em `tecnicas_do_jogador`, ou um bloco de treino (praticar uma técnica ou um atributo por um tempo)?",
+      criteria: {
+        true: "Sim: ele executa agora uma técnica dessa lista (pelo nome ou por uma descrição inequívoca dela) ou treina.",
+        false:
+          "Não: outra ação (andar, falar, observar, atacar sem técnica), técnica fora da lista, ou só fala de técnica ou treino sem fazer agora (pergunta, plano, intenção).",
       },
     };
   for (const m of candidates)
@@ -187,6 +201,7 @@ export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest
       npcs_em_cena: t.npcsInScene,
       ultima_narracao_do_mestre: t.lastGmNarration.slice(-1500) || null,
       acao_do_jogador: t.playerAction,
+      ...(t.playerAbilities ? { tecnicas_do_jogador: t.playerAbilities } : {}),
       memorias: Object.fromEntries(
         t.memories.map((m) => [`m${m.id}`, `[${m.kind}${m.subject ? `/${m.subject}` : ""}] ${m.content}`])
       ),
@@ -199,6 +214,7 @@ export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest
 export interface TurnDecision {
   complex: boolean | null; // null = não perguntou ou falhou
   web: boolean | null;
+  mechanic: boolean; // falha do Jev = não (o Árbitro não roda)
   keepMemory: (id: number, importance: number) => boolean;
   keepHistory: (id: number) => boolean; // falha do Jev = nenhum trecho (não infla o contexto)
 }
@@ -209,6 +225,7 @@ export function gateTurn(answers: Record<string, Answer> | null, a: Advanced = D
   return {
     complex: c?.type === "choice" ? (c.probabilities?.complexa ?? (c.choice === "complexa" ? 1 : 0)) >= a.jev.complexMin : null,
     web: web === undefined ? null : web >= a.jev.webMin,
+    mechanic: (answers ? (noulOf(answers, "mechanic") ?? 0) : 0) >= a.jev.mechanicMin,
     keepMemory: (id, importance) => {
       if (importance >= a.memory.alwaysKeep || !answers) return true;
       const p = noulOf(answers, `mem_${id}`);

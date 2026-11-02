@@ -16,7 +16,7 @@ import {
   searchMemories,
 } from "./retrieval";
 import { decideCast, decideElapsed, decideMoved, decideTurn, scoreImportance } from "./decisions";
-import { attributeCap, attributePoints, controlLabel, costMultOf, powerLevel } from "./progression";
+import { attributeCap, attributePoints, controlLabel, costMultOf, powerLevel, progressionPromptLines } from "./progression";
 import { formatClock, getClock, period } from "./clock";
 import { hydrateSheets } from "./library";
 import { getObjectives, objectivesPromptBlock, objectiveXp } from "./objectives";
@@ -154,7 +154,8 @@ async function buildGmSystem(
   chars: Character[],
   memories: MemoryHit[],
   past: string, // trechos antigos do chat aprovados pelo Jev (formatHistory)
-  basePrompt: string
+  basePrompt: string,
+  resolved: string[] = [] // o que o Árbitro resolveu antes do Mestre (ferramenta args → resultado)
 ): Promise<[fixed: string, turn: string]> {
   const player = chars.find((c) => c.kind === "player");
   const activeNpcs = chars.filter((c) => c.kind === "npc" && c.active);
@@ -222,6 +223,9 @@ async function buildGmSystem(
       ? `\n--- DIRETRIZES DO JOGADOR (fora do jogo) — siga ---\n${directives
           .map((d) => `- ${d.content}${d.subject === "proxima_cena" ? " (vale nesta cena e na próxima)" : ""}`)
           .join("\n")}`
+      : "",
+    resolved.length
+      ? `\n--- JÁ RESOLVIDO NESTE TURNO (resultado final: narre a partir dele e não chame essas ferramentas de novo) ---\n${resolved.map((r) => `- ${r}`).join("\n")}`
       : "",
     // por último, colado na ação: o estado acima é mecânico e puxava a narração para o tom de relatório
     "\n(Narração: calibre pelo momento, como em NARRAÇÃO. Cheia em chegada, descoberta, viagem e resultado; curta e interativa em fala e batalha.)",
@@ -380,9 +384,11 @@ export async function runTurn(
     pastP,
   ]);
 
-  // Jev, numa chamada só: modelo do turno (1), busca web (2) e filtro de memórias (4)
+  // Jev, numa chamada só: modelo do turno (1), busca web (2), filtro de memórias (4) e Árbitro (6)
   const activeArc = campaign.script?.arcs.find((a) => a.status === "active");
   const lastGm = [...history].reverse().find((m) => m.role === "assistant");
+  const lastGmText = typeof lastGm?.content === "string" ? lastGm.content : "";
+  const player = chars.find((c) => c.kind === "player");
   const decision = await decideTurn(
     {
       setting: { name: campaign.ruleset.name, canonBased: !!campaign.ruleset.canonBased },
@@ -395,8 +401,10 @@ export async function runTurn(
           .filter((c) => c.kind === "npc" && c.active)
           .map((c) => [c.name, [c.persona.personality, c.sheet.abilities.map((a) => a.name).join(", ")].filter(Boolean).join(" | ")])
       ),
-      lastGmNarration: typeof lastGm?.content === "string" ? lastGm.content : "",
+      lastGmNarration: lastGmText,
       playerAction: playerInput,
+      // pergunta do Árbitro: a ação usa uma destas técnicas ou é treino?
+      playerAbilities: player && playerInput !== CONTINUE_INPUT ? player.sheet.abilities.map((a) => a.name) : undefined,
       memories: candidates,
       history: pastHits.map((h) => ({ id: h.id, text: historyLine(h, playerInput, adv.history.excerptChars) })),
       askComplexity: !!complexModel,
@@ -411,13 +419,25 @@ export async function runTurn(
   const memories = candidates.filter((m) => decision.keepMemory(m.id, m.importance));
   const past = pastHits.filter((h) => decision.keepHistory(h.id));
 
+  const toolCtx: ToolContext = { campaign, scene, emit };
+  // Árbitro: técnica da ficha ou treino resolvidos antes do Mestre, que narra numa chamada só. Jev falhou = não roda
+  const settled =
+    decision.mechanic && player
+      ? await runReferee(campaignId, toolCtx, player, chars, playerInput, lastGmText).catch((e): Settled[] => {
+          console.warn("[árbitro]", e);
+          return [];
+        })
+      : [];
+  const settledLine = (r: Settled) => `${r.name} ${JSON.stringify(r.args)} → ${r.output}`;
+
   const [fixed, turn] = await buildGmSystem(
     campaign,
     scene,
     chars,
     memories,
     past.length ? formatHistory(past, playerInput, adv.history.excerptChars) : "",
-    gm.system_prompt
+    gm.system_prompt,
+    settled.map(settledLine)
   );
   // a janela foi lida depois de salvar a ação: ela sai do fim e volta depois do contexto do turno
   const tail = history[history.length - 1];
@@ -450,7 +470,6 @@ export async function runTurn(
     })`;
   }
 
-  const toolCtx: ToolContext = { campaign, scene, emit };
   const maxRounds = params.maxToolRounds ?? 8;
   let finalText = "";
   // narração de rodadas que também chamaram ferramentas (ex.: narra e chama advance_time no fim):
@@ -458,9 +477,12 @@ export async function runTurn(
   let kept = "";
   let keptChoices: string[] = [];
   let finalChoices: string[] = [];
-  let timeMoved = false; // o Mestre chamou advance_time/set_time/train neste turno
+  let timeMoved = settled.some((r) => r.name === "train"); // o Mestre (ou o Árbitro) chamou advance_time/set_time/train neste turno
   const deferred: ToolCall[] = []; // anotações do Mestre (DEFERRED_TOOLS), aplicadas depois da narração
-  const done: string[] = []; // o que as ferramentas do Mestre já fizeram, para o Escrivão não repetir
+  // o que as ferramentas do Árbitro e do Mestre já fizeram, para o Escrivão não repetir
+  const done: string[] = settled.map((r) => settledLine(r).slice(0, 300));
+  // técnica e treino do jogador que o Árbitro resolveu: o Mestre não repete
+  const already = new Map(settled.filter((r) => r.name !== "roll_dice").map((r) => [settleKey(r.name, r.args), r.output]));
 
   for (let round = 0; round <= maxRounds; round++) {
     // narração em streaming: o texto da rodada vai ao jogador enquanto chega, depois do que já ficou; nunca é descartado
@@ -529,13 +551,18 @@ export async function runTurn(
             summary: toolSummary(call.function.name, args),
           });
         }
-        if (/^((advance|set)_time|train)$/.test(call.function.name)) timeMoved = true;
-        output = await executeGmTool(call.function.name, args, toolCtx);
-        scene = toolCtx.scene; // set_scene pode ter trocado a cena
+        // ponytail: um segundo uso legítimo da mesma técnica (ou treino do mesmo alvo) no mesmo turno também fica bloqueado
+        const again = player && findNamed([player], String(args.character ?? "")).length ? already.get(settleKey(call.function.name, args)) : undefined;
+        if (again) output = `Já resolvido neste turno: ${again}`;
+        else {
+          if (/^((advance|set)_time|train)$/.test(call.function.name)) timeMoved = true;
+          output = await executeGmTool(call.function.name, args, toolCtx);
+          scene = toolCtx.scene; // set_scene pode ter trocado a cena
+        }
       } catch (e) {
         output = `Erro: ${e instanceof Error ? e.message : String(e)}`;
       }
-      if (!/^(search_|read_|get_|list_)/.test(call.function.name)) done.push(`${call.function.name} ${call.function.arguments} → ${output.slice(0, 300)}`);
+      if (!/^(search_|read_|get_|list_)/.test(call.function.name) && !output.startsWith("Já resolvido neste turno")) done.push(`${call.function.name} ${call.function.arguments} → ${output.slice(0, 300)}`);
       messages.push({
         role: "tool",
         content: output,
@@ -705,6 +732,74 @@ async function fallbackClock(
   emit({ type: "time", minutes: clock.minutes + delta });
   // prazo vencido aqui (depois da narração) aparece como PERDIDO no contexto do próximo turno
   await saveClock(campaignId, clock.minutes + delta, emit);
+}
+
+type Settled = { name: string; args: Record<string, unknown>; output: string };
+const REFEREE_TOOLS = new Set(["use_ability", "train", "roll_dice"]);
+const REFEREE_TOOL_DEFS = GM_TOOLS.filter((t) => REFEREE_TOOLS.has(t.function.name));
+/** Mesma técnica (use_ability) ou mesmo alvo de treino (train); "" para as outras ferramentas. */
+const settleKey = (name: string, args: Record<string, unknown>) =>
+  name === "use_ability" || name === "train" ? `${name}:${String((name === "train" ? args.target : args.ability) ?? "").trim().toLowerCase()}` : "";
+
+/**
+ * Árbitro: quando o Jev diz que a ação é usar uma técnica da ficha ou treinar, resolve antes do Mestre (use_ability,
+ * train e o roll_dice do dano), sempre para o personagem do jogador e no mesmo ToolContext do turno: dados, chips e
+ * domínio (masteryGained) saem iguais aos do Mestre. Antes, essas ferramentas forçavam outra rodada com o prompt
+ * inteiro do Mestre em ~metade dos turnos. Uma chamada; devolve só o que resolveu (erro fica para o Mestre).
+ */
+async function runReferee(
+  campaignId: string,
+  ctx: ToolContext,
+  player: Character,
+  chars: Character[],
+  playerInput: string,
+  lastNarration: string
+): Promise<Settled[]> {
+  ctx.emit({ type: "status", text: "O Árbitro está resolvendo a ação..." });
+  const agent = await getAgent("referee");
+  const rs = ctx.campaign.ruleset;
+  const clock = getClock(ctx.campaign.state);
+  const npcs = chars.filter((c) => c.kind === "npc" && c.active).map((c) => c.name);
+  const state = [
+    `Hora na história: ${clock ? `${formatClock(clock.minutes)} (${period(clock.minutes)})` : "não definida (treino só depois do Mestre definir a hora)"}`,
+    tablePromptBlock(getTable(ctx.campaign.state)),
+    rs.diceNotes ? `Rolagens (MECÂNICA): ${rs.diceNotes}` : "",
+    `\n--- REGRAS DE TREINO ---\n${progressionPromptLines(rs).filter((l) => l.startsWith("Treino")).join("\n")}`,
+    `\n--- JOGADOR ---\n${sheetSummary(player, false, rs, true)}`,
+    `NPCs em cena: ${npcs.join(", ") || "(nenhum)"}`,
+  ];
+  const r = await chat({
+    model: agent.model,
+    messages: [
+      { role: "system", content: agent.system_prompt },
+      {
+        role: "user",
+        content: `--- ESTADO ---\n${state.filter(Boolean).join("\n")}\n\n--- ÚLTIMA NARRAÇÃO DO MESTRE ---\n${lastNarration.slice(-1500) || "(nenhuma)"}\n\n--- AÇÃO DO JOGADOR ---\n${playerInput}`,
+      },
+    ],
+    temperature: agent.temperature,
+    max_tokens: agent.max_tokens,
+    reasoning: agent.params.reasoning as Record<string, unknown> | undefined,
+    tools: REFEREE_TOOL_DEFS,
+    agentId: "referee",
+    campaignId,
+    purpose: "árbitro (antes do Mestre)",
+  });
+  const out: Settled[] = [];
+  // dano por último e só se alguma técnica passou: numa chamada só, o Árbitro não vê o resultado do teste
+  const calls = r.toolCalls
+    .filter((c) => REFEREE_TOOLS.has(c.function.name))
+    .sort((a, b) => Number(a.function.name === "roll_dice") - Number(b.function.name === "roll_dice"));
+  for (const call of calls) {
+    const name = call.function.name;
+    const args = argsOf(call);
+    if (name !== "roll_dice") args.character = player.name;
+    else if (!out.some((s) => s.name === "use_ability" && !/: FALHA|FALHOU/.test(s.output))) continue;
+    const output = await executeGmTool(name, args, ctx).catch((e) => `Erro: ${e instanceof Error ? e.message : String(e)}`);
+    // técnica fora da ficha, treino recusado: fica para o Mestre resolver do jeito dele
+    if (name === "train" ? /^Treino de/.test(output) : !/^Erro/.test(output)) out.push({ name, args, output });
+  }
+  return out;
 }
 
 const SCRIBE_TOOL_DEFS = GM_TOOLS.filter((t) => SCRIBE_TOOLS.has(t.function.name));

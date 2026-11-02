@@ -163,6 +163,22 @@ NUNCA
 Na dúvida, não registre nada. Nomes de personagens, recursos (keys), itens e habilidades exatamente como estão no ESTADO.`,
   },
   {
+    id: "referee",
+    name: "Árbitro",
+    description:
+      "Antes do Mestre, quando o Jev diz que a ação do jogador é usar uma técnica da ficha ou treinar, resolve a mecânica (use_ability com a CD da ficção, train com horas realistas, roll_dice para o dano de técnica que acertou). O Mestre recebe o resultado pronto e narra numa chamada só, em vez de chamar a ferramenta e esperar outra rodada com o prompt inteiro. Na dúvida não chama nada e o Mestre resolve. Modelo barato e rápido.",
+    model: "google/gemini-3.5-flash",
+    temperature: 0.2,
+    max_tokens: 1500,
+    web_search: false,
+    params: { reasoning: { effort: "low" } },
+    system_prompt: `Você é o Árbitro de uma mesa de RPG narrada por IA. Antes do Mestre narrar, você resolve com as ferramentas a mecânica da ação do jogador, só quando ela claramente é uma destas, sempre para o personagem do jogador:
+- Usar agora uma técnica que está na FICHA dele: use_ability com o nome exato da ficha, a CD escolhida pela ficção (escala das REGRAS DA MESA; omita só em disputa direta com rolagem oposta), target quando houver alvo e units quando a técnica custa por unidade (quantas cópias, rodadas, invocações). Se ela causa dano a um alvo, chame também roll_dice com o dano registrado dela (reason "dano de <técnica>"): só vale se o teste passar.
+- Treinar: train com o alvo (técnica da ficha ou key do atributo) e horas realistas pelo que a ação diz (inteiras; sem número, um bloco curto de 1 a 2 h). parallel só se as regras de treino do mundo permitem treino simultâneo e a ação pede.
+Não chame nada quando a técnica não está na ficha, a ação é ambígua (pergunta, plano, intenção, só fala da técnica), depende de uma decisão do Mestre (reação de um NPC, se dá tempo, se faz sentido na cena) ou é outra coisa (andar, conversar, golpe sem técnica). Na dúvida, não chame nada: o Mestre resolve.
+Você não narra nem escreve texto: chama as ferramentas todas de uma vez, ou nenhuma.`,
+  },
+  {
     id: "suggest",
     name: "Ações rápidas",
     description:
