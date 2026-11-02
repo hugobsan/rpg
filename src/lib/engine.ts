@@ -183,7 +183,7 @@ async function buildGmSystem(
     "search_history busca no chat inteiro da campanha (turnos e conversas com NPCs, com dia, hora e local): use para lembrar exatamente o que alguém disse ou fez, ou detalhes antigos que não viraram memória.",
     "O estado do turno (cena, hora, personagens, memórias) chega numa mensagem de contexto logo antes da ação do jogador.",
     // cada ferramenta chamada antes do texto custa outra rodada com o prompt inteiro
-    `Anotações (${[...DEFERRED_TOOLS].join(", ")}) só valem depois da narração: chame-as junto da narração, no fim da resposta, nunca antes dela. Dano, cura e gasto de recurso, itens ganhos ou perdidos, XP, domínio por evento, memórias e missões o Escrivão registra sozinho depois, pelo que a narração mostra: narre com números claros (quem perdeu quanto, o que pegou ou entregou). advance_time também é anotação: faça o tempo andar em todo turno em que ele passa, é o que leva a cena adiante (se esquecer, o sistema estima).`,
+    `Anotações (${[...DEFERRED_TOOLS].join(", ")}) só valem depois da narração: chame-as junto da narração, no fim da resposta, nunca antes dela. Dano, cura e gasto de recurso, itens ganhos ou perdidos, XP, domínio por evento, memórias e missões o Escrivão registra sozinho depois, pelo que a narração mostra: narre com números claros (quem perdeu quanto, o que pegou ou entregou). advance_time também é anotação e é opcional: depois da narração o sistema anda o relógio pelo tempo que ela mostra, então diga no texto quanto passou; use advance_time só para fixar a duração exata.`,
   ];
   const parts = [
     tablePromptBlock(getTable(campaign.state)),
@@ -223,6 +223,8 @@ async function buildGmSystem(
           .map((d) => `- ${d.content}${d.subject === "proxima_cena" ? " (vale nesta cena e na próxima)" : ""}`)
           .join("\n")}`
       : "",
+    // por último, colado na ação: o estado acima é mecânico e puxava a narração para o tom de relatório
+    "\n(Narração: calibre pelo momento, como em NARRAÇÃO. Cheia em chegada, descoberta, viagem e resultado; curta e interativa em fala e batalha.)",
   ];
   return [fixed.filter(Boolean).join("\n"), parts.filter(Boolean).join("\n")];
 }

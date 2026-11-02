@@ -453,7 +453,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "advance_time",
       description:
-        "Avança o relógio da história pelo tempo que a interação levou. Chame uma vez por turno em que o tempo passa, com uma estimativa realista: uma troca de falas leva minutos, um combate poucos minutos, uma refeição ou um treino curto ~1 h, uma viagem horas. Exige o relógio já definido (set_time).",
+        "Opcional: fixa quanto o relógio da história anda neste turno. Sem ela, o sistema estima pelo que a narração mostra; use quando souber a duração exata (uma troca de falas leva minutos, um combate poucos minutos, uma refeição ou um treino curto ~1 h, uma viagem horas). Uma vez por turno. Exige o relógio já definido (set_time).",
       parameters: S(
         {
           minutes: { type: "number", description: "minutos que se passaram (ex: 5, 20, 90, 240)" },
