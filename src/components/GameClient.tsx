@@ -62,12 +62,21 @@ const recapKey = (id: string) => `chronicle.recap.${id}`;
 export default function GameClient({ campaignId, initial }: { campaignId: string; initial?: CampaignView | null }) {
   const [phases, setPhases] = useState<Phase[]>([]);
   const [openNpc, setOpenNpc] = useState<Character | null>(null);
+  const [talk, setTalk] = useState<{ npcId: string; id: string; messages: { role: "player" | "npc"; content: string }[] } | null>(null);
   const stateRef = useRef<CampaignView | null>(null);
 
   const onEvent = (ev: TurnEvent) => {
     const p = phaseOf(ev);
     if (p) setPhases((ps) => (ps[ps.length - 1] === p ? ps : [...ps.filter((x) => x !== p), p]));
     if (ev.type === "ooc") setOocOpen(true); // a pergunta e a resposta já estão na conversa fora do jogo
+    if (ev.type === "npc_talk") {
+      // a ação era fala só com um NPC em cena: a conversa segue no modal dele, já com as duas falas
+      const npc = stateRef.current?.characters.find((c) => c.id === ev.npcId);
+      if (npc) {
+        setTalk({ npcId: ev.npcId, id: ev.sessionId, messages: ev.messages });
+        setOpenNpc(npc);
+      }
+    }
     if (ev.type === "npc_message")
       toast(ev.preview ? `“${ev.preview}”` : "Abra a conversa para ler.", {
         title: `${ev.name} quer falar com você`,
@@ -82,7 +91,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   };
 
   const {
-    state, setState, reload: reloadState, error, setError,
+    state, setState, reload: reloadState, error, setError, talked,
     feed, draft, choices, setChoices, busy, status, send, regenerate, edit, canStop, stop,
     pendingDice, rolling, roll, releaseDice,
     feedRef, hasMore, loadingOlder, loadOlder,
@@ -493,10 +502,14 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           onChanged={reloadState}
           onToggleActive={(n) => {
             setOpenNpc(null);
+            setTalk(null);
             setNpcActive([n], !n.active);
           }}
-          onClose={() => {
+          session={talk?.npcId === openNpc.id ? talk : undefined}
+          onClose={(saved) => {
+            if (saved) talked(openNpc.name); // a linha que o servidor gravou no chat da campanha
             setOpenNpc(null);
+            setTalk(null);
             reloadState();
           }}
         />

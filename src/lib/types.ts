@@ -495,5 +495,7 @@ export type TurnEvent =
   | { type: "time"; minutes: number } // relógio da história mudou (minutos desde o Dia 1, 00:00)
   | { type: "npc_message"; npcId: string; name: string; preview: string } // NPC chamou o jogador em particular
   | { type: "ooc" } // a ação era fala fora do jogo sobre o registro: foi respondida na conversa fora do jogo (gm_notes), sem turno
+  // a ação era fala só com um NPC em cena: virou a 1ª mensagem da conversa particular com ele (npc_chats), sem turno
+  | { type: "npc_talk"; npcId: string; sessionId: string; messages: { role: "player" | "npc"; content: string }[] }
   | { type: "done" }
   | { type: "error"; message: string };

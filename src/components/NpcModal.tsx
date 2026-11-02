@@ -79,6 +79,7 @@ export default function NpcModal({
   npc,
   campaign,
   profiling = false,
+  session,
   onChanged,
   onToggleActive,
   onClose,
@@ -88,13 +89,15 @@ export default function NpcModal({
   campaign: Campaign;
   profiling?: boolean; // o Criador de personagens está montando o perfil agora
   onChanged?: () => void;
+  // conversa que começou no chat da campanha (evento npc_talk): abre nela, já com as falas
+  session?: { id: string; messages: ChatMsg[] };
   onToggleActive: (npc: Character) => void; // tirar/trazer da cena; quem chama fecha o modal
-  onClose: () => void;
+  onClose: (saved: boolean) => void; // saved: a conversa foi encerrada e registrada (linha no chat da campanha)
 }) {
   const [view, setView] = useState<(typeof TABS)[number][0]>("chat");
   const [redoing, setRedoing] = useState(false);
-  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [msgs, setMsgs] = useState<ChatMsg[]>(session?.messages ?? []);
+  const [sessionId, setSessionId] = useState<string | null>(session?.id ?? null);
   const [calledBy, setCalledBy] = useState(false); // a conversa foi aberta pelo NPC (npc_message)
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -120,6 +123,7 @@ export default function NpcModal({
 
   // o NPC mandou mensagem (npc_message): abre nessa conversa; o servidor marca como lida
   useEffect(() => {
+    if (session) return;
     fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}?pending=1`)
       .then((r) => r.json())
       .then((d: { sessionId: string | null; messages: ChatMsg[] }) => {
@@ -129,7 +133,7 @@ export default function NpcModal({
         setMsgs(d.messages.map((m) => ({ role: m.role, content: m.content })));
       })
       .catch(() => {});
-  }, [campaignId, npc.id]);
+  }, [campaignId, npc.id, session]);
 
   // Esc fecha (encerrando a conversa, como o clique fora)
   useEffect(() => {
@@ -176,16 +180,17 @@ export default function NpcModal({
 
   const endChat = async () => {
     if (ending) return;
+    let saved = false;
     if (sessionId && msgs.length >= 2) {
       setEnding(true);
-      await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}/end`, {
+      saved = await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}/end`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId }),
-      }).catch(() => {});
+      }).then((r) => r.ok, () => false);
     }
     stopVoice();
-    onClose();
+    onClose(saved);
   };
 
   // otimista: a tela já mudou; se o PUT falhar, `undo` desfaz e sai o aviso
@@ -285,11 +290,17 @@ export default function NpcModal({
                   <span><b>{npc.name}</b> procurou você em particular. O Mestre não narra esta conversa; o que for importante entra na história quando você encerrar.</span>
                 </div>
               )}
+              {session && (
+                <div className={s.called}>
+                  <Svg d="M4 5h16v11H10l-5 4v-4H4z" />
+                  <span>Você falou com <b>{npc.name}</b>: a conversa segue aqui, fora da narração do Mestre. Ao encerrar, o que ela mudou (itens, missões) é registrado e o Mestre retoma a cena de onde ela parou.</span>
+                </div>
+              )}
               {msgs.length === 0 && (
                 <p className={s.intro}>
                   <b>Conversa particular com {npc.name}</b>
                   Fora da narração do Mestre. Dependendo da cena, o personagem pode recusar parar para conversar.
-                  Ao encerrar, o Cronista guarda os pontos importantes para o Mestre, e {npc.name} lembra de tudo.
+                  Ao encerrar, o que ela mudou (itens, missões) é registrado, o Cronista guarda os pontos importantes para o Mestre, e {npc.name} lembra de tudo.
                 </p>
               )}
               {msgs.map((m, i) => (

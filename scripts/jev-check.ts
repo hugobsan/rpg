@@ -7,7 +7,7 @@
  */
 import {
   buildCastRequest, buildElapsedRequest, buildPlaceRequest, buildImportanceRequest, buildNpcRequest, ELAPSED_MINUTES, buildTurnRequest, decide, gateTurn, importanceLevel,
-  COMPLEX_MIN, MEMORY_MIN, META_MIN, MODE_MIN, MOVED_MIN, NPC_WILLING_MIN, PRESENT_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
+  COMPLEX_MIN, MEMORY_MIN, META_MIN, TALK_MIN, MODE_MIN, MOVED_MIN, NPC_WILLING_MIN, PRESENT_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
 } from "../src/lib/decisions";
 import { pool } from "../src/lib/db";
 
@@ -136,6 +136,36 @@ const importanceCases: [string, number | null][] = [
   for (const [action, exp] of metaCases) {
     const a = await ask(action, buildTurnRequest({ ...base, playerAction: action, askComplexity: false, askWeb: false, askMeta: true }));
     check(action, exp === null ? null : gateTurn(a).meta === exp, p(a.meta), `esperado ${exp}`);
+  }
+
+  console.log(`\n== 11. conversa direta com um NPC em cena (chat do NPC se P(NPC) >= ${TALK_MIN})`);
+  // casos reais da campanha (ação e fim da narração anterior); esperado: nome do NPC ou null (nenhum)
+  const genma = "calmo e pragmático, prefere verificar o que alguém consegue fazer";
+  const ichiraku = { scene: { mode: "downtime", location: "Ichiraku Ramen", title: null, summary: null }, npcsInScene: { Teuchi: "caloroso, paciente e bem-humorado" } };
+  const cat = { scene: { mode: "exploration", location: "Casa da moradora, Konoha", title: "Gato perdido", summary: null }, npcsInScene: { "Genma Shiranui": genma, Moradora: "dona do gato, aflita" } };
+  const tower = { scene: { mode: "exploration", location: "Torre do Hokage, balcão de missões", title: null, summary: null }, npcsInScene: { "Genma Shiranui": genma, Recepcionista: "funcionária do balcão de missões" } };
+  const talkCases: [string, Partial<TurnInput>, string | null][] = [
+    ["Acho que vou querer sim, hoje sua filha não está com você?", { ...ichiraku, lastGmNarration: '**Teuchi:** "Você veio no último instante. Ainda tenho caldo quente, mas já estava pensando em apagar o fogo. Vai querer uma tigela ou veio só fiscalizar meu horário?"' }, "Teuchi"],
+    ["Só mais uma dúvida, você sabe se ele comeu antes de sair?", { ...cat, lastGmNarration: 'A mulher busca um pequeno recipiente com petiscos e o oferece a você.\n\n**Moradora:** "Ele conhece o barulho deste pote. Só não gosta que corram atrás dele."\n\nGenma permanece perto da saída para o quintal.\n\n**Genma Shiranui:** "Temos um último ponto confirmado e dois lugares prováveis. Por onde quer verificar primeiro?"' }, "Moradora"],
+    ["Certo, você ainda está a fim de mais missões depois de entregar essas?", { ...tower, lastGmNarration: '**Genma Shiranui:** "Entrega completa e equipamento devolvido. Você poupou o trajeto, mas o esforço volta junto com as lembranças."\n\nEle confere a ficha.\n\n**Genma Shiranui:** "Agora podemos dar baixa nos dois serviços na torre."' }, "Genma Shiranui"],
+    ['Pergunto à recepcionista: "A outra missão tem um prazo?"', { ...tower, lastGmNarration: '**Genma Shiranui:** "Rank D, dentro da vila. Primeiro conversamos com a dona."\n\n**Recepcionista:** "A entrega deve ser feita até o meio-dia."\n\n**Genma Shiranui:** "Se estiver de acordo, confirmamos e seguimos para o endereço."' }, "Recepcionista"],
+    ['Entrar no ichiraku. "Vocês não dormem não?"', { ...ichiraku, scene: { ...ichiraku.scene, location: "Rua diante do Ichiraku" }, lastGmNarration: "Ainda há luz sob o toldo da pequena casa de lámen; através da cortina, você ouve louça sendo recolhida. Você está na rua diante do Ichiraku, sem ter entrado ainda." }, null],
+    ["Oferecer outro petisco e deixar que cheire minha mão", { ...cat, lastGmNarration: "Após cerca de dois minutos, o gato está ao alcance das suas mãos, comendo junto aos seus pés. Ele ainda não se deixa tocar." }, null],
+    ["Treinar de novo outra rodada de Arremesso de shuriken e kunai", { scene: { mode: "training", location: "Campo de treino, Konoha", title: null, summary: null }, npcsInScene: { "Iruka Umino": "protetor, rigoroso mas justo" }, lastGmNarration: "As kunais permanecem em 2. Iruka observa de longe, de braços cruzados." }, null],
+    ["Entrego a ficha ao Genma e pergunto se ele quer mais missões depois dessas.", { ...tower, lastGmNarration: '**Genma Shiranui:** "Agora podemos dar baixa nos dois serviços na torre."' }, null],
+    ["Pergunto ao Genma e à recepcionista se alguém viu o gato por aqui.", { ...tower, lastGmNarration: '**Recepcionista:** "Mais alguma coisa?"' }, null],
+    ["Pergunto ao Kakashi se ele vai treinar a gente amanhã.", { ...tower, lastGmNarration: '**Genma Shiranui:** "Agora podemos dar baixa nos dois serviços na torre."' }, null],
+    ['"Valeu, Teuchi! Tava ótimo."', { ...ichiraku, lastGmNarration: '**Teuchi:** "Gostou? É a receita da casa."' }, "Teuchi"],
+    // ambíguos (só imprime): gesto pequeno junto da fala; reclamação ao Mestre com NPC em cena (o meta vem antes)
+    ["Sorrio e pergunto ao Teuchi quanto fica a conta.", { ...ichiraku, lastGmNarration: '**Teuchi:** "Gostou? É a receita da casa."' }, undefined as unknown as null],
+    ["Por que você me deu uma tigela? Eu não comprei nada.", { ...ichiraku, lastGmNarration: '**Teuchi:** "Gostou? É a receita da casa."' }, undefined as unknown as null],
+  ];
+  for (const [action, input, exp] of talkCases) {
+    const a = await ask(action, buildTurnRequest({ ...base, ...input, playerAction: action, askComplexity: false, askWeb: false, askTalk: true }));
+    const t = a.talk;
+    const probs = t.type === "choice" ? JSON.stringify(Object.fromEntries(Object.entries(t.probabilities || {}).map(([k, v]) => [k, +v.toFixed(2)]))) : "";
+    const got = gateTurn(a).talk;
+    check(`${action} → ${got ?? "nenhum"} ${probs}`, exp === undefined ? null : got === exp, t.type === "choice" ? t.probabilities?.[exp ?? t.choice] ?? NaN : NaN, `esperado ${exp === undefined ? "? (ambíguo)" : exp ?? "nenhum"}`);
   }
 
   console.log(`\n== 3. NPC topa conversar (recusa se P < ${NPC_WILLING_MIN})`);
