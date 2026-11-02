@@ -59,12 +59,15 @@ function RestField({ label, value, onSave }: { label: string; value?: { min: num
   };
   const box = (v: string, set: (v: string) => void, which: string) => (
     <input type="number" min={0} max={999} step={1} value={v} placeholder="—" className={s.num} aria-label={`${label}, ${which}`}
-      onChange={(e) => set(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
+      onChange={(e) => set(e.target.value)} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
   );
   return (
     <div className={s.line}>
       <span>{label}</span>
-      <span className={s.range}>{box(min, setMin, "mínimo")} a {box(max, setMax, "máximo")}</span>
+      {/* salva quando o foco sai da linha: ir do mínimo ao máximo não grava pela metade */}
+      <span className={s.range} onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && commit()}>
+        {box(min, setMin, "mínimo")} a {box(max, setMax, "máximo")}
+      </span>
     </div>
   );
 }
