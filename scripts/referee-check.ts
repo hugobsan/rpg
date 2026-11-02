@@ -169,6 +169,11 @@ async function main() {
     assert.deepEqual(short.arcs.map((a: { title: string }) => a.title), ["Ondas", "Exame"], "get_script: arco ativo e o seguinte");
     assert.deepEqual(short.otherArcs, ["Academia (done)", "Invasão (pending)"]);
     assert.equal(JSON.parse(await executeGmTool("get_script", { full: true }, toolCtx)).arcs.length, 4, "full=true: o roteiro inteiro");
+    // get_character: tudo por padrão (técnica sem users e ref), ou só as seções pedidas; recursos e atributos sempre
+    const hugo = JSON.parse(await executeGmTool("get_character", { name: "Hugo" }, toolCtx));
+    assert.ok(hugo.persona && hugo.sheet.inventory && hugo.sheet.abilities[0].name === "Katon Teste" && !("ref" in hugo.sheet.abilities[0]));
+    const persona = JSON.parse(await executeGmTool("get_character", { name: "Hugo", sections: ["persona"] }, toolCtx));
+    assert.ok(persona.persona && persona.sheet.resources && !persona.sheet.abilities && !persona.sheet.inventory, "só a persona");
     assert.equal(await chakra(), c0 - 6, "custo cobrado uma vez, do jogador");
     // ficha por relevância: a técnica da ação vai completa, a outra numa linha (nome, rank, domínio, custo)
     assert.match(ctx, /- Katon Teste \[ninjutsu, rank C.*efeito: bola de fogo/);
@@ -220,7 +225,7 @@ async function main() {
     }
     assert.equal(refScript.length + gmScript.length, 0);
 
-    console.log("referee-check: ok (Árbitro resolve antes e o Mestre narra numa chamada, dano só se a técnica passou, treino anda o relógio, guarda contra repetição, mechanic não e Jev falhando não chamam o Árbitro, roteiro no contexto e get_script curto, trecho curto do livro só com o Jev dizendo sim, ficha do jogador por relevância e completa para o Árbitro)");
+    console.log("referee-check: ok (Árbitro resolve antes e o Mestre narra numa chamada, dano só se a técnica passou, treino anda o relógio, guarda contra repetição, mechanic não e Jev falhando não chamam o Árbitro, roteiro no contexto e get_script curto, get_character por seções, trecho curto do livro só com o Jev dizendo sim, ficha do jogador por relevância e completa para o Árbitro)");
   } finally {
     await new Promise((r) => setTimeout(r, 300)); // o índice do histórico roda depois do done
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);

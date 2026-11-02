@@ -569,8 +569,19 @@ export const GM_TOOLS: ToolDef[] = [
     type: "function",
     function: {
       name: "get_character",
-      description: "Lê a ficha completa e persona de um personagem (player ou NPC, ativo ou não).",
-      parameters: S({ name: { type: "string" } }, ["name"]),
+      description:
+        "Lê a ficha completa e persona de um personagem (player ou NPC, ativo ou não). Recursos, atributos, XP e cargo vêm sempre; peça em sections só o que precisa (sem sections, vem tudo).",
+      parameters: S(
+        {
+          name: { type: "string" },
+          sections: {
+            type: "array",
+            items: { type: "string", enum: ["abilities", "inventory", "persona"] },
+            description: "abilities: técnicas completas (efeito, marcos); inventory: itens; persona: aparência, personalidade, passado, relações, segredos",
+          },
+        },
+        ["name"]
+      ),
     },
   },
   {
@@ -1496,11 +1507,21 @@ export async function executeGmTool(
     }
     case "get_character": {
       const c = await getChar(cid, String(args.name));
-      return JSON.stringify(
-        { name: c.name, kind: c.kind, active: c.active, canon: c.canon, sheet: c.sheet, persona: c.persona },
-        null,
-        1
-      );
+      const want = Array.isArray(args.sections) && args.sections.length ? args.sections.map(String) : ["abilities", "inventory", "persona"];
+      // sem indentação e sem o que é da biblioteca e não deste personagem (users: quem mais usa; ref: id interno)
+      const { abilities, inventory, ...sheet } = c.sheet;
+      return JSON.stringify({
+        name: c.name,
+        kind: c.kind,
+        active: c.active,
+        canon: c.canon,
+        sheet: {
+          ...sheet,
+          ...(want.includes("abilities") ? { abilities: abilities.map(({ users: _u, ref: _r, ...a }) => a) } : {}),
+          ...(want.includes("inventory") ? { inventory } : {}),
+        },
+        ...(want.includes("persona") ? { persona: c.persona } : {}),
+      });
     }
     case "get_script": {
       const s = ctx.campaign.script;
