@@ -479,7 +479,8 @@ export async function runTurn(
       askComplexity: !!complexModel && complexModel !== gm.model,
       askWeb: gm.web_search,
       askMeta: askMeta && playerInput !== CONTINUE_INPUT,
-      askTalk: askTalk && playerInput !== CONTINUE_INPUT && scene.mode !== "battle",
+      // batalha e treino: a fala com o NPC faz parte da atividade que o Mestre conduz (dados, recursos, progresso)
+      askTalk: askTalk && playerInput !== CONTINUE_INPUT && scene.mode !== "battle" && scene.mode !== "training",
       books: books.map((b) => b.title),
     },
     campaignId

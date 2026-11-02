@@ -144,7 +144,7 @@ export interface TurnInput {
   askComplexity: boolean;
   askWeb: boolean;
   askMeta?: boolean; // pergunta se a ação é fala fora do jogo sobre o registro (não no Continuar nem no gerar novamente)
-  askTalk?: boolean; // pergunta se a ação é conversa direta com um dos npcsInScene (idem; o chamador pula batalha)
+  askTalk?: boolean; // pergunta se a ação é conversa à parte com um dos npcsInScene (idem; o chamador pula batalha e treino)
   books?: string[]; // títulos dos livros de referência indexados: presente e não vazio = pergunta se a ação precisa deles
 }
 
@@ -211,11 +211,13 @@ export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest
     questions.talk = {
       type: "choice",
       instructions:
-        "A `acao_do_jogador` é só o personagem do jogador falando diretamente com UM dos `npcs_em_cena` (perguntando, respondendo ou puxando conversa com ele, como na `ultima_narracao_do_mestre`), sem fazer outra coisa no mundo? Com qual?",
+        "A `acao_do_jogador` é o personagem do jogador puxando uma conversa à parte com UM dos `npcs_em_cena`, um papo que pode seguir em particular, fora da narração do Mestre, com a cena parada, e não uma fala que faz parte do que a cena está fazendo (veja `cena` e `ultima_narracao_do_mestre`)? Com qual?",
       criteria: {
-        ...Object.fromEntries(npcs.map((n) => [n, `Só fala com ${n}: pergunta, resposta ou comentário dirigido a ${n}, sem outra ação.`])),
+        ...Object.fromEntries(
+          npcs.map((n) => [n, `Conversa à parte com ${n}: papo social, assunto pessoal, curiosidade, histórias e lembranças, pedido ou compra simples, agradecimento; nada em andamento na cena depende da resposta e não há nada para o Mestre arbitrar.`])
+        ),
         nenhum:
-          "Não é conversa só com um NPC em cena: ação no mundo (entrar, ir, pegar, entregar, oferecer, treinar, atacar, usar técnica), fala junto de uma ação (\"entro e pergunto...\", \"entrego a ficha e digo...\"), fala para vários personagens ao mesmo tempo, fala com quem não está em `npcs_em_cena`, ou fala fora do jogo ao Mestre.",
+          "Fala que faz parte da cena: sobre a atividade em andamento (treino, missão, investigação, luta, viagem), perguntar como fazer o que está sendo ensinado, propor ou discutir um método, plano ou próximo passo, aceitar ou escolher o que fazer a seguir (\"vamos começar por...\"), colher informação para a missão. Ou: ação no mundo (entrar, ir, pegar, entregar, oferecer, treinar, atacar, usar técnica), fala junto de uma ação (\"entro e pergunto...\"), fala para vários personagens, fala com quem não está em `npcs_em_cena`, fala fora do jogo ao Mestre.",
       },
     };
   for (const m of candidates)

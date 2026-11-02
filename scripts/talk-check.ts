@@ -196,7 +196,7 @@ async function main() {
     assert.ok(!jevQuestions.at(-1)?.includes("talk"), "sem pergunta talk");
     assert.equal(await count("messages"), msgsBack + 2, "a fala e a narração no chat da campanha");
 
-    // 5. Continuar, ação editada (askMeta = false) e batalha: nem perguntam
+    // 5. Continuar, ação editada (askMeta = false), batalha e treino: nem perguntam
     jevTalk = 0.9;
     for (const [input, askMeta] of [[CONTINUE_INPUT, undefined], [LINE, false]] as const) {
       const r = await turn(input, askMeta);
@@ -206,8 +206,11 @@ async function main() {
     await real.query(`UPDATE scenes SET mode = 'battle' WHERE campaign_id = $1`, [id]);
     assert.deepEqual(await turn(LINE), { gm: 1, scribe: 1, npc: 0 }, "batalha");
     assert.ok(!jevQuestions.at(-1)?.includes("talk"), "batalha: sem pergunta talk");
+    await real.query(`UPDATE scenes SET mode = 'training' WHERE campaign_id = $1`, [id]);
+    assert.deepEqual(await turn(LINE), { gm: 1, scribe: 1, npc: 0 }, "treino");
+    assert.ok(!jevQuestions.at(-1)?.includes("talk"), "treino: sem pergunta talk");
 
-    console.log("talk-check: ok (fala só com um NPC em cena vai ao chat dele sem Mestre, Escrivão nem mensagem salva; ao fechar, relógio, Escrivão e a linha no chat; o próximo turno do Mestre vê a conversa uma vez; \"não era uma conversa\" apaga e vira turno sem perguntar; limiar, Jev falhando, recusa, meta, Continuar, ação editada e batalha seguem o padrão)");
+    console.log("talk-check: ok (fala só com um NPC em cena vai ao chat dele sem Mestre, Escrivão nem mensagem salva; ao fechar, relógio, Escrivão e a linha no chat; o próximo turno do Mestre vê a conversa uma vez; \"não era uma conversa\" apaga e vira turno sem perguntar; limiar, Jev falhando, recusa, meta, Continuar, ação editada, batalha e treino seguem o padrão)");
   } finally {
     await new Promise((r) => setTimeout(r, 500)); // índice do histórico e memórias da conversa rodam em segundo plano
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);
