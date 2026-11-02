@@ -125,7 +125,7 @@ const SAVE_DIRECTIVE: ToolDef = {
     parameters: {
       type: "object",
       properties: {
-        content: { type: "string", description: "Instrução curta e autossuficiente para o Mestre, em português." },
+        content: { type: "string", description: "Instrução curta e autossuficiente, em português: o que vale na história e nas fichas (ex.: quanto um descanso recupera), sem citar nomes de ferramentas (quem aplica é o sistema)." },
         kind: {
           type: "string",
           enum: ["diretriz", "preferencia", "correcao"],

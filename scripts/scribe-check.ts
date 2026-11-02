@@ -99,6 +99,7 @@ async function main() {
       `INSERT INTO characters (campaign_id, kind, name, sheet) VALUES ($1, 'player', 'Hugo', $2), ($1, 'npc', 'Iruka', $2)`,
       [id, JSON.stringify(blankSheet(rs))]
     );
+    await real.query(`INSERT INTO memories (campaign_id, kind, subject, content, importance) VALUES ($1, 'directive', 'permanente', 'Descanso leve recupera 3 de chakra.', 5)`, [id]);
     const hp0 = (await db<{ sheet: { resources: { hp: { current: number } } } }>(`SELECT sheet FROM characters WHERE campaign_id = $1 AND name = 'Hugo'`))[0].sheet.resources.hp.current;
     const at = (pred: (e: TurnEvent) => boolean) => events.findIndex(pred);
 
@@ -136,6 +137,7 @@ async function main() {
     assert.match(ask, /ANOTAÇÕES DE MISSÃO DO MESTRE ---\n- Iruka pediu para entregar o pergaminho/);
     assert.match(ask, /NARRAÇÃO DO MESTRE ---\nVocê atravessa a vila/);
     assert.match(ask, /Hugo \(player\)/);
+    assert.match(ask, /DIRETRIZES DO JOGADOR ---\n- Descanso leve recupera 3 de chakra\./, "o Escrivão recebe as diretrizes");
     const [camp] = await db<{ state: Record<string, unknown> }>(`SELECT state FROM campaigns WHERE id = $1`);
     const [o] = getObjectives(camp.state);
     assert.equal(o?.title, "Entregar o pergaminho");
@@ -209,7 +211,7 @@ async function main() {
     assert.ok(!scribeReqs[2].tools.includes("create_npc"));
     assert.equal((await db(`SELECT 1 FROM characters WHERE campaign_id = $1 AND name = 'Mizuki'`)).length, 1, "o Escrivão registrou o NPC");
 
-    console.log("scribe-check: ok (anotações depois da narração, rodada mista, Escrivão aplicado e logado, missão com tamanho sem XP em dobro, fala sem registro vai ao Escrivão sem apagar a narração, fora do jogo com todas as ferramentas)");
+    console.log("scribe-check: ok (anotações depois da narração, rodada mista, Escrivão aplicado e logado, missão com tamanho sem XP em dobro, diretrizes ao Escrivão, fala sem registro vai ao Escrivão sem apagar a narração, fora do jogo com todas as ferramentas)");
   } finally {
     await new Promise((r) => setTimeout(r, 300)); // o índice do histórico roda depois do done
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);

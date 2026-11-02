@@ -725,7 +725,12 @@ async function runScribe(
   briefs: string[]
 ): Promise<string[]> {
   const applied: string[] = []; // o que gravou, para o Mestre saber no próximo turno
-  const [agent, campaign, chars] = await Promise.all([getAgent("scribe"), getCampaign(campaignId), getCharacters(campaignId)]);
+  const [agent, campaign, chars, directives] = await Promise.all([
+    getAgent("scribe"),
+    getCampaign(campaignId),
+    getCharacters(campaignId),
+    activeDirectives(campaignId),
+  ]);
   const clock = getClock(campaign.state);
   const sheet = (c: Character) =>
     sheetSummary(c, false, campaign.ruleset) +
@@ -753,6 +758,9 @@ async function runScribe(
         unregistered.length
           ? `\n\n--- FALAM SEM REGISTRO ---\n${unregistered.join(", ")}\nPara cada personagem com nome aqui, chame create_npc (canon=true se for da obra; brief com quem é e o que a narração mostrou). Ignore o que não é personagem (título, cabeçalho como "Resultado do treino", cargo genérico como "Funcionária") e quem já está registrado com outro nome.`
           : ""
+      }${
+        // as de registro (recuperação de recursos, custos, itens) valem para ele; o prompt manda ignorar as de narração
+        directives.length ? `\n\n--- DIRETRIZES DO JOGADOR ---\n${directives.map((d) => `- ${d.content}`).join("\n")}` : ""
       }`,
     },
   ];
