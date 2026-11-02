@@ -664,6 +664,7 @@ export interface ToolContext {
   emit: (e: TurnEvent) => void;
   sceneChanged?: boolean; // set_scene abriu cena nova ou mudou o local neste turno
   castSet?: boolean; // set_scene informou present: o elenco já está certo
+  modeSet?: boolean; // set_scene trocou o modo neste turno: o modo pela narração (engine.fallbackPlace) não mexe
   /** habilidades (personagem:ref) que já subiram de domínio neste turno por use_ability ou train: o Escrivão não repete */
   masteryGained?: Set<string>;
   /** é o Escrivão (engine.runScribe); briefs = anotações de missão do Mestre neste turno */
@@ -1294,6 +1295,7 @@ export async function executeGmTool(
         });
       }
       if (moved) ctx.sceneChanged = true;
+      if (args.mode) ctx.modeSet = true;
       let cast = "";
       if (Array.isArray(args.present)) {
         // elenco declarado: quem não está na lista sai, quem está volta

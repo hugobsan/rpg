@@ -1,6 +1,7 @@
 import { ADVANCED_DEFAULTS as D, type Advanced, getAdvanced } from "./advanced";
 import { getAgent } from "./agents";
 import { agentSource, authHeader, logApiCall } from "./openrouter";
+import type { SceneMode } from "./types";
 
 /**
  * Jev: modelo de decisão via Decisions API (a do OpenRouter, ou o mesmo endpoint na fonte escolhida no agente).
@@ -501,6 +502,8 @@ export async function decideCast(t: CastInput, campaignId: string): Promise<stri
 // da mesma sala, só planeja ir, narração vaga 0.02-0.04. Meio do vão: erro para cima põe lugar falso no mapa,
 // para baixo só deixa o local parado (como sem a checagem).
 export const MOVED_MIN = D.jev.movedMin;
+// Modo da cena pela narração (mesma chamada): troca se o Mestre não trocou e P(modo) >= limiar. Sem probe ainda.
+export const MODE_MIN = D.jev.modeMin;
 
 export interface PlaceInput {
   scene: { mode: string; location: string | null };
@@ -525,13 +528,29 @@ export function buildPlaceRequest(t: PlaceInput): DecisionRequest {
           false: "Não: continua no mesmo lugar ou numa parte dele (outro canto da sala, o pátio do mesmo prédio), só planeja ir, ou a narração não diz onde ele está.",
         },
       },
+      mode: {
+        type: "choice",
+        instructions: "Que tipo de cena a `narracao_do_mestre` mostra no fim dela, agora?",
+        criteria: {
+          exploration: "Exploração: andar, viajar, investigar, procurar, observar um lugar, agir com algum risco fora de luta.",
+          dialogue: "Diálogo: a conversa com um ou mais personagens é o centro da cena.",
+          battle: "Batalha: luta em andamento ou começando agora, com inimigo agindo.",
+          training: "Treino: praticar técnica ou atributo, aula prática, exercício.",
+          downtime: "Descanso: em casa, refeição, dormir, compras, tarefas do dia a dia sem tensão, tempo passando.",
+        },
+      },
     },
   };
 }
 
-/** true = mudou de lugar; null se o Jev falhar (aí nada muda). */
-export async function decideMoved(t: PlaceInput, campaignId: string): Promise<boolean | null> {
-  const answers = await decide(buildPlaceRequest(t), { campaignId, purpose: "jogador mudou de lugar? (Mestre não trocou)" });
-  const p = answers ? noulOf(answers, "moved") : undefined;
-  return p === undefined ? null : p >= (await getAdvanced()).jev.movedMin;
+/** Lugar e modo pela narração; null se o Jev falhar (aí nada muda). mode = null: abaixo do limiar. */
+export async function decideMoved(t: PlaceInput, campaignId: string): Promise<{ moved: boolean; mode: SceneMode | null } | null> {
+  const answers = await decide(buildPlaceRequest(t), { campaignId, purpose: "jogador mudou de lugar? modo da cena? (Mestre não trocou)" });
+  if (!answers) return null;
+  const a = await getAdvanced();
+  const m = answers.mode;
+  return {
+    moved: (noulOf(answers, "moved") ?? 0) >= a.jev.movedMin,
+    mode: m?.type === "choice" && (m.probabilities?.[m.choice] ?? 1) >= a.jev.modeMin ? (m.choice as SceneMode) : null,
+  };
 }

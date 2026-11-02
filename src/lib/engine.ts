@@ -172,6 +172,13 @@ async function buildGmSystem(
     [campaign.id]
   );
   const lastNotes = Array.isArray(last?.notes) ? last.notes : [];
+  // cena nova ainda sem resumo: o fim do último resumo de cena, para o Mestre não perder o fio
+  const [before] = scene.summary
+    ? []
+    : await q<{ summary: string }>(
+        `SELECT summary FROM scenes WHERE campaign_id = $1 AND seq < $2 AND summary <> '' ORDER BY seq DESC LIMIT 1`,
+        [campaign.id, scene.seq]
+      );
 
   // o que não muda de um turno para outro na campanha: com o cache ligado no Mestre, é o ponto de cache entre turnos
   const fixed = [
@@ -192,7 +199,13 @@ async function buildGmSystem(
       clock
         ? `Hora na história: ${formatClock(clock.minutes)} (${period(clock.minutes)})`
         : "Hora na história: AINDA NÃO DEFINIDA. Chame set_time neste turno com uma hora coerente com a história até aqui."
-    }\nMODO DA CENA (${scene.mode}): ${modeHint(getTable(campaign.state), scene.mode)}${scene.summary ? `\nResumo do que já aconteceu nesta cena (compactado): ${scene.summary}` : ""}`,
+    }\nMODO DA CENA (${scene.mode}): ${modeHint(getTable(campaign.state), scene.mode)}${
+      scene.summary
+        ? `\nResumo do que já aconteceu nesta cena (compactado): ${scene.summary}`
+        : before
+          ? `\nAntes desta cena (fim do resumo da anterior): ${before.summary.slice(-1200)}`
+          : ""
+    }`,
     objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null, (o) =>
       objectiveXp(o, campaign.ruleset, getTable(campaign.state), player?.sheet.xp ?? 0)
     ),
@@ -663,16 +676,27 @@ export async function fallbackCast(
 }
 
 /**
- * O Mestre não trocou o local no turno e a narração levou o jogador a outro lugar: o Jev julga se ele
- * mudou, o Cronista dá o nome e o set_scene aplica (o mapa registra pelo mesmo gancho). Falhou = nada muda.
+ * O Mestre não abriu cena nem trocou o local no turno (quase nunca abre): o Jev julga, numa chamada, se a narração
+ * levou o jogador a outro lugar e que modo ela mostra. Mudou de lugar: o Cronista dá o nome e o set_scene abre cena
+ * nova ali, já no modo novo (o mapa registra pelo mesmo gancho). Ficou: só o modo muda, se o Mestre não o trocou.
+ * Falhou = nada muda.
  */
 export async function fallbackPlace(campaignId: string, ctx: ToolContext, playerInput: string, narration: string): Promise<void> {
   if (ctx.sceneChanged) return;
-  const moved = await decideMoved(
+  const place = await decideMoved(
     { scene: { mode: ctx.scene.mode, location: ctx.scene.location }, playerAction: playerInput, gmNarration: narration },
     campaignId
   );
-  if (!moved) return;
+  if (!place) return;
+  const mode = !ctx.modeSet && place.mode && place.mode !== ctx.scene.mode ? place.mode : undefined;
+  const location = place.moved ? await namePlace(campaignId, ctx, narration).catch(() => null) : null;
+  // título vazio: o cabeçalho mostra o local, e um título velho não fica preso na cena nova
+  if (location) await executeGmTool("set_scene", { newScene: true, location, ...(mode && { mode }) }, ctx);
+  else if (mode) await executeGmTool("set_scene", { mode }, ctx);
+}
+
+/** Cronista: nome do lugar onde o jogador está no fim da narração (reaproveita os nomes do mapa); null = não sabe. */
+async function namePlace(campaignId: string, ctx: ToolContext, narration: string): Promise<string | null> {
   const [chronicler, map, [player]] = await Promise.all([
     getAgent("chronicler"),
     loadMap(campaignId, ctx.campaign.state),
@@ -697,8 +721,7 @@ export async function fallbackPlace(campaignId: string, ctx: ToolContext, player
     campaignId,
     purpose: "nome do local (Mestre não trocou)",
   });
-  const location = placeName(r.content, ctx.scene.location);
-  if (location) await executeGmTool("set_scene", { location }, ctx);
+  return placeName(r.content, ctx.scene.location);
 }
 
 /** Resposta do Cronista → nome do local; null se vazia, "?", longa demais ou igual ao local atual. */

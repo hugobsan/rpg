@@ -7,7 +7,7 @@
  */
 import {
   buildCastRequest, buildElapsedRequest, buildPlaceRequest, buildImportanceRequest, buildNpcRequest, ELAPSED_MINUTES, buildTurnRequest, decide, gateTurn, importanceLevel,
-  COMPLEX_MIN, MEMORY_MIN, MOVED_MIN, NPC_WILLING_MIN, PRESENT_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
+  COMPLEX_MIN, MEMORY_MIN, MODE_MIN, MOVED_MIN, NPC_WILLING_MIN, PRESENT_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
 } from "../src/lib/decisions";
 import { pool } from "../src/lib/db";
 
@@ -187,6 +187,7 @@ const importanceCases: [string, number | null][] = [
     const a = await ask(label, buildPlaceRequest({ scene: { mode: "exploration", location: loc }, playerAction: action, gmNarration: narration }));
     const v = a.moved.type === "noul" ? a.moved.noul : NaN;
     check(label, exp === null ? null : v >= MOVED_MIN === exp, v, `esperado ${exp}`);
+    if (a.mode.type === "choice") check(`  modo: ${a.mode.choice}`, null, a.mode.probabilities?.[a.mode.choice] ?? NaN, `troca se P >= ${MODE_MIN}`); // sem probe ainda
   }
 
   await pool().end();
