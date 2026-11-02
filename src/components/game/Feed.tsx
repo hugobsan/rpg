@@ -16,6 +16,9 @@ export interface Cast {
   player?: string;
   campaignId: string;
   onNpc: (npc: Character) => void;
+  // etiquetas do Escrivão desta narração ganham "desfazer" (só a do último turno, fora do turno)
+  undoFrom?: number;
+  onUndo?: (item: FeedItem) => void;
 }
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `−${-n}`);
@@ -145,14 +148,22 @@ function DiceLine({ item }: { item: FeedItem }) {
 
 const CHIP_LIMIT = 4;
 
-/** Ações do Mestre seguidas, compactas; muitas de uma vez dobram num "+N". */
-function ChipGroup({ items }: { items: FeedItem[] }) {
+/** Ações do Mestre seguidas, compactas; muitas de uma vez dobram num "+N". Registro do Escrivão: desfazer. */
+function ChipGroup({ items, cast }: { items: FeedItem[]; cast: Cast }) {
   const [open, setOpen] = useState(false);
   const shown = open || items.length <= CHIP_LIMIT ? items : items.slice(0, CHIP_LIMIT - 1);
   return (
     <div className={s.chips}>
       {shown.map((c) => (
-        <span key={c.key} className={s.chip}><Icon name={chipIcon(c)} size={13} />{chipText(c.content)}</span>
+        <span key={c.key} className={`${s.chip}${c.scribe?.undone ? ` ${s.undone}` : ""}`}>
+          <Icon name={chipIcon(c)} size={13} />
+          {c.scribe?.undone ? <del>{chipText(c.content)}</del> : chipText(c.content)}
+          {c.scribe?.undone ? <span className={s.undoneTag}>desfeito</span>
+            : c.scribe && c.scribe.messageId === cast.undoFrom && cast.onUndo && (
+              <button className={s.undo} onClick={() => cast.onUndo!(c)} data-tip="Desfazer este registro do Escrivão"
+                aria-label={`Desfazer: ${chipText(c.content)}`}>desfazer</button>
+            )}
+        </span>
       ))}
       {shown.length < items.length && (
         <button className={`${s.chip} ${s.more}`} onClick={() => setOpen(true)}>+{items.length - shown.length} ações do Mestre</button>
@@ -163,12 +174,12 @@ function ChipGroup({ items }: { items: FeedItem[] }) {
 
 /** Item do feed; memo: o streaming re-renderiza a tela a cada pedaço e os itens antigos não mudam. */
 export const FeedLine = memo(function FeedLine({ item, chips, cast }: { item?: FeedItem; chips?: FeedItem[]; cast: Cast }) {
-  if (chips) return <ChipGroup items={chips} />;
+  if (chips) return <ChipGroup items={chips} cast={cast} />;
   if (!item) return null;
   // o "Continuar" é ação interna: fica no feed (o gerar novamente corta a partir dela), mas não aparece
   if (item.kind === "player") return item.content === CONTINUE_INPUT ? null : <div className="msg-player">{item.content}</div>;
   if (item.kind === "dice") return <DiceLine item={item} />;
-  if (item.kind === "chip") return <ChipGroup items={[item]} />;
+  if (item.kind === "chip") return <ChipGroup items={[item]} cast={cast} />;
   return <GmLine item={item} cast={cast} />;
 });
 

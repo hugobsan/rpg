@@ -7,13 +7,14 @@ import { loadMap } from "./map";
 import { listJobs } from "./jobs";
 import { listLocalMaps } from "./cartographer";
 import type { LocalMapInfo } from "./mapSpec";
+import type { ScribeEntry } from "./corrections";
 import type { Campaign, Character, InboxItem, Job, Scene, WorldMap } from "./types";
 
 export interface ChatLine {
   id: number;
   role: string;
   content: string;
-  meta: { choices?: string[] };
+  meta: { choices?: string[]; scribe?: ScribeEntry[] }; // scribe: registros do Escrivão depois desta narração
 }
 
 /** Estado da campanha para a tela de jogo: GET /api/campaigns/[id] e o HTML inicial da página. */

@@ -7,6 +7,15 @@
 .name { margin: 0; font-size: calc(21px * var(--display-scale)); line-height: 1.1; overflow-wrap: anywhere; }
 .rank { margin-top: 3px; font-size: 12.5px; color: var(--text-dim); }
 .portraitAction { margin: 4px 0 0 -8px; }
+.fixBtn { margin-left: auto; align-self: flex-start; position: relative; }
+
+/* correção manual de recursos e XP */
+.fix { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-3); border: 1px dashed var(--border-strong); border-radius: var(--r-md); }
+.fixHint { margin: 0 0 2px; font-size: 12.5px; color: var(--text-dim); }
+.fixRow { display: flex; align-items: center; gap: var(--s-2); }
+.fixRow input { width: 84px; padding: 6px 8px; font-variant-numeric: tabular-nums; }
+.fixLabel { flex: 1; font-size: 13px; color: var(--text-dim); }
+.fixActions { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: 4px; }
 .blank { margin: 0; font-size: 12.5px; color: var(--text-dim); padding: var(--s-3); border: 1px dashed var(--border-strong); border-radius: var(--r-md); }
 
 /* nível de poder com a XP até o próximo */

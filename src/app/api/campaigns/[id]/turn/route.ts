@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { runTurn } from "@/lib/engine";
 import { restoreSnapshot } from "@/lib/turnSnapshot";
 import { clearPanelDecisions } from "@/lib/tools";
+import { clearPlayerFixes, turns } from "@/lib/corrections";
 import { TurnEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -9,8 +10,8 @@ export const maxDuration = 300;
 
 // Turno em andamento por campanha. { stop } aborta o da vez; um turno novo espera o anterior acabar (inclusive a volta
 // à foto de um turno parado), então parar e logo gerar de novo nunca deixa dois turnos gravando.
-// ponytail: em memória, vale para um processo só (next dev/start); com vários, precisaria de um lock no banco
-const turns = new Map<string, { stop: AbortController; done: Promise<void> }>();
+// ponytail: em memória (corrections.ts, que também barra a correção da ficha), vale para um processo só (next dev/start);
+// com vários, precisaria de um lock no banco
 
 /**
  * POST { input } | { regenerate, feedback? } | { regenerate, input } (editar a última ação) → SSE de eventos do turno
@@ -69,7 +70,9 @@ export async function POST(
             await runTurn(id, String(input || "").trim() || "(o jogador hesita)", emit, undefined, signal);
           }
           // missão aceita ou recusada pelo painel antes deste turno: o Mestre já reconheceu na cena (fala fora do jogo não narra)
+          // e as correções da ficha feitas antes dele (state.playerFixes)
           if (narrated) await clearPanelDecisions(id, started);
+          if (narrated) await clearPlayerFixes(id, started);
         } catch (e) {
           // parado: o runTurn só lança signal.reason depois da foto deste turno e da ação salvas
           if (e === signal.reason && !narrated) await restoreSnapshot(id, true).catch((err) => emit({ type: "error", message: String(err) }));

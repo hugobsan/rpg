@@ -484,7 +484,8 @@ export interface ChatgptStatus {
 
 export type TurnEvent =
   | { type: "status"; text: string }
-  | { type: "tool"; name: string; summary: string }
+  // scribe: registro do Escrivão que dá para desfazer (narração e posição em meta.scribe)
+  | { type: "tool"; name: string; summary: string; scribe?: { messageId: number; index: number } }
   | { type: "dice"; result: DiceResult }
   | { type: "narration"; content: string; messageId?: number }
   // narração em streaming: pedaços do texto enquanto o Mestre escreve. O "narration" final traz o texto inteiro

@@ -109,6 +109,20 @@ As decisões 1, 2, 4, 6 e 7 vão numa única chamada antes do turno, antes da fo
 
 Cada ferramenta que o Mestre chama obriga outra rodada com o prompt inteiro (~35 mil tokens), e a maioria era anotação cujo resultado ele não precisa para narrar. Agora as anotações (`DEFERRED_TOOLS` em `src/lib/tools.ts`: `set_scene`, `set_npc_active`, `set_rank`, `update_script`, `note_objective`) só rodam depois da narração: se a resposta traz narração e só anotações, o turno acaba ali, sem outra chamada; numa rodada mista ou sem texto, a anotação responde "Anotado" na hora e as outras ferramentas rodam como sempre. Depois que a narração é salva e enviada, e antes do fim do turno (o "gerar novamente" não cruza com elas), rodam as anotações e, em paralelo, o relógio do Jev seguido do **Escrivão**, o local e o elenco. Antes do Mestre, se o Jev aprovou, o **Árbitro** resolve técnica da ficha ou treino do jogador numa chamada (`use_ability`, `train`, `roll_dice` do dano só se a técnica passou), no mesmo contexto de ferramentas do turno; o resultado entra no contexto do Mestre em JÁ RESOLVIDO NESTE TURNO e, se ele chamar de novo a mesma técnica ou treino do jogador, recebe o resultado sem executar (verificação: `npx tsx scripts/referee-check.ts`). O Escrivão lê a ação, a narração, o que as ferramentas do Árbitro e do Mestre já fizeram (dados, `use_ability`, que já cobrou o custo, `train`), as diretrizes do jogador (segue as de registro e ignora as de narração) e um estado compacto (fichas do jogador e dos NPCs em cena, missões com id, hora) e registra só o que a narração estabeleceu, numa chamada com as ferramentas em paralelo (uma segunda só se alguma deu erro). `update_resource`, `add_item`, `remove_item`, `add_memory`, `grant_xp`, `update_ability_progress`, `update_extra_field`, `add_objective`, `update_objective` e `advance_time` saíram do turno do Mestre, mas continuam na conversa fora do jogo para corrigir o que for preciso. Verificação sem IA: `npx tsx scripts/scribe-check.ts`.
 
+### Correções do jogador
+
+Como numa mesa de verdade, o jogador corrige a própria ficha onde o dado aparece, sem IA (`src/lib/corrections.ts`, rota `POST /api/campaigns/[id]/corrections`; recusada durante um turno): **Corrigir** na Ficha (recursos, atual e máximo, e XP), no Inventário (pôr, tirar, mudar a quantidade; não é largar na história), domínio no card aberto da técnica e o status da missão (aberta, concluída, cancelada; perdida que foi cumprida vira concluída). Passa pelas ferramentas do jogo: XP sobe nível, e concluir dá a XP da missão uma vez só (`xpGiven`; sair de concluída devolve). Cada registro do Escrivão fica na narração (`meta.scribe`: ferramenta, argumentos e a diferença que ele fez), e as etiquetas dele no chat do último turno têm **desfazer** (inverso por delta: item, recurso, XP, domínio, campo, memória criada, missão criada, status anterior de missão com a XP; desfeito uma vez só, e sai de `meta.notes`). O Mestre fica sabendo numa linha do contexto do turno seguinte (`state.playerFixes`, consumida depois da narração, como o `decidedAt` das missões); o "gerar novamente" volta à foto, então correção e desfeito feitos depois do turno somem com ele. Cada correção vai para a tabela `corrections` (origem `manual` ou `desfazer`, agente do registro quando se sabe), para medir os erros:
+
+```sql
+-- quantos registros do Escrivão foram desfeitos
+SELECT count(*) AS registros, count(*) FILTER (WHERE (e->>'undone')::boolean) AS desfeitos
+FROM messages m, jsonb_array_elements(m.meta->'scribe') e;
+-- correções por origem e tipo
+SELECT source, agent, kind, count(*) FROM corrections GROUP BY 1, 2, 3 ORDER BY 4 DESC;
+```
+
+Verificação sem IA: `npx tsx scripts/corrections-check.ts`.
+
 ### Ritmo por modo de cena
 
 A cena atual tem um modo — `exploration`, `dialogue`, `battle`, `training`, `downtime` — que o Mestre troca via `set_scene`. Cada modo muda as instruções de ritmo (batalha = turnos táticos com recursos honestos; diálogo = falas curtas; treino = progresso incremental com recompensas mecânicas) e a cor/indicador na interface. Como o Mestre quase nunca troca, depois da narração o Jev também escolhe o modo que ela mostra (na mesma chamada do local, abaixo): se o Mestre não trocou o modo no turno e o do Jev é outro, com P ≥ `jev.modeMin` (0,6, ainda sem probe), a cena passa para ele.
@@ -238,6 +252,7 @@ src/lib/
   ruleset.ts               # mecânica agnóstica + normalização
   adventure.ts             # Criador de aventuras: parse da resposta, merge do rascunho, validação, progresso
   progression.ts           # domínio, nível de poder, pontos livres, teto e treino
+  corrections.ts           # correções do jogador: edição manual da ficha, desfazer registro do Escrivão, linha ao Mestre, medição
   map.ts                   # mapa do mundo (locais, rotas, layout) e palco da cena
 src/app/                   # telas + rotas de API (Next.js App Router)
 ```

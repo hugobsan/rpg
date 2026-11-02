@@ -23,6 +23,7 @@ import { getObjectives, objectivesPromptBlock, objectiveXp } from "./objectives"
 import { getStage, loadMap, mapPromptBlock, normName } from "./map";
 import { getTable, modeHint, tablePromptBlock, xpRuleText } from "./table";
 import { takeSnapshot } from "./turnSnapshot";
+import { playerFixesLine, scribeState, scribeUndo, type ScribeEntry } from "./corrections";
 import { CONTINUE_INPUT } from "./continueScene";
 import {
   DEFERRED_TOOLS,
@@ -232,6 +233,7 @@ async function buildGmSystem(
     lastNotes.length
       ? `\n--- O ESCRIVÃO REGISTROU DEPOIS DA SUA ÚLTIMA NARRAÇÃO (já está nas fichas; reconheça na história se for marcante, como um marco de domínio ou nível novo) ---\n${lastNotes.map((n) => `- ${n}`).join("\n")}`
       : "",
+    playerFixesLine(campaign.state),
     directives.length
       ? `\n--- DIRETRIZES DO JOGADOR (fora do jogo) — siga ---\n${directives
           .map((d) => `- ${d.content}${d.subject === "proxima_cena" ? " (vale nesta cena e na próxima)" : ""}`)
@@ -624,10 +626,15 @@ export async function runTurn(
     ...deferred.filter((c) => c.function.name === "map_brief").map(applyNote),
     // Escrivão depois do relógio: prazo relativo de missão conta da hora nova e as gravações de objetivos não se cruzam
     (timeMoved ? Promise.resolve() : fallbackClock(campaignId, campaign, scene, playerInput, narration, emit).catch(() => {}))
-      .then(() => runScribe(campaignId, toolCtx, playerInput, narration, done, briefs))
-      // junto da narração: o próximo turno mostra ao Mestre; o "gerar novamente" apaga com a mensagem
-      .then(async (notes) => {
-        if (notes.length) await q(`UPDATE messages SET meta = meta || jsonb_build_object('notes', $1::jsonb) WHERE id = $2`, [JSON.stringify(notes), msgId]);
+      .then(() => runScribe(campaignId, toolCtx, playerInput, narration, done, briefs, msgId))
+      // junto da narração: o próximo turno mostra ao Mestre (notes) e a etiqueta desfaz (scribe); o "gerar novamente" apaga com a mensagem
+      .then(async (entries) => {
+        if (entries.length)
+          await q(`UPDATE messages SET meta = meta || jsonb_build_object('notes', $1::jsonb, 'scribe', $2::jsonb) WHERE id = $3`, [
+            JSON.stringify(entries.map((e) => e.note)),
+            JSON.stringify(entries),
+            msgId,
+          ]);
       })
       .catch((e) => console.warn("[escrivão]", e)),
     // local antes do elenco: quem continua na cena é julgado já no lugar novo
@@ -845,7 +852,8 @@ const CREATE_NPC_DEF = GM_TOOLS.find((t) => t.function.name === "create_npc")!;
  * Escrivão: depois da narração, registra nas fichas o que a ação e a narração estabeleceram (recursos, itens, XP,
  * domínio por evento, memórias e missões, inclusive as anotações note_objective do Mestre). Essas ferramentas saíram
  * do Mestre: cada uma custava outra rodada com o prompt inteiro dele. Uma chamada com as ferramentas em paralelo e,
- * só se alguma deu erro, uma segunda para corrigir. Falhou = nada muda.
+ * só se alguma deu erro, uma segunda para corrigir. Falhou = nada muda. Cada registro guarda o que mudou (corrections.ts)
+ * e as etiquetas dele levam { messageId, index }: o jogador desfaz pelo chat.
  */
 async function runScribe(
   campaignId: string,
@@ -853,9 +861,10 @@ async function runScribe(
   playerInput: string,
   narration: string,
   done: string[],
-  briefs: string[]
-): Promise<string[]> {
-  const applied: string[] = []; // o que gravou, para o Mestre saber no próximo turno
+  briefs: string[],
+  messageId: number
+): Promise<ScribeEntry[]> {
+  const applied: ScribeEntry[] = []; // o que gravou, para o Mestre saber no próximo turno e o jogador poder desfazer
   const [agent, campaign, chars, directives] = await Promise.all([
     getAgent("scribe"),
     getCampaign(campaignId),
@@ -914,17 +923,36 @@ async function runScribe(
     let failed = false;
     // grant_xp por último: a conclusão de missão com tamanho dá a XP e o grant_xp da mesma resposta vê isso (não dá em dobro)
     const outs = new Map<string, string>();
-    for (const call of [...r.toolCalls].sort((a, b) => Number(a.function.name === "grant_xp") - Number(b.function.name === "grant_xp")))
-      outs.set(
-        call.id,
-        SCRIBE_TOOLS.has(call.function.name) || (unregistered.length && call.function.name === "create_npc")
-          ? await executeGmTool(call.function.name, argsOf(call), tctx).catch((e) => `Erro: ${e instanceof Error ? e.message : String(e)}`)
-          : `Erro: ${call.function.name} não é ferramenta do Escrivão.`
-      );
+    for (const call of [...r.toolCalls].sort((a, b) => Number(a.function.name === "grant_xp") - Number(b.function.name === "grant_xp"))) {
+      const name = call.function.name;
+      if (!SCRIBE_TOOLS.has(name) && !(unregistered.length && name === "create_npc")) {
+        outs.set(call.id, `Erro: ${name} não é ferramenta do Escrivão.`);
+        continue;
+      }
+      // etiquetas seguram até saber se o registro tem o que desfazer
+      const args = argsOf(call);
+      const chips: Extract<TurnEvent, { type: "tool" }>[] = [];
+      tctx.emit = (e) => (e.type === "tool" ? chips.push(e) : ctx.emit(e));
+      const before = await scribeState(campaignId, args);
+      const out = await executeGmTool(name, args, tctx).catch((e) => `Erro: ${e instanceof Error ? e.message : String(e)}`);
+      outs.set(call.id, out);
+      if (/^Erro|não existe|precisa/.test(out)) continue;
+      const undo = await scribeUndo(campaignId, before, name, args).catch(() => undefined);
+      if (undo && !chips.length) chips.push({ type: "tool", name, summary: name === "update_extra_field" ? `${args.character}: ${args.field} = ${args.value}` : name });
+      const scribe = undo ? { messageId: Number(messageId), index: applied.length } : undefined; // id do pg vem em texto
+      for (const chip of chips) ctx.emit({ ...chip, scribe });
+      applied.push({
+        tool: name,
+        args,
+        summary: chips.map((c) => c.summary).join(" · ") || name,
+        note: `${name} ${call.function.arguments} → ${out}`.slice(0, 240),
+        undo,
+      });
+    }
+    tctx.emit = ctx.emit;
     for (const call of r.toolCalls) {
       const out = outs.get(call.id)!;
       if (/^Erro|não existe|precisa/.test(out)) failed = true;
-      else applied.push(`${call.function.name} ${call.function.arguments} → ${out}`.slice(0, 240));
       messages.push({ role: "tool", content: out, tool_call_id: call.id, name: call.function.name });
     }
     if (!failed) return applied;

@@ -283,3 +283,17 @@ CREATE TABLE IF NOT EXISTS history_chunks (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS history_chunks_campaign_idx ON history_chunks (campaign_id, id);
+
+-- correções do registro pelo jogador (lib/corrections.ts), para medir quantos registros dos agentes estavam errados:
+-- edição manual na ficha ou desfazer pela etiqueta do Escrivão. Sem FK, como api_logs: a medição fica se a campanha sai
+CREATE TABLE IF NOT EXISTS corrections (
+  id BIGSERIAL PRIMARY KEY,
+  campaign_id UUID NOT NULL,
+  source TEXT NOT NULL,   -- manual | desfazer
+  agent TEXT,             -- agente do registro original, quando se sabe (scribe no desfazer)
+  kind TEXT NOT NULL,     -- ferramenta desfeita (add_item...) ou o que foi corrigido (resource, item, mastery, xp, objective)
+  summary TEXT NOT NULL,
+  message_id BIGINT,      -- narração do registro desfeito (meta.scribe)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS corrections_campaign_idx ON corrections (campaign_id, created_at);

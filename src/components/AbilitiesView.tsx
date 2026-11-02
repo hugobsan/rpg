@@ -26,9 +26,23 @@ function Ring({ value, estimated }: { value: number; estimated: boolean }) {
   );
 }
 
+/** Domínio corrigido à mão, no card aberto: só manda se mudou. */
+function MasteryFix({ value, onFix, disabled }: { value: number; onFix: (progress: number) => Promise<boolean>; disabled?: boolean }) {
+  const [v, setV] = useState(String(value));
+  return (
+    <form className={s.fix} onSubmit={(e) => { e.preventDefault(); if (Number(v) !== value) onFix(Number(v)); }}>
+      <label>Corrigir domínio <input type="number" min={0} max={100} value={v} onChange={(e) => setV(e.target.value)} /> %</label>
+      <button className="btn ghost small" disabled={disabled || v === "" || Number(v) === value}>Salvar</button>
+    </form>
+  );
+}
+
 /** Aba de habilidades (Jutsus em Naruto): visível mesmo vazia, com o que cada uma custa e faz. */
-// onUse: só na aba do jogador (põe a técnica no campo da ação); na ficha de NPC não há
-export default function AbilitiesView({ char, ruleset, onUse }: { char: Character; ruleset: Ruleset; onUse?: (name: string) => void }) {
+// onUse: só na aba do jogador (põe a técnica no campo da ação); na ficha de NPC não há. onFix: corrigir o domínio à mão
+export default function AbilitiesView({ char, ruleset, onUse, onFix, fixDisabled }: {
+  char: Character; ruleset: Ruleset; onUse?: (name: string) => void;
+  onFix?: (ability: string, progress: number) => Promise<boolean>; fixDisabled?: boolean;
+}) {
   const label = ruleset.abilitiesLabel || "Habilidades";
   const resLabel = (key: string) => ruleset.resources.find((r) => r.key === key)?.label || key;
   const costs = ruleset.abilityCosts;
@@ -126,6 +140,7 @@ export default function AbilitiesView({ char, ruleset, onUse }: { char: Characte
           )}
         </div>
         {isOpen && <>
+        {onFix && <MasteryFix key={a.progress ?? 0} value={a.progress ?? 0} disabled={fixDisabled} onFix={(p) => onFix(a.name, p)} />}
         {a.effect && <p className={s.text}>{a.effect}</p>}
         {a.requirements && <p className={s.req}><span>Requisitos</span> {a.requirements}</p>}
         {a.description && <p className={s.desc}>{a.description}</p>}
