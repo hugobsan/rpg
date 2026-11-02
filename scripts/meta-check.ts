@@ -111,8 +111,8 @@ async function main() {
       { role: "gm", content: "Foi engano do registro: a tigela não devia estar aí." },
     ]);
 
-    // 2. abaixo do limiar (0,75), 3. Jev falhando e 4. fora do jogo falhando: turno normal
-    for (const [label, meta, fails] of [["abaixo do limiar", 0.7, false], ["Jev falhando", "falha", false], ["fora do jogo falhando", 0.9, true]] as const) {
+    // 2. abaixo do limiar (0,6), 3. Jev falhando e 4. fora do jogo falhando: turno normal
+    for (const [label, meta, fails] of [["abaixo do limiar", 0.5, false], ["Jev falhando", "falha", false], ["fora do jogo falhando", 0.9, true]] as const) {
       jevMeta = meta;
       oocFails = fails;
       const before = await count("messages");

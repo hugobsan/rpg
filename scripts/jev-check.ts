@@ -7,7 +7,7 @@
  */
 import {
   buildCastRequest, buildElapsedRequest, buildPlaceRequest, buildImportanceRequest, buildNpcRequest, ELAPSED_MINUTES, buildTurnRequest, decide, gateTurn, importanceLevel,
-  COMPLEX_MIN, MEMORY_MIN, META_MIN, MODE_MIN, MOVED_MIN, NPC_WILLING_MIN, PRESENT_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
+  COMPLEX_MIN, MECHANIC_MIN, MEMORY_MIN, META_MIN, MODE_MIN, MOVED_MIN, NPC_WILLING_MIN, PRESENT_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
 } from "../src/lib/decisions";
 import { pool } from "../src/lib/db";
 
@@ -123,18 +123,65 @@ const importanceCases: [string, number | null][] = [
     }
   }
 
-  console.log(`\n== 10. fala fora do jogo sobre o registro (conversa fora do jogo se P >= ${META_MIN}; sem probe ainda)`);
-  const metaCases: [string, boolean | null][] = [
-    ["Porque você me deu uma tigela?", true],
-    ["Porque você cancelou 3 missões?", true],
-    ["Obs para o mestre: você registrou a missão do Tazuna como perdida, mas eu cumpri.", true],
-    ["Quanto XP eu tenho?", null],
-    ["Pergunto ao Kakashi: você sabe se ele comeu?", false],
-    ["Você sabe se ele comeu?", false],
-    ["Vou até a loja de armas. (obs: você esqueceu de registrar minha kunai)", false],
+  console.log(`\n== 6. técnica da ficha ou treino → Árbitro (P >= ${MECHANIC_MIN})`);
+  // técnicas reais do jogador da campanha (sheet.abilities → library)
+  const abilities = ["Henge no Jutsu", "Kawarimi no Jutsu", "Bunshin no Jutsu", "Arremesso de shuriken e kunai", "Taijutsu básico da Academia", "Genjutsu Kai", "Controle de Fluxo: Revestimento de Membros", "Kage Bunshin no Jutsu", "Transformação da Natureza: Fūton", "Katon: Gōkakyū no Jutsu", "Katon: Hōsenka no Jutsu", "Fūton: Daitoppa"];
+  const mechanicCases: [string, Partial<TurnInput>, boolean | null][] = [
+    ["*crio mais um clone e mando os dois levarem os detritos para a compostagem enquanto eu firmo o barranco com a pá*", {}, true],
+    ["Treinar de novo outra rodada de Arremesso de shuriken e kunai", {}, true],
+    ["Uso o Katon: Gōkakyū no Jutsu no Zabuza.", battle, true],
+    ["Faço os selos do tigre e solto uma grande bola de fogo pela boca na direção dele.", battle, true],
+    ["Passo a tarde treinando a transformação da natureza Fūton no campo de treino.", {}, true],
+    ["Faz sentido... Eu poderia treinar um jutsu combinado com Katon e Fuuton com um clone meu mesmo", {}, false],
+    ["Pergunto ao Kakashi como funciona o Chidori.", {}, false],
+    ["Uso o Rasengan no Zabuza.", battle, false],
+    ["Ando pela vila olhando as barracas de lámen.", {}, false],
+    ["Amanhã cedo vou treinar Fūton no campo de treino.", {}, false],
+    ["Certo, vamos lá. E notei uma coisa, estou gastando bem menos chakra com os clones agora.", {}, false],
+    ["Dou um soco no estômago do Zabuza.", battle, null],
   ];
-  for (const [action, exp] of metaCases) {
-    const a = await ask(action, buildTurnRequest({ ...base, playerAction: action, askComplexity: false, askWeb: false, askMeta: true }));
+  for (const [action, input, exp] of mechanicCases) {
+    const a = await ask(action, buildTurnRequest({ ...base, ...input, playerAction: action, playerAbilities: abilities, askComplexity: false, askWeb: false }));
+    check(action, exp === null ? null : gateTurn(a).mechanic === exp, p(a.mechanic), `esperado ${exp}`);
+  }
+
+  console.log(`\n== 10. fala fora do jogo sobre o registro (conversa fora do jogo se P >= ${META_MIN}; falso positivo desvia uma ação real)`);
+  // narrações perto das falas reais da campanha (as com "você" a um NPC são as perigosas); as três primeiras SIM têm a
+  // narração real que veio antes
+  const genma = { npcsInScene: { Genma: "jounin despreocupado, sempre com uma agulha na boca" } };
+  const nGenma = { ...genma, lastGmNarration: 'Genma ajeita a agulha no canto da boca enquanto vocês deixam a torre. **Genma:** "Duas missões D numa manhã. Nada mal, garoto."' };
+  const nTreino = { ...genma, scene: { mode: "training", location: "Campo de treino 3", title: null, summary: null }, lastGmNarration: 'Você termina a rodada de arremessos: três shurikens no centro do alvo, as outras espalhadas na madeira. **Genma:** "Melhorou. Junta tudo e vamos de novo."' };
+  const nDona = { npcsInScene: { Tomoe: "senhora aflita, dona do gato Tora" }, lastGmNarration: '**Tomoe:** "O Tora sumiu desde ontem à noite, ele nunca fica fora tanto tempo!" Ela torce as mãos.' };
+  const nRecep = { npcsInScene: { Recepcionista: "chuunin da mesa de missões" }, lastGmNarration: '**Recepcionista:** "Temos a recuperação do gato, para hoje, e o transporte de mantimentos para o depósito."' };
+  const nTeuchi = { npcsInScene: { Teuchi: "dono do Ichiraku" }, lastGmNarration: 'Teuchi coloca uma tigela fumegante na sua frente. **Teuchi:** "Por conta da casa, pela ajuda de ontem!"' };
+  const campo = { npcsInScene: {}, scene: { mode: "training", location: "Campo de treino da Academia", title: null, summary: null } };
+  const realShuriken = { ...campo, lastGmNarration: "Uma shuriken parte primeiro; a kunai vem em seguida. **As duas atingem a região central do alvo**, com impactos secos que quebram o silêncio do campo. A kunai fica um pouco abaixo da shuriken, mas o agrupamento é bom.\n\nVocê encerra nessa única rodada e recolhe ambas as armas. **Arremesso de shuriken e kunai passa de 60% para 63% de domínio**, sem gasto de chakra. Sua reserva permanece em **10/50**." };
+  const realTigela = { npcsInScene: { Teuchi: "dono do Ichiraku" }, scene: { mode: "downtime", location: "Ichiraku Ramen", title: null, summary: null }, lastGmNarration: "O sistema bloqueou a alteração porque o prazo já havia expirado. Não vou criar outra missão para contornar isso, mas fica mantido o que aconteceu na história: **o trabalho foi feito, Teuchi ficou satisfeito e a tigela foi por conta da casa.** Não haverá cobrança, perda de confiança ou outra consequência negativa por esse marcador incorreto. A recompensa de XP já foi registrada.\n\nEstamos ainda no Ichiraku, após o fechamento; esta correção fora do jogo não avança o relógio." };
+  const realCampo = { ...campo, lastGmNarration: "Na faixa de terra usada para os ninjutsus, ainda é possível distinguir a mancha escura deixada pelo fogo e os pequenos montes de folhas que sua rajada empurrou. O ar esfriou, e o ruído dos insetos começa a se destacar entre os sons distantes da rua principal.\n\nDurante os poucos minutos em que você observa, ninguém entra no campo. Não há movimento perceptível junto aos alvos ou na entrada da Academia. Sua reserva continua baixa, **5/50 de chakra**, embora os exercícios físicos não a tenham consumido." };
+  const metaCases: [string, Partial<TurnInput>, boolean | null][] = [
+    ["Porque você me deu uma shuriken se você não tinha deduzido nenhuma da tentativa?", realShuriken, true],
+    // SIM real, mas com o Teuchi em cena o Jev não separa da fala ao NPC (0,24–0,33): fica turno normal
+    ["porque você me deu uma tigela?", realTigela, null],
+    ["porque você me deu uma tigela?", nTeuchi, null], // logo depois de o Teuchi servir: pode ser fala ao Teuchi
+    ["Porque vocÊ cancelou 3 missões?", realCampo, true],
+    ["Porque vocÊ cancelou 3 missões?", nGenma, null], // com o Genma em cena
+    ["Obs para o mestre: você registrou a missão Ajudar Teuchi no ichiraku como prazo perdido, mas eu cumpri ela", nGenma, true],
+    ["Mestre, a ficha mostra chakra cheio, mas eu usei três clones agora há pouco. Pode corrigir?", nGenma, true],
+    ["(fora do jogo) por que o relógio pulou para a noite?", nGenma, true],
+    ["Quanto XP eu tenho?", {}, null],
+    ["Só mais uma dúvida, você sabe se ele comeu antes de sair?", nDona, false],
+    ['Pergunto à recepcionista: "A outra missão tem um prazo?"', nRecep, false],
+    ["Certo, você ainda está a fim de mais missões depois de entregar essas?", nGenma, false],
+    ["Entendi... você já vai sair pra almoçar ou ainda dá pra treinar mais um pouco?", nTreino, false],
+    ["Treinar de novo outra rodada de Arremesso de shuriken e kunai", nTreino, false],
+    ["Por que você está me seguindo desde a torre?", nGenma, false],
+    ["*pego um pouco de carne da grelha* E quanto à invocação? você tem algum tipo de invocação?", genma, false],
+    ["Porque você me deu essa tigela, Teuchi? Eu nem pedi.", nTeuchi, false],
+    ["Pergunto ao Kakashi: você sabe se ele comeu?", {}, false],
+    ["Vou até a loja de armas. (obs: você esqueceu de registrar minha kunai)", {}, false],
+  ];
+  for (const [action, input, exp] of metaCases) {
+    const a = await ask(action, buildTurnRequest({ ...base, ...input, playerAction: action, askComplexity: false, askWeb: false, askMeta: true }));
     check(action, exp === null ? null : gateTurn(a).meta === exp, p(a.meta), `esperado ${exp}`);
   }
 
@@ -202,7 +249,28 @@ const importanceCases: [string, number | null][] = [
     const a = await ask(label, buildPlaceRequest({ scene: { mode: "exploration", location: loc }, playerAction: action, gmNarration: narration }));
     const v = a.moved.type === "noul" ? a.moved.noul : NaN;
     check(label, exp === null ? null : v >= MOVED_MIN === exp, v, `esperado ${exp}`);
-    if (a.mode.type === "choice") check(`  modo: ${a.mode.choice}`, null, a.mode.probabilities?.[a.mode.choice] ?? NaN, `troca se P >= ${MODE_MIN}`); // sem probe ainda
+  }
+
+  console.log(`\n== 9b. modo da cena pela narração (troca se o modo mais provável é outro e P >= ${MODE_MIN})`);
+  const modeCases: [string, string, string, string, string | null | undefined][] = [
+    // rótulo, modo atual, ação, narração, esperado (modo novo; null = não troca; undefined = ambíguo)
+    ["emboscada na estrada", "exploration", "Sigo pela estrada.", "Na curva da estrada, duas sombras saltam das árvores: os Irmãos Demônio! Correntes com lâminas cortam o ar na sua direção. O que você faz?", "battle"],
+    ["foi dormir", "exploration", "Vou dormir até amanhã.", "Você volta para casa, cai na cama e dorme pesado. Acorda com o sol entrando pela janela.", "downtime"],
+    ["começou o treino", "dialogue", "Peço ao Kakashi para treinar.", "Kakashi te leva ao campo de treino e aponta os troncos. Você passa a hora seguinte arremessando kunai, corrigindo a postura a cada erro.", "training"],
+    ["conversa longa", "exploration", "Pergunto ao Iruka sobre o exame.", '**Iruka:** "O exame tem três partes." Ele se senta no banco ao seu lado. **Iruka:** "A prova escrita, o clone e a entrevista. Você tem dúvida em qual?" Ele espera sua resposta, atento.', "dialogue"],
+    ["luta continua", "battle", "Desvio para a esquerda.", "Zabuza recua um passo e ergue a espada de novo, a névoa engrossando ao redor.", null],
+    ["lámen com conversa", "downtime", "Como e converso com o Teuchi.", '**Teuchi:** "O movimento anda fraco nesta semana." Ele limpa o balcão enquanto você termina o caldo.', null],
+    ["janta em casa", "downtime", "Janto.", "Em casa, você esquenta o resto do lámen e come olhando a vila pela janela.", null],
+    ["churrasco com histórias", "exploration", "Vamos à churrascaria.", '**Genma:** "Essa foi a vez que o Gai apostou corrida até o País do Vento." Vocês comem carne grelhada enquanto ele conta histórias de missões antigas.', undefined],
+    ["conversa andando", "exploration", "Seguimos conversando até a torre.", '**Genma:** "A torre fica logo ali." Vocês atravessam a rua principal conversando sobre a missão da manhã.', undefined],
+  ];
+  for (const [label, mode, action, narration, exp] of modeCases) {
+    const a = await ask(label, buildPlaceRequest({ scene: { mode, location: "Konoha" }, playerAction: action, gmNarration: narration }));
+    const m = a.mode;
+    const pm = m.type === "choice" ? m.probabilities?.[m.choice] ?? NaN : NaN;
+    const to = m.type === "choice" && m.choice !== mode && pm >= MODE_MIN ? m.choice : null;
+    const probs = m.type === "choice" ? JSON.stringify(Object.fromEntries(Object.entries(m.probabilities || {}).map(([k, v]) => [k, +v.toFixed(2)]))) : "";
+    check(`${label}: ${mode} → ${m.type === "choice" ? m.choice : "?"} ${probs}`, exp === undefined ? null : to === exp, pm, `esperado ${exp === undefined ? "?" : exp ?? "fica"}`);
   }
 
   await pool().end();
