@@ -132,7 +132,15 @@ Diretrizes:
     { "kind": "event|npc|discovery|milestone|relationship", "subject": "nome do NPC/lugar se aplicável, senão null", "content": "fato atômico e autossuficiente, entendível sem contexto", "importance": 1-5 }
   ]
 }
-Regras: memórias são fatos que precisarão ser lembrados muitas sessões depois (mudanças de status de NPC, revelações, dívidas, itens únicos, feridas graves, promessas). NÃO inclua detalhes descartáveis. importance 5 = muda a campanha; 1 = cor local.`,
+Regras: memórias são fatos que precisarão ser lembrados muitas sessões depois (mudanças de status de NPC, revelações, dívidas, itens únicos, feridas graves, promessas). NÃO inclua detalhes descartáveis. importance 5 = muda a campanha; 1 = cor local.
+
+Quando o pedido trouxer ESTADO DO MUNDO, a história andou e o registro precisa andar junto. Inclua no mesmo JSON, só o que este trecho mudou (nada mudou = omita o campo):
+  "npcs": [{ "name": "nome exato da lista NPCS", "rank": "key da lista CARGOS, só se o cargo mudou", "current": "situação atual em 1-2 frases, com o dia quando souber (cargo, time, o que já viveu de marcante, onde está na história)" }],
+  "arc": { "canonEvents": ["lista nova de eventos canônicos do arco ativo: o que já aconteceu sai ou vira \"(já aconteceu)\", e entra o que vem a seguir"], "note": "o que a história mudou em relação ao arco, 1 frase", "done": true },
+  "directives": [{ "id": 0, "why": "por que esta diretriz do jogador ficou falsa (fato com prazo que já passou)" }]
+- current reescreve a situação inteira (não acumula) e vale mais que o passado do perfil; não repita o passado.
+- done só quando a história claramente fechou o arco ativo; o próximo arco abre sozinho.
+- directives só aponta: quem decide é o jogador. Diretriz de estilo ou regra nunca fica falsa.`,
   },
   {
     id: "scribe",

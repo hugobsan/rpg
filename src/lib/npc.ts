@@ -31,6 +31,7 @@ function npcContext(npc: Character): string {
     p.personality ? `Personalidade: ${p.personality}` : "",
     p.speech ? `Jeito de falar (siga nas falas): ${p.speech}` : "",
     p.quirks ? `Manias e gestos: ${p.quirks}` : "",
+    p.current ? `Situação atual (o que vale agora; o passado abaixo é a origem): ${p.current}` : "",
     p.backstory ? `Passado: ${p.backstory}` : "",
     p.goals ? `Objetivos: ${p.goals}` : "",
     p.relationships ? `Relações: ${p.relationships}` : "",

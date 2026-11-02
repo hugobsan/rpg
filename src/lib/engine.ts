@@ -144,6 +144,7 @@ export function sheetSummary(c: Character, full: boolean, rs: Ruleset, compact =
     if (p.personality) lines.push(`  personalidade: ${p.personality}`);
     if (p.speech) lines.push(`  jeito de falar: ${cut(p.speech, 200)}`);
     if (p.relationships) lines.push(`  relações: ${cut(p.relationships, 240)}`);
+    if (p.current) lines.push(`  situação atual (vale mais que o passado): ${p.current}`);
     if (p.backstory) lines.push(`  passado: ${c.kind === "npc" || compact ? cut(p.backstory, compact ? 300 : 400) : p.backstory}`);
     if (p.goals) lines.push(`  objetivos: ${p.goals}`);
     if (p.secrets) lines.push(`  segredos (só você sabe): ${p.secrets}`);
@@ -699,7 +700,7 @@ export async function runTurn(
   scene = toolCtx.scene;
   const briefs = deferred.filter((c) => c.function.name === "note_objective").map((c) => String(argsOf(c).brief || "")).filter(Boolean);
   await Promise.all([
-    maybeCompact(campaignId, scene).catch(() => {}),
+    maybeCompact(campaignId, scene, emit).catch(() => {}),
     // briefs de mapa chamam o Topógrafo (um modelo): correm junto, já no local que o set_scene marcou
     ...deferred.filter((c) => c.function.name === "map_brief").map(applyNote),
     // Escrivão depois do relógio: prazo relativo de missão conta da hora nova e as gravações de objetivos não se cruzam
@@ -1072,7 +1073,95 @@ function toolSummary(name: string, args: Record<string, unknown>): string {
 
 // ---------- compactação (Cronista) ----------
 
-export async function maybeCompact(campaignId: string, scene: Scene): Promise<void> {
+/** Revisão do Cronista na compactação: o estado do mundo que a história pode ter deixado para trás. */
+type WorldUpdate = {
+  npcs?: { name?: string; rank?: string; current?: string }[];
+  arc?: { canonEvents?: unknown; note?: string; done?: boolean };
+  directives?: { id?: number; why?: string }[];
+};
+
+/**
+ * ESTADO DO MUNDO para o Cronista: os NPCs citados no trecho (cargo, situação atual, papel, começo do passado), o arco
+ * ativo e as diretrizes do jogador. Sem isso, perfil, roteiro e diretrizes ficavam no ponto da obra em que nasceram
+ * (o Naruto seguia "último ano da Academia" dias depois do teste dos guizos).
+ */
+async function worldBlock(campaign: Campaign, transcript: string) {
+  const [chars, directives] = await Promise.all([getCharacters(campaign.id), activeDirectives(campaign.id)]);
+  const low = transcript.toLowerCase();
+  // pelo primeiro nome: "Naruto" no texto acha "Naruto Uzumaki"
+  const npcs = chars.filter((c) => c.kind === "npc" && low.includes(c.name.split(/\s+/)[0].toLowerCase()));
+  const arcs = campaign.script?.arcs ?? [];
+  const i = arcs.findIndex((a) => a.status === "active");
+  const arc = i >= 0 ? arcs[i] : undefined;
+  const clock = getClock(campaign.state);
+  const lines = [
+    "ESTADO DO MUNDO (atualize o que este trecho mudou):",
+    clock ? `Agora: ${formatClock(clock.minutes)}` : "",
+    `CARGOS: ${campaign.ruleset.ranks.map((r) => r.key).join(", ")}`,
+    npcs.length
+      ? `NPCS:\n${npcs
+          .map((c) => `- ${c.name} | cargo: ${c.sheet.rank || "-"} | situação atual: ${c.persona.current || "(nenhuma)"}${c.persona.role ? ` | papel: ${c.persona.role}` : ""}${c.persona.backstory ? ` | passado: ${c.persona.backstory.slice(0, 240)}` : ""}`)
+          .join("\n")}`
+      : "",
+    arc
+      ? `ARCO ATIVO: ${arc.title}: ${arc.summary.slice(0, 400)}\nEventos canônicos: ${arc.canonEvents.join(" | ") || "-"}${arc.notes.length ? `\nNotas: ${arc.notes.slice(-3).join(" | ")}` : ""}${arcs[i + 1] ? `\nPróximo arco: ${arcs[i + 1].title}` : ""}`
+      : "",
+    directives.length ? `DIRETRIZES DO JOGADOR:\n${directives.map((d) => `- id ${d.id}: ${d.content.slice(0, 300)}`).join("\n")}` : "",
+  ];
+  return { text: lines.filter(Boolean).join("\n"), npcs, arcIndex: i, directives };
+}
+
+/** Aplica a revisão: situação e cargo dos NPCs, eventos do arco (e fecha/abre arco), aviso de diretriz na conversa fora do jogo. */
+async function applyWorld(campaign: Campaign, w: Awaited<ReturnType<typeof worldBlock>>, u: WorldUpdate, emit?: (e: TurnEvent) => void) {
+  const chip = (summary: string) => emit?.({ type: "tool", name: "chronicler", summary });
+  const ranks = new Set(campaign.ruleset.ranks.map((r) => r.key));
+  for (const n of Array.isArray(u.npcs) ? u.npcs : []) {
+    const c = w.npcs.find((x) => x.name.toLowerCase() === String(n?.name || "").trim().toLowerCase());
+    if (!c) continue;
+    const current = String(n.current || "").trim().slice(0, 500);
+    const rank = n.rank && ranks.has(n.rank) && n.rank !== c.sheet.rank ? n.rank : null;
+    if (!current && !rank) continue;
+    await q(
+      `UPDATE characters SET persona = CASE WHEN $2 = '' THEN persona ELSE persona || jsonb_build_object('current', $2::text) END,
+         sheet = CASE WHEN $3::text IS NULL THEN sheet ELSE jsonb_set(sheet, '{rank}', to_jsonb($3::text)) END, updated_at = now()
+       WHERE id = $1`,
+      [c.id, current, rank]
+    );
+    chip(`📜 ${c.name}${rank ? ` → ${rank}` : ""}${current ? `: ${current.slice(0, 90)}` : ""}`);
+  }
+  const script = campaign.script;
+  const arc = script && w.arcIndex >= 0 ? script.arcs[w.arcIndex] : undefined;
+  if (script && arc && u.arc) {
+    const events = Array.isArray(u.arc.canonEvents) ? u.arc.canonEvents.map(String).map((e) => e.trim()).filter(Boolean).slice(0, 8) : [];
+    if (events.length) arc.canonEvents = events;
+    if (u.arc.note?.trim()) arc.notes.push(u.arc.note.trim().slice(0, 300));
+    const next = script.arcs[w.arcIndex + 1];
+    if (u.arc.done === true) {
+      arc.status = "done";
+      if (next?.status === "pending") next.status = "active";
+    }
+    if (events.length || u.arc.note?.trim() || u.arc.done === true) {
+      await q(`UPDATE campaigns SET script = $1, updated_at = now() WHERE id = $2`, [JSON.stringify(script), campaign.id]);
+      chip(`📜 roteiro: ${arc.title}${arc.status === "done" ? ` concluído${next ? `, começa ${next.title}` : ""}` : " atualizado"}`);
+    }
+  }
+  for (const d of Array.isArray(u.directives) ? u.directives : []) {
+    const dir = w.directives.find((x) => Number(x.id) === Number(d?.id));
+    if (!dir || !d.why?.trim()) continue;
+    // só aponta: a diretriz é do jogador. Na conversa fora do jogo ele pede para atualizar ou desativar
+    const quoted = `"${dir.content.slice(0, 300)}"`;
+    // uma vez por diretriz: o jogador pode ter decidido manter, e cada compactação apontaria de novo
+    const [added] = await q<{ id: number }>(
+      `INSERT INTO gm_notes (campaign_id, role, content)
+       SELECT $1, 'gm', $2 WHERE NOT EXISTS (SELECT 1 FROM gm_notes WHERE campaign_id = $1 AND role = 'gm' AND position($3 in content) > 0)
+       RETURNING id`,
+      [campaign.id, `O Cronista acha que esta diretriz não vale mais: ${quoted}. Motivo: ${d.why.trim().slice(0, 300)}. Se concordar, me peça aqui para atualizar ou desativar.`, quoted]
+    );
+    if (added) chip(`📜 diretriz desatualizada? veja em Falar com o Mestre`);
+  }
+}
+
+export async function maybeCompact(campaignId: string, scene: Scene, emit?: (e: TurnEvent) => void): Promise<void> {
   const chronicler = await getAgent("chronicler");
   const params = chronicler.params as {
     compactThresholdTokens?: number;
@@ -1095,13 +1184,15 @@ export async function maybeCompact(campaignId: string, scene: Scene): Promise<vo
     .map((r) => `${r.role === "player" ? "JOGADOR" : "MESTRE"}: ${r.content}`)
     .join("\n\n");
 
+  const campaign = await getCampaign(campaignId);
+  const world = await worldBlock(campaign, transcript);
   const result = await chat({
     model: chronicler.model,
     messages: [
       { role: "system", content: chronicler.system_prompt },
       {
         role: "user",
-        content: `Resumo anterior acumulado (contexto, não repita):\n${scene.summary || "(vazio)"}\n\nTrecho da sessão a compactar:\n${transcript}`,
+        content: `Resumo anterior acumulado (contexto, não repita):\n${scene.summary || "(vazio)"}\n\nTrecho da sessão a compactar:\n${transcript}\n\n${world.text}`,
       },
     ],
     temperature: chronicler.temperature,
@@ -1111,7 +1202,7 @@ export async function maybeCompact(campaignId: string, scene: Scene): Promise<vo
     purpose: "compactação de histórico",
   });
 
-  let parsed: {
+  let parsed: WorldUpdate & {
     summary?: string;
     memories?: { kind: string; subject?: string | null; content: string; importance?: number }[];
   } = {};
@@ -1128,13 +1219,10 @@ export async function maybeCompact(campaignId: string, scene: Scene): Promise<vo
   ]);
   const mems = (parsed.memories || []).filter((m) => m?.content);
   // importância pelo Jev; se ele falhar, fica a do Cronista
-  const importance = await scoreImportance(
-    (await getCampaign(campaignId)).ruleset.name,
-    mems,
-    campaignId
-  );
+  const importance = await scoreImportance(campaign.ruleset.name, mems, campaignId);
   for (const [i, m] of mems.entries())
     await addMemory(campaignId, m.kind || "event", m.content, m.subject || null, importance[i]);
+  await applyWorld(campaign, world, parsed, emit).catch((e) => console.warn("[cronista: estado do mundo]", e));
 }
 
 // ---------- roteirista ----------

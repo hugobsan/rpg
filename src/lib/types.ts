@@ -198,6 +198,9 @@ export interface Persona {
   speech?: string; // jeito de falar: tom, vocabulário, bordões
   relationships?: string;
   quirks?: string; // manias, hábitos, gestos
+  // situação atual na história (cargo, time, o que já viveu), que o Cronista reescreve ao compactar: vale mais que o
+  // passado, que fica como a origem. Sem ela, NPC canônico ficava preso ao ponto da obra em que foi criado
+  current?: string;
   // sexo: define a voz padrão. undefined = ainda não decidido (o Jev decide na 1ª fala); null = desconhecido
   gender?: "male" | "female" | null;
   // ajuste de reprodução da voz (só no navegador, nunca vai para a API do TTS). undefined = padrão (1x, 0 st)

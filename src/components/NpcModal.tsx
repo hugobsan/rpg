@@ -69,6 +69,7 @@ const PROFILE: [keyof Persona, string][] = [
   ["personality", "Personalidade"],
   ["speech", "Jeito de falar"],
   ["quirks", "Manias"],
+  ["current", "Situação atual"],
   ["backstory", "Passado"],
   ["goals", "Objetivos"],
   ["relationships", "Relações"],
