@@ -341,6 +341,9 @@ async function main() {
   const logged = JSON.stringify(log);
   assert.ok(!logged.includes("at-10") && !logged.includes("rt-10"), "token fora do log");
   assert.equal(sent.prompt_cache_key, "gm:geral");
+  assert.deepEqual(sent.reasoning, { effort: "low" }, "esforço do agente fica");
+  await chat({ ...opts, reasoning: undefined, messages: history.slice(0, 2) });
+  assert.deepEqual(sent.reasoning, { effort: "medium" }, "GPT sem esforço vai com médio");
   // prompt_cache_key recusado: repete uma vez sem ele e não manda mais nessa fonte e modelo
   const bodies: Record<string, unknown>[] = [];
   onResponses = (b) => (bodies.push(b), "prompt_cache_key" in b

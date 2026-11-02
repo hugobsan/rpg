@@ -611,8 +611,8 @@ export async function runTurn(
       messages,
       temperature: gm.temperature,
       max_tokens: gm.max_tokens,
-      // o GPT sem esforço definido narra sem raciocinar (0 tokens de raciocínio medidos); o Claude raciocina no padrão dele
-      reasoning: (params.reasoning as Record<string, unknown> | undefined) ?? (/^(openai\/)?gpt-/.test(turnModel) ? { effort: "medium" } : undefined),
+      // sem params.reasoning, o chat() põe esforço médio nos GPT (sem ele narravam sem raciocinar)
+      reasoning: params.reasoning as Record<string, unknown> | undefined,
       tools: GM_TURN_TOOLS,
       // última rodada só em texto: uma chamada pedida aqui seria descartada e a narração pararia no meio
       noTools: round === maxRounds,

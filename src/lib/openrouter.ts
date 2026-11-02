@@ -282,6 +282,9 @@ const rejected = new Set<string>(); // "fonte:modelo:campo" já recusado neste p
 export async function chat(opts: ChatOptions): Promise<ChatResult> {
   const [agent] = await q<{ source: string; params: AgentFlags }>(`SELECT source, params FROM agents WHERE id = $1`, [opts.agentId]);
   const src = await getSource(agent?.source ?? OPENROUTER);
+  // GPT sem esforço definido responde sem raciocinar (0 tokens de raciocínio medidos no Mestre: narração curta e
+  // preguiçosa); o Claude raciocina no padrão dele. Agente com params.reasoning (ex.: low) fica com o dele
+  if (!opts.reasoning && !opts.modalities?.includes("image") && /^(openai\/)?gpt-\d/.test(opts.model)) opts = { ...opts, reasoning: { effort: "medium" } };
   const cache = !!agent?.params?.cache && isClaude(src, opts.model);
   if (!cache) opts = { ...opts, messages: mergeSystem(opts.messages) };
   // a camada compatível da Anthropic não faz cache e ignora reasoning_effort: com um dos dois vai pela API nativa
