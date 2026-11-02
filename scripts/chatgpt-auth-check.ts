@@ -246,7 +246,9 @@ async function main() {
   const req = responsesRequest(opts, SRC);
   assert.equal(req.url, "https://api.openai.com/v1/responses");
   assert.deepEqual(req.headers, { "Content-Type": "application/json", Authorization: "Bearer at-x" });
-  assert.deepEqual(Object.keys(req.body).sort(), ["input", "instructions", "model", "reasoning", "store", "stream", "tools"]);
+  assert.deepEqual(Object.keys(req.body).sort(), ["input", "instructions", "model", "prompt_cache_key", "reasoning", "store", "stream", "tools"]);
+  assert.equal(req.body.prompt_cache_key, "gm:geral", "chave de cache por agente e campanha");
+  assert.equal(responsesRequest({ ...opts, campaignId: "c-1" }, SRC).body.prompt_cache_key, "gm:c-1");
   const forbidden = ["temperature", "max_output_tokens", "max_tokens", "top_p", "previous_response_id", "metadata", "user", "background", "conversation", "max_tool_calls", "moderation", "multi_agent", "prompt", "prompt_cache_retention", "safety_identifier", "top_logprobs", "truncation"];
   for (const k of forbidden) assert.ok(!(k in req.body), `sem ${k}`);
   assert.equal(req.body.store, false);
@@ -267,7 +269,7 @@ async function main() {
   }]);
   assert.ok(!(req.body.input as { role?: string }[]).some((i) => i.role === "system"), "nenhum item com role system");
   const plain = responsesRequest({ model: "m", messages: [{ role: "user", content: "oi" }], agentId: "gm", purpose: "x" }, SRC).body;
-  assert.deepEqual(Object.keys(plain).sort(), ["input", "model", "store", "stream"], "sem system, tools nem reasoning: só o básico");
+  assert.deepEqual(Object.keys(plain).sort(), ["input", "model", "prompt_cache_key", "store", "stream"], "sem system, tools nem reasoning: só o básico");
 
   // ---------- 8. parser do SSE: volta ----------
   const created = { type: "response.created", response: { id: "resp_1", status: "in_progress" } };
@@ -338,6 +340,15 @@ async function main() {
   assert.deepEqual([log[0], log[2], log[6], log[7], log[9], log[10], log[11]], ["gm", "gpt-6.1-sol", 120, 30, null, null, "gpt"], "log com tokens, custo nulo e a fonte");
   const logged = JSON.stringify(log);
   assert.ok(!logged.includes("at-10") && !logged.includes("rt-10"), "token fora do log");
+  assert.equal(sent.prompt_cache_key, "gm:geral");
+  // prompt_cache_key recusado: repete uma vez sem ele e não manda mais nessa fonte e modelo
+  const bodies: Record<string, unknown>[] = [];
+  onResponses = (b) => (bodies.push(b), "prompt_cache_key" in b
+    ? Response.json({ error: { code: "subscription_sharing_unsupported_capability", param: "prompt_cache_key", message: "unsupported" } }, { status: 400 })
+    : new Response(sse(textEvents), { headers: { "content-type": "text/event-stream" } }));
+  assert.equal((await chat({ ...opts, messages: history.slice(0, 2) })).content, "Você entra na sala — ação ✓");
+  await chat({ ...opts, messages: history.slice(0, 2) });
+  assert.deepEqual(bodies.map((b) => "prompt_cache_key" in b), [true, false, false], "recusado uma vez, depois nem tenta");
   onResponses = () => Response.json({ error: { code: "subscription_sharing_usage_limit_exceeded", message: "x" } }, { status: 429 });
   await assert.rejects(chat({ ...opts, messages: history.slice(0, 2) }), /OpenAI 429: Limite da sua assinatura ChatGPT atingido/);
   onResponses = () => new Response(sse([created, { type: "response.failed", response: { error: { code: "subscription_sharing_usage_unavailable" } } }]));

@@ -26,6 +26,9 @@ export function responsesRequest(opts: ChatOptions, src: Source) {
       input.push({ type: "function_call", call_id: t.id, name: t.function.name, arguments: t.function.arguments, namespace: NAMESPACE });
   }
   const body: Record<string, unknown> = { model: opts.model, input, store: false, stream: true };
+  // chave estável por agente e campanha: chamadas com o mesmo começo de prompt vão para o mesmo cache (só uma dica de
+  // roteamento; sem ela o Mestre acertava ~10% do cache, mesmo nas rodadas 2+ com o prompt igual). Recusada = chat() tira
+  body.prompt_cache_key = `${opts.agentId}:${opts.campaignId || "geral"}`;
   const instructions = opts.messages.filter((m) => m.role === "system").map((m) => text(m.content)).join("\n\n");
   if (instructions) body.instructions = instructions;
   if (opts.tools?.length)

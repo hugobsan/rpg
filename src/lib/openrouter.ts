@@ -269,6 +269,9 @@ export async function logApiCall(l: ApiLog): Promise<void> {
   ).catch(() => {});
 }
 
+const OPTIONAL_FIELDS = ["temperature", "prompt_cache_key"];
+const rejected = new Set<string>(); // "fonte:modelo:campo" já recusado neste processo
+
 /**
  * Chamada única de chat completions na fonte do agente (OpenRouter ou outra OpenAI-compatível).
  * Toda chamada é registrada em api_logs com fonte, tokens, duração e erro — visível em Custos e uso.
@@ -291,13 +294,17 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   let responseJson: Record<string, unknown> | null = null;
   let error: string | null = null;
   try {
+    for (const f of OPTIONAL_FIELDS) if (rejected.has(`${src.id}:${model}:${f}`)) delete body[f];
     const post = () => fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: opts.signal });
     let res = native ? null : await post();
-    // modelo que recusa temperature (família GPT-5, mesmo quando o catálogo diz que aceita): repete uma vez sem ela
-    if (res?.status === 400 && "temperature" in body) {
+    // campo opcional recusado (temperature na família GPT-5, mesmo quando o catálogo diz que aceita; prompt_cache_key
+    // numa fonte que não conhece): repete uma vez sem ele e não manda mais nessa fonte e modelo até reiniciar
+    for (const f of OPTIONAL_FIELDS) {
+      if (res?.status !== 400 || !(f in body)) continue;
       const text = await res.clone().text();
-      if (/temperature/i.test(text) && /not supported|unsupported/i.test(text)) {
-        delete body.temperature;
+      if (text.toLowerCase().includes(f) && /not supported|unsupported|unknown|unrecognized/i.test(text)) {
+        rejected.add(`${src.id}:${model}:${f}`);
+        delete body[f];
         res = await post();
       }
     }
