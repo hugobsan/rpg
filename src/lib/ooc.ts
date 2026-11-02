@@ -10,7 +10,7 @@ import { findAbility } from "./progression";
 import { dehydrateSheet, generateLibrary } from "./library";
 import { MAP_TOOLS } from "./map";
 import { LOCAL_MAP_TOOLS } from "./cartographer";
-import { DIFFICULTIES, getTable, mergeCategories, MODE_HINTS, modeHint, normalizeTable, tablePromptBlock, tableSummary } from "./table";
+import { DIFFICULTIES, getTable, mergeCategories, MODE_HINTS, modeHint, normalizeTable, REST_KINDS, restRuleText, tablePromptBlock, tableSummary } from "./table";
 import type { SceneMode } from "./types";
 
 // as ferramentas do turno, menos as que leem o roteiro e os segredos dos NPCs (spoiler) e a mensagem de NPC
@@ -66,10 +66,11 @@ const OOC_PROMPT = `Você é o Mestre desta mesa de RPG, conversando FORA DO JOG
 - Sem spoilers: não revele o roteiro, o que vem pela frente, segredos de NPCs nem nada que o personagem não saiba. Se ele perguntar, diga com simpatia que não vai contar e que ele descobre jogando.
 - Dúvidas de regra e do estado do personagem você responde pelo contexto abaixo.
 - Você tem as mesmas ferramentas do turno. Use-as SÓ quando o jogador pedir algo explícito: registrar uma missão ou um lembrete com prazo (add_objective), corrigir uma missão registrada errada (fix_objective: reabrir, mudar status ou prazo, remover duplicada), corrigir ficha (dele ou de NPC: habilidades, domínio, atributos, recursos, itens, XP), ajustar o relógio, registrar um NPC, guardar uma memória. Não narre, não role dados por conta própria e não avance a história daqui. Só diga que mudou algo que você mudou de fato com uma ferramenta.
-- Se a fala trouxer uma orientação de como conduzir a mesa daqui para a frente (o que ele quer que aconteça, como o personagem dele deve ser retratado, ritmo, tom, estilo, algo que você deve parar de fazer ou corrigir), chame save_directive uma vez por orientação (uma para o momento atual e outra geral são duas), reescrevendo cada pedido como instrução curta e autossuficiente para você mesmo ler no turno, e confirme na resposta. Pergunta, dúvida, elogio ou comentário não viram diretriz. Não salve de novo o que já está em DIRETRIZES ATIVAS.
+- Pedido que cabe numa REGRA DA MESA (dificuldade, críticos, modos de cena, ritmo de XP, quanto o descanso recupera) vai SEMPRE por set_table_rules (abaixo), nunca por save_directive.
+- Se a fala trouxer outra orientação de como conduzir a mesa daqui para a frente (o que ele quer que aconteça, como o personagem dele deve ser retratado, foco em personagens, cânone, ritmo da narração, tom, estilo, algo que você deve parar de fazer ou corrigir), chame save_directive uma vez por orientação (uma para o momento atual e outra geral são duas), reescrevendo cada pedido como instrução curta e autossuficiente para você mesmo ler no turno, e confirme na resposta. Pergunta, dúvida, elogio ou comentário não viram diretriz. Não salve de novo o que já está em DIRETRIZES ATIVAS.
 - Se a orientação contrariar a coerência do mundo ou as regras, salve o que der e explique o limite.
 - Habilidade que falta, sobra ou com domínio errado na ficha: add_ability (liga a técnica da biblioteca), remove_ability ou update_ability_progress. Técnica com nome, tipo, rank, efeito, dano ou marcos errados: edit_ability, que corrige a técnica na biblioteca do mundo para todos que a têm (ao renomear, siga o padrão de nomes do mundo). Personagem que deveria gastar mais ou menos recurso (o controle ou a eficiência dele, ou uma técnica específica para ele): set_cost_modifier. Se a correção contrariar o momento do cânone, avise em uma frase, mas aplique se ele confirmar ou insistir.
-- Dificuldade e dados são REGRAS DA MESA, não diretriz: "deixa os combates mais difíceis", "quero modo história", "sem críticos", "furtividade mais fácil" vão por set_table_rules: pedido sobre um tipo de ação (combate, furtividade, social...) vai em setCategories, sobre o jogo todo em difficulty/dcOffset; críticos em crits; ritmo de XP ("quero subir de nível mais rápido") em xp; jeito de conduzir um tipo de cena ("diálogos mais descritivos", "batalhas mais cruas") em modes, com o texto inteiro da instrução nova do modo. Orientação de dificuldade que não cabe em número ("inimigos mais espertos", "pode matar meu personagem") vai em notes. Diga em números o que mudou.`;
+- Dificuldade e dados são REGRAS DA MESA, não diretriz: "deixa os combates mais difíceis", "quero modo história", "sem críticos", "furtividade mais fácil" vão por set_table_rules: pedido sobre um tipo de ação (combate, furtividade, social...) vai em setCategories, sobre o jogo todo em difficulty/dcOffset; críticos em crits; ritmo de XP ("quero subir de nível mais rápido") em xp; jeito de conduzir um tipo de cena ("diálogos mais descritivos", "batalhas mais cruas") em modes, com o texto inteiro da instrução nova do modo; quanto um recurso recupera ao comer, pausar ou dormir ("refeição recupera uns 3 a 5 de chakra") em rest, com a key do recurso (DESCANSO, no contexto). Orientação de dificuldade que não cabe em número ("inimigos mais espertos", "pode matar meu personagem") vai em notes. Diga em números o que mudou.`;
 
 const TABLE_TOOL: ToolDef = {
   type: "function",
@@ -89,6 +90,11 @@ const TABLE_TOOL: ToolDef = {
           type: "object",
           description: "ritmo de XP por feito, em % do que falta para o próximo nível (mande só o que muda): min e max num feito comum, great num feito grande; inteiros 0-100, min ≤ max ≤ great",
           properties: { min: { type: "number" }, max: { type: "number" }, great: { type: "number" } },
+        },
+        rest: {
+          type: "object",
+          description: "quanto cada recurso recupera por descanso: light = descanso leve (refeição, pausa), full = descanso completo (noite de sono); em cada um, { key do recurso: { min, max } } com inteiros de 0 a 999. Mande só os recursos que mudam; null tira a regra do recurso (sem regra, o Escrivão estima)",
+          properties: { light: { type: "object" }, full: { type: "object" } },
         },
         modes: {
           type: "object",
@@ -125,7 +131,7 @@ const SAVE_DIRECTIVE: ToolDef = {
     parameters: {
       type: "object",
       properties: {
-        content: { type: "string", description: "Instrução curta e autossuficiente, em português: o que vale na história e nas fichas (ex.: quanto um descanso recupera), sem citar nomes de ferramentas (quem aplica é o sistema)." },
+        content: { type: "string", description: "Instrução curta e autossuficiente, em português: o que vale na história e nas fichas (ex.: com que personagens interagir mais), sem citar nomes de ferramentas (quem aplica é o sistema). O que cabe numa regra da mesa (dificuldade, críticos, modos, XP, descanso) vai em set_table_rules." },
         kind: {
           type: "string",
           enum: ["diretriz", "preferencia", "correcao"],
@@ -166,7 +172,7 @@ export function splitPseudoCalls(text: string): { clean: string; pseudo: { conte
 }
 
 /** Roda uma ferramenta do turno a pedido do jogador. "✓ ..." = mudou o jogo (vira ✏️ na resposta). */
-async function runTool(
+export async function runTool(
   name: string,
   rawArgs: string,
   ctx: { campaign: Awaited<ReturnType<typeof getCampaign>>; scene: Awaited<ReturnType<typeof getCurrentScene>>; emit: () => void },
@@ -189,7 +195,12 @@ async function runTool(
           Array.isArray(args.setCategories) ? args.setCategories : [],
           Array.isArray(args.removeCategories) ? args.removeCategories.map(String) : []
         );
-      const table = normalizeTable(patch, current);
+      // rest: só os recursos que vieram mudam (null tira)
+      if (args.rest && typeof args.rest === "object")
+        patch.rest = Object.fromEntries(
+          Object.entries(args.rest as Record<string, unknown>).map(([k, v]) => [k, { ...current.rest?.[k as keyof typeof current.rest], ...(v as object) }])
+        );
+      const table = normalizeTable(patch, current, ctx.campaign.ruleset.resources.map((r) => r.key));
       if (typeof table === "string") return `Erro: ${table}. Nada mudou.`;
       await saveTable(ctx.campaign.id, table);
       ctx.campaign.state = { ...ctx.campaign.state, table };
@@ -252,6 +263,8 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
     tablePromptBlock(getTable(campaign.state)),
     // o texto atual de cada modo, para reescrever a pedido (set_table_rules modes)
     `\n--- MODOS DE CENA (como o Mestre conduz cada um; ajustáveis em modes) ---\n${(Object.keys(MODE_HINTS) as SceneMode[]).map((k) => `${k}: ${modeHint(getTable(campaign.state), k)}`).join("\n")}`,
+    // o que já vale de descanso e as keys dos recursos, para set_table_rules rest
+    `\n--- DESCANSO (quanto cada recurso recupera; ajustável em rest) ---\n${restRuleText(getTable(campaign.state)) || "sem regra: o Escrivão estima"}\nRecursos: ${campaign.ruleset.resources.map((r) => `${r.key} (${r.label})`).join(", ")}; tipos: ${REST_KINDS.map((k) => `${k.key} = ${k.label.toLowerCase()} (${k.when})`).join(", ")}`,
     player ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset)}` : "",
     story.length
       ? `\n--- ÚLTIMOS TRECHOS DA HISTÓRIA ---\n${story

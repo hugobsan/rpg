@@ -21,7 +21,7 @@ import { formatClock, getClock, period } from "./clock";
 import { hydrateSheets } from "./library";
 import { getObjectives, objectivesPromptBlock, objectiveXp } from "./objectives";
 import { getStage, loadMap, mapPromptBlock, normName } from "./map";
-import { getTable, modeHint, tablePromptBlock, xpRuleText } from "./table";
+import { getTable, modeHint, restRuleText, tablePromptBlock, xpRuleText } from "./table";
 import { takeSnapshot } from "./turnSnapshot";
 import { playerFixesLine, scribeState, scribeUndo, type ScribeEntry } from "./corrections";
 import { CONTINUE_INPUT } from "./continueScene";
@@ -923,12 +923,14 @@ async function runScribe(
   const player = chars.find((c) => c.kind === "player");
   // quem fala no formato **Nome:** sem registro: o Escrivão julga se é personagem e registra (a narração não volta ao Mestre)
   const unregistered = unregisteredSpeakers(narration, chars);
+  const rest = restRuleText(getTable(campaign.state));
   const state = [
     `Hora na história: ${clock ? `${formatClock(clock.minutes)} (${period(clock.minutes)})` : "não definida (missão só sem prazo)"}`,
     objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null, (o) =>
       objectiveXp(o, campaign.ruleset, getTable(campaign.state), player?.sheet.xp ?? 0)
     ),
     `REGRA DE XP DA MESA: ${xpRuleText(getTable(campaign.state))}.`,
+    rest && `REGRA DE DESCANSO DA MESA: ${rest}.`,
     player ? `\n--- JOGADOR ---\n${sheet(player)}` : "",
     npcs.length ? `\n--- NPCs EM CENA ---\n${npcs.map(sheet).join("\n")}` : "",
   ];

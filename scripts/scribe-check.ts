@@ -88,7 +88,7 @@ async function main() {
 
   const world = `test-${randomUUID()}`;
   const { rows: [c] } = await real.query(
-    `INSERT INTO campaigns (name, style, ruleset, state) VALUES ('[teste-escrivão]', 'open', $1, '{"clock":{"minutes":480}}') RETURNING id`,
+    `INSERT INTO campaigns (name, style, ruleset, state) VALUES ('[teste-escrivão]', 'open', $1, '{"clock":{"minutes":480},"table":{"rest":{"light":{"chakra":{"min":3,"max":5},"stamina":{"min":5,"max":8}}}}}') RETURNING id`,
     [JSON.stringify({ ...rs, world })] // mundo próprio: add_item não lê nem a biblioteca real
   );
   const id: string = c.id;
@@ -137,6 +137,7 @@ async function main() {
     assert.match(ask, /ANOTAÇÕES DE MISSÃO DO MESTRE ---\n- Iruka pediu para entregar o pergaminho/);
     assert.match(ask, /NARRAÇÃO DO MESTRE ---\nVocê atravessa a vila/);
     assert.match(ask, /Hugo \(player\)/);
+    assert.match(ask, /REGRA DE DESCANSO DA MESA: descanso leve \(refeição, pausa\): chakra \+3 a 5, stamina \+5 a 8\./, "o Escrivão recebe a regra de descanso");
     assert.match(ask, /DIRETRIZES DO JOGADOR ---\n- Descanso leve recupera 3 de chakra\./, "o Escrivão recebe as diretrizes");
     const [camp] = await db<{ state: Record<string, unknown> }>(`SELECT state FROM campaigns WHERE id = $1`);
     const [o] = getObjectives(camp.state);
@@ -211,7 +212,7 @@ async function main() {
     assert.ok(!scribeReqs[2].tools.includes("create_npc"));
     assert.equal((await db(`SELECT 1 FROM characters WHERE campaign_id = $1 AND name = 'Mizuki'`)).length, 1, "o Escrivão registrou o NPC");
 
-    console.log("scribe-check: ok (anotações depois da narração, rodada mista, Escrivão aplicado e logado, missão com tamanho sem XP em dobro, diretrizes ao Escrivão, fala sem registro vai ao Escrivão sem apagar a narração, fora do jogo com todas as ferramentas)");
+    console.log("scribe-check: ok (anotações depois da narração, rodada mista, Escrivão aplicado e logado, missão com tamanho sem XP em dobro, regra de descanso e diretrizes ao Escrivão, fala sem registro vai ao Escrivão sem apagar a narração, fora do jogo com todas as ferramentas)");
   } finally {
     await new Promise((r) => setTimeout(r, 300)); // o índice do histórico roda depois do done
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);

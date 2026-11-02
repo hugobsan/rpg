@@ -1,6 +1,6 @@
 // Regras da mesa (campaign.state.table): dificuldade e dados ajustáveis durante a campanha.
 // Puro (sem banco): serve ao servidor e à UI.
-import type { DiceResult, Difficulty, SceneMode, TableRules } from "./types";
+import type { DiceResult, Difficulty, RestKind, SceneMode, TableRules } from "./types";
 
 /** Presets: ajuste padrão da CD e o que o nível significa para o tom do Mestre. */
 export const DIFFICULTIES: { key: Difficulty; label: string; dcOffset: number; tone: string }[] = [
@@ -43,6 +43,16 @@ export const xpRuleText = (t: TableRules) => {
   return `de ${x.min} a ${x.max}% do que falta para o próximo nível num feito comum, até ${x.great}% num grande; feito excepcional (só o que as faixas acima não cobrem, como derrotar um vilão principal ou salvar a vila): valor livre, proporcional ao feito, que pode subir mais de um nível`;
 };
 
+// descanso: quanto cada recurso recupera (faixa por key do ruleset); sem regra, o Escrivão estima
+export const REST_KINDS: { key: RestKind; label: string; when: string }[] = [
+  { key: "light", label: "Descanso leve", when: "refeição, pausa" },
+  { key: "full", label: "Descanso completo", when: "noite de sono" },
+];
+export const restRuleText = (t: TableRules) =>
+  REST_KINDS.filter((k) => t.rest?.[k.key])
+    .map((k) => `${k.label.toLowerCase()} (${k.when}): ${Object.entries(t.rest![k.key]!).map(([r, v]) => `${r} +${v.min}${v.max > v.min ? ` a ${v.max}` : ""}`).join(", ")}`)
+    .join("; ");
+
 const preset = (d: Difficulty) => DIFFICULTIES.find((x) => x.key === d) ?? DIFFICULTIES[2];
 const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : "±0");
 const offsetOk = (n: number) => Number.isInteger(n) && Math.abs(n) <= 10;
@@ -56,7 +66,7 @@ export const slugKey = (s: string) =>
  * categories substitui a lista inteira. Trocar o preset sem dcOffset traz o ajuste do preset.
  * Devolve a regra nova ou a mensagem de erro.
  */
-export function normalizeTable(patch: Record<string, unknown>, current: TableRules): TableRules | string {
+export function normalizeTable(patch: Record<string, unknown>, current: TableRules, resourceKeys: string[] = []): TableRules | string {
   const t: TableRules = { ...current, categories: [...current.categories] };
   if (patch.difficulty !== undefined) {
     const d = DIFFICULTIES.find((x) => x.key === patch.difficulty);
@@ -113,6 +123,24 @@ export function normalizeTable(patch: Record<string, unknown>, current: TableRul
     if (![xp.min, xp.max, xp.great].every((v) => Number.isInteger(v) && v >= 0 && v <= 100) || xp.min > xp.max || xp.max > xp.great)
       return "xp: inteiros de 0 a 100 com min ≤ max ≤ great (% do que falta para o próximo nível)";
     t.xp = xp;
+  }
+  if (patch.rest !== undefined) {
+    // cada tipo de descanso que vier substitui o dele; key que não é recurso do mundo e entrada vazia (null) saem
+    if (!patch.rest || typeof patch.rest !== "object") return "rest: objeto { light?, full? } com { min, max } por recurso";
+    const rest = { ...current.rest };
+    for (const [kind, map] of Object.entries(patch.rest as Record<string, unknown>)) {
+      if (!REST_KINDS.some((k) => k.key === kind)) return `rest: "${kind}" não é tipo de descanso (light, full)`;
+      const out: Record<string, { min: number; max: number }> = {};
+      for (const [key, raw] of Object.entries((map ?? {}) as Record<string, { min?: unknown; max?: unknown } | null>)) {
+        if (!resourceKeys.includes(key) || (raw?.min == null && raw?.max == null)) continue;
+        const [a, b] = [Number(raw.min ?? raw.max), Number(raw.max ?? raw.min)];
+        if (![a, b].every((v) => Number.isInteger(v) && v >= 0 && v <= 999)) return `rest: ${key} precisa de min e max inteiros de 0 a 999`;
+        out[key] = { min: Math.min(a, b), max: Math.max(a, b) };
+      }
+      if (Object.keys(out).length) rest[kind as RestKind] = out;
+      else delete rest[kind as RestKind];
+    }
+    t.rest = Object.keys(rest).length ? rest : undefined;
   }
   return t;
 }
@@ -177,6 +205,7 @@ export function tableSummary(t: TableRules): string {
     t.categories.length ? t.categories.map((c) => `${c.label} ${signed(c.offset)}`).join(", ") : "",
     `críticos ${t.crits ? "ligados" : "desligados"}`,
     `XP ${xpRule(t).min}–${xpRule(t).max}% por feito (grande até ${xpRule(t).great}%)`,
+    t.rest ? `descanso: ${restRuleText(t)}` : "",
     t.modes ? `modos ajustados: ${(Object.keys(t.modes) as SceneMode[]).map((k) => MODE_LABELS[k]).join(", ")}` : "",
     t.notes ? `nota: ${t.notes}` : "",
   ]

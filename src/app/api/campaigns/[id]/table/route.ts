@@ -16,7 +16,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-/** PUT { difficulty?, dcOffset?, categories?, crits?, notes? } → { table }. Só o que vier muda; categories substitui a lista. */
+/** PUT { difficulty?, dcOffset?, categories?, crits?, notes?, xp?, modes?, rest? } → { table }. Só o que vier muda; categories substitui a lista. */
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await req.json().catch(() => null);
@@ -28,7 +28,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   } catch {
     return NextResponse.json({ error: "Campanha não encontrada" }, { status: 404 });
   }
-  const table = normalizeTable(body as Record<string, unknown>, getTable(campaign.state));
+  const table = normalizeTable(body as Record<string, unknown>, getTable(campaign.state), campaign.ruleset.resources.map((r) => r.key));
   if (typeof table === "string") return NextResponse.json({ error: table }, { status: 400 });
   await saveTable(id, table);
   return NextResponse.json({ table });
