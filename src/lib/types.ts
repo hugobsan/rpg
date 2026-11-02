@@ -360,7 +360,9 @@ export interface TableRules {
   notes?: string; // orientação livre de dificuldade para o Mestre
   xp?: { min: number; max: number; great: number }; // XP por feito, em % do que falta para o próximo nível (o Escrivão aplica)
   modes?: Partial<Record<SceneMode, string>>; // como conduzir cada modo de cena (só os que diferem do padrão; vai no contexto do turno)
+  rest?: Partial<Record<RestKind, Record<string, { min: number; max: number }>>>; // quanto cada recurso (key do ruleset) recupera por descanso (o Escrivão aplica)
 }
+export type RestKind = "light" | "full";
 
 /** Mensagem particular de NPC não lida (sessão aberta pelo NPC com npc_message). */
 export interface InboxItem {

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { Campaign, SceneMode, TableRules } from "@/lib/types";
-import { DIFFICULTIES, getTable, MODE_HINTS, MODE_LABELS, modeHint, tableDc, XP_PACES, xpRule } from "@/lib/table";
+import type { Campaign, RestKind, SceneMode, TableRules } from "@/lib/types";
+import { DIFFICULTIES, getTable, MODE_HINTS, MODE_LABELS, modeHint, REST_KINDS, tableDc, XP_PACES, xpRule } from "@/lib/table";
 import { campaignTheme, inferTheme, THEMES } from "@/lib/theme";
 import s from "./TableRulesPanel.module.css";
 
@@ -40,6 +40,34 @@ function ModeField({ mode, value, onSave }: { mode: SceneMode; value: string; on
       <textarea value={text} maxLength={600} rows={2} aria-label={`Modo ${MODE_LABELS[mode]}`}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => text.trim() !== value && onSave(text.trim())} />
+    </div>
+  );
+}
+
+/** Faixa de um recurso num tipo de descanso: salva ao sair do campo; os dois vazios = sem regra. */
+function RestField({ label, value, onSave }: { label: string; value?: { min: number; max: number }; onSave: (v: { min: number; max: number } | null) => void }) {
+  const [min, setMin] = useState(value ? String(value.min) : "");
+  const [max, setMax] = useState(value ? String(value.max) : "");
+  useEffect(() => {
+    setMin(value ? String(value.min) : "");
+    setMax(value ? String(value.max) : "");
+  }, [value?.min, value?.max]); // eslint-disable-line react-hooks/exhaustive-deps
+  const commit = () => {
+    const a = min.trim() || max.trim(), b = max.trim() || min.trim(); // um só vale para os dois
+    const next = a ? { min: Number(a), max: Number(b) } : null;
+    if (next?.min !== value?.min || next?.max !== value?.max) onSave(next);
+  };
+  const box = (v: string, set: (v: string) => void, which: string) => (
+    <input type="number" min={0} max={999} step={1} value={v} placeholder="—" className={s.num} aria-label={`${label}, ${which}`}
+      onChange={(e) => set(e.target.value)} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
+  );
+  return (
+    <div className={s.line}>
+      <span>{label}</span>
+      {/* salva quando o foco sai da linha: ir do mínimo ao máximo não grava pela metade */}
+      <span className={s.range} onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && commit()}>
+        {box(min, setMin, "mínimo")} a {box(max, setMax, "máximo")}
+      </span>
     </div>
   );
 }
@@ -123,6 +151,11 @@ export default function TableRulesPanel({ campaign, onChange }: { campaign: Camp
   const suggested = inferTheme(campaign.ruleset);
   const chosenTheme = typeof campaign.state.theme === "string";
   const xp = xpRule(table);
+  // manda o descanso inteiro (cada tipo substitui o dele no servidor)
+  const setRest = (kind: RestKind, key: string, v: { min: number; max: number } | null) => {
+    const { [key]: _, ...others } = table.rest?.[kind] ?? {};
+    save({ rest: { ...table.rest, [kind]: v ? { ...others, [key]: v } : others } }, "rest");
+  };
   const tick = (section: string) => saved === section && <span className={s.saved}>salvo</span>;
 
   return (
@@ -247,6 +280,22 @@ export default function TableRulesPanel({ campaign, onChange }: { campaign: Camp
           <div key={k} className={s.line}>
             <span>{label}</span>
             <Stepper label={label} value={xp[k]} min={lo} max={hi} fmt={(v) => `${v}%`} onChange={(v) => save({ xp: { ...xp, [k]: v } }, "xp")} />
+          </div>
+        ))}
+      </section>
+
+      <section className={s.section}>
+        <h4>Descanso {tick("rest")}</h4>
+        <p className={s.help}>
+          Quanto cada recurso recupera quando a narração mostra o descanso; o Escrivão escolhe um valor dentro da faixa.
+          Vazio: sem regra, o Escrivão estima.
+        </p>
+        {REST_KINDS.map((k) => (
+          <div key={k.key} className={s.restKind}>
+            <span className={s.restLabel}><b>{k.label}</b> · {k.when}</span>
+            {campaign.ruleset.resources.map((r) => (
+              <RestField key={r.key} label={r.label} value={table.rest?.[k.key]?.[r.key]} onSave={(v) => setRest(k.key, r.key, v)} />
+            ))}
           </div>
         ))}
       </section>

@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import { pool, q } from "../src/lib/db";
 import { rollDice } from "../src/lib/dice";
 import { executeGmTool, saveTable, ToolContext } from "../src/lib/tools";
-import { DEFAULT_TABLE, getTable, mergeCategories, normalizeTable, tableDc, tablePromptBlock, xpRule, xpRuleText, MODE_HINTS, modeHint } from "../src/lib/table";
+import { DEFAULT_TABLE, getTable, mergeCategories, normalizeTable, restRuleText, tableDc, tablePromptBlock, xpRule, xpRuleText, MODE_HINTS, modeHint } from "../src/lib/table";
+import { runTool } from "../src/lib/ooc";
 import { restoreSnapshot, takeSnapshot } from "../src/lib/turnSnapshot";
 import type { Campaign, DiceResult, Scene, TableRules, TurnEvent } from "../src/lib/types";
 
@@ -36,6 +37,19 @@ async function main() {
   assert.equal(ok(normalizeTable({ modes: { dialogue: "", battle: MODE_HINTS.battle } }, m2)).modes, undefined, "vazio ou igual ao padrão volta ao padrão");
   assert.equal(typeof normalizeTable({ modes: { stealth: "x" } }, DEFAULT_TABLE), "string", "modo desconhecido é recusado");
   assert.equal(ok(normalizeTable({ crits: true }, hard)).dcOffset, 2, "patch parcial mantém o resto");
+  // descanso: key que não é recurso sai, min > max vira a faixa certa, um número só vale para os dois, null e vazio tiram
+  const keys = ["hp", "chakra", "stamina"];
+  const r1 = ok(normalizeTable({ rest: { light: { chakra: { min: 5, max: 3 }, voo: { min: 1, max: 2 }, stamina: { min: 6 } } } }, DEFAULT_TABLE, keys));
+  assert.deepEqual(r1.rest, { light: { chakra: { min: 3, max: 5 }, stamina: { min: 6, max: 6 } } });
+  assert.equal(restRuleText(r1), "descanso leve (refeição, pausa): chakra +3 a 5, stamina +6");
+  assert.equal(restRuleText(DEFAULT_TABLE), "", "sem regra, sem texto");
+  const r2 = ok(normalizeTable({ rest: { full: { hp: { min: 10, max: 20 } } } }, r1, keys));
+  assert.deepEqual(Object.keys(r2.rest ?? {}), ["light", "full"], "cada tipo substitui só o dele");
+  assert.equal(ok(normalizeTable({ rest: { light: { chakra: null }, full: {} } }, r2, keys)).rest, undefined, "tudo vazio = sem regra");
+  assert.equal(ok(normalizeTable({ rest: { light: { chakra: { min: 3, max: 5 } } } }, DEFAULT_TABLE)).rest, undefined, "sem recursos no mundo, nada entra");
+  assert.match(normalizeTable({ rest: { light: { hp: { min: -1, max: 2 } } } }, DEFAULT_TABLE, keys) as string, /rest/);
+  assert.match(normalizeTable({ rest: { light: { hp: { min: 1.5, max: 2 } } } }, DEFAULT_TABLE, keys) as string, /rest/);
+  assert.match(normalizeTable({ rest: { nap: {} } }, DEFAULT_TABLE, keys) as string, /tipo de descanso/);
 
   // validação
   assert.match(normalizeTable({ difficulty: "impossivel" }, DEFAULT_TABLE) as string, /difficulty/);
@@ -125,6 +139,18 @@ async function main() {
     assert.equal(dice().dc, 14);
     out = await executeGmTool("roll_dice", { notation: "1d20" }, ctx);
     assert.doesNotMatch(out, /CD/, "disputa sem CD");
+
+    // fora do jogo: set_table_rules com rest muda só o recurso que veio (null tira) e confirma em texto
+    const rctx = { ...ctx, campaign: { ...ctx.campaign, ruleset: { ...ruleset, resources: [{ key: "chakra" }, { key: "stamina" }] } } } as unknown as Parameters<typeof runTool>[2];
+    out = await runTool("set_table_rules", JSON.stringify({ rest: { light: { chakra: { min: 3, max: 5 }, stamina: { min: 5, max: 8 }, mana: { min: 1, max: 2 } } } }), rctx, []);
+    assert.match(out, /^✓ Regras da mesa: .*descanso: descanso leve \(refeição, pausa\): chakra \+3 a 5, stamina \+5 a 8/);
+    out = await runTool("set_table_rules", JSON.stringify({ rest: { light: { chakra: { min: 2, max: 4 }, stamina: null } } }), rctx, []);
+    const [saved] = await q<{ state: Record<string, unknown> }>(`SELECT state FROM campaigns WHERE id = $1`, [id]);
+    assert.deepEqual(getTable(saved.state).rest, { light: { chakra: { min: 2, max: 4 } } }, "merge por recurso, null tira");
+    assert.equal(getTable(saved.state).difficulty, "hard", "o resto da mesa fica");
+    out = await runTool("set_table_rules", JSON.stringify({ rest: { light: { chakra: { min: -2, max: 4 } } } }), rctx, []);
+    assert.match(out, /^Erro: rest/);
+    await saveTable(id, t);
 
     // o jogador muda a regra depois do turno: gerar novamente não volta a regra antiga
     await q(`UPDATE campaigns SET state = state || '{"theme":"neon"}' WHERE id = $1`, [id]);
