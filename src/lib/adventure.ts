@@ -6,6 +6,7 @@
 import type { Ruleset } from "./types";
 import { THEMES } from "./theme";
 import { costsByRankText } from "./ruleset";
+import { normalizeCurrency } from "./money";
 
 /** Rascunho: ruleset parcial + startingPoint (sugestão para o campo do assistente; viaja no JSON). */
 export type Draft = Partial<Ruleset>;
@@ -40,7 +41,7 @@ const KEYS: (keyof Ruleset)[] = [
   "name", "description", "theme", "loreNotes", "canonBased", "startingPoint", "attributes", "resources",
   "abilityTypes", "abilityElements", "abilityRanks", "ranks", "powerLevels", "masteryBonus", "masteryCost", "xpPerAttributePoint",
   "attributeMultiplier", "abilityAttributes", "training", "creationPoints", "extraFields", "diceNotes",
-  "progressionNotes", "abilitiesLabel", "abilityCosts", "costControlLabel", "startingAbilities", "abilityNaming",
+  "progressionNotes", "abilitiesLabel", "abilityCosts", "costControlLabel", "startingAbilities", "abilityNaming", "currency",
 ];
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -163,6 +164,12 @@ export function draftIssues(d: Draft): string[] {
   if (d.xpPerAttributePoint !== undefined && (!num(d.xpPerAttributePoint) || d.xpPerAttributePoint <= 0))
     out.push("xpPerAttributePoint: número > 0");
   keyed(d.extraFields, "extraFields", out);
+  // dinheiro (opcional): moedas com valor inteiro na menor, e a menor vale 1
+  if (d.currency !== undefined) {
+    const cur = normalizeCurrency(d.currency);
+    if (!cur || cur.units.length !== (d.currency.units || []).length || cur.units.at(-1)!.value !== 1)
+      out.push("currency: {units: [{key, label, plural?, value}] com value inteiro na menor moeda (a menor com value 1), start, prices} ou omita");
+  }
   const ac = d.abilityCosts;
   if (!isObj(ac) || !res.includes(ac.resource) || !isObj(ac.byRank)) out.push(`abilityCosts: {resource: uma de ${res.join(", ") || "resources"}, byRank: {rank: custo}}`);
   else for (const [k, v] of Object.entries(ac.byRank)) if (!ranks.includes(k) || !num(v)) out.push(`abilityCosts.byRank: "${k}" não é um abilityRank ou o custo não é número`);
@@ -228,6 +235,7 @@ export function draftProgress(d: Draft): { label: string; value: string | null }
     { label: "Níveis de poder", value: d.powerLevels?.length ? d.powerLevels.map((p) => p.label).join(" → ") : null },
     { label: "Kit inicial", value: kitCount ? `${kitCount} ${kitCount === 1 ? "habilidade" : "habilidades"}` : null },
     { label: "Ficha", value: names(d.extraFields) || null },
+    { label: "Dinheiro", value: d.currency?.units?.length ? d.currency.units.map((u) => u.label).join(", ") : null },
     { label: "Rolagens", value: firstSentence(d.diceNotes) || null },
     { label: "Tema visual", value: THEMES.find((t) => t.key === d.theme)?.label || null },
   ];

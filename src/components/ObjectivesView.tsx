@@ -3,6 +3,7 @@ import { formatClock, getClock } from "@/lib/clock";
 import { formatRemaining, getObjectives, Objective, OBJECTIVE_KIND_LABEL, objectiveXp } from "@/lib/objectives";
 import { getTable } from "@/lib/table";
 import type { Ruleset } from "@/lib/types";
+import { formatMoney } from "@/lib/money";
 import s from "./SidePanels.module.css";
 
 const STATUS_LABEL = { concluido: "concluído", perdido: "perdido", cancelado: "cancelado", aberto: "aberto", oferecida: "oferecida" };
@@ -72,6 +73,7 @@ export default function ObjectivesView({ state, ruleset, playerXp, onDecide, dis
         {o.giver && <div className={s.sub}>Oferecida por {o.giver}</div>}
         {o.description && <div className={s.sub}>{o.description}</div>}
         {o.reward && <span className={s.reward}><StarIcon /> {o.reward}</span>}
+        {!!o.pay && ruleset.currency && <span className={s.reward}>Sua parte: {formatMoney(o.pay, ruleset.currency)}{o.payGiven ? " (recebida)" : ""}</span>}
         {isOffer && o.deadlineMinutes !== undefined && (
           <div className={s.deadline}><span>{isLate(o, now) ? "o prazo já passou" : `prazo se aceitar: até ${formatClock(o.deadlineMinutes)}`}</span></div>
         )}
@@ -163,6 +165,7 @@ export function OfferModal({ o, state, ruleset, playerXp, onDecide, onClose, dis
           </p>
           {o.description && <p style={{ margin: 0 }}>{o.description}</p>}
           {o.reward && <span className={s.reward}><StarIcon /> {o.reward}</span>}
+          {!!o.pay && ruleset.currency && <span className={s.reward}>Sua parte ao concluir: {formatMoney(o.pay, ruleset.currency)}</span>}
           {xp !== null && (
             <span className="muted num">
               {o.xpSize === "excepcional" ? "" : "≈ "}{xp} XP ao concluir ({SIZE_LABEL[o.xpSize!]}, pela regra de XP da mesa)

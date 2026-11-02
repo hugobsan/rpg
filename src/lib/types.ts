@@ -111,6 +111,8 @@ export interface Ruleset {
   creationPoints: number;
   /** Campos extras livres da ficha (ex: elemento, kekkei genkai) */
   extraFields: { key: string; label: string; description?: string }[];
+  /** Dinheiro do mundo (uma ou várias moedas); sem ele, o mundo não tem dinheiro na ficha */
+  currency?: Currency;
   diceNotes?: string; // convenções de rolagem para o Mestre
   /** Orientação sobre progresso/milestones por habilidade (ex: estágios de um dōjutsu) */
   progressionNotes?: string;
@@ -165,6 +167,15 @@ export interface Item {
   description?: string;
 }
 
+/** Moedas do mundo. value = quanto a moeda vale na menor (value 1): Ryō 1; Galeão 493, Sicle 29, Nuque 1. */
+export interface Currency {
+  units: { key: string; label: string; plural?: string; value: number }[];
+  /** saldo inicial do personagem do jogador, na menor moeda */
+  start?: number;
+  /** preços de referência em texto livre (missões, comida, equipamento), para o Mestre manter os valores coerentes */
+  prices?: string;
+}
+
 export interface Sheet {
   attributes: Record<string, number>;
   resources: Record<string, { current: number; max: number }>;
@@ -181,6 +192,8 @@ export interface Sheet {
   trainingLog?: { day: number; hours: number; mastery: Record<string, number> };
   /** multiplicador geral de custo das habilidades (Ruleset.costControlLabel; ex.: 0,75 controle excelente, 1,25 ruim); padrão 1 */
   costMult?: number;
+  /** dinheiro, na menor moeda do mundo (Ruleset.currency) */
+  money?: number;
 }
 
 /** Ficha como fica gravada (dehydrateSheet): habilidades só com ref; sem ref só no formato antigo. */

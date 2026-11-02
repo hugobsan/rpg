@@ -44,6 +44,7 @@ import { executeMapTool, recordScenePlace } from "./map";
 import { executeLocalMapTool, executeMapBrief, MAP_BRIEF_TOOL } from "./cartographer";
 import { dcResultText, getTable, tableDc } from "./table";
 import { queueProfile } from "./characters";
+import { formatMoney, toBase } from "./money";
 
 // add_ability espera o Criador de habilidades até isto; depois registra incompleta com o que o Mestre passou
 // (se o Criador responder depois, a resposta completa a entrada: linkAbility)
@@ -106,6 +107,23 @@ export const GM_TOOLS: ToolDef[] = [
           setMax: { type: "number", description: "novo máximo" },
         },
         ["character", "resource"]
+      ),
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_money",
+      description:
+        "Muda o dinheiro de um personagem pelo que a história mostrou: pagamento recebido (amount positivo) ou compra, conta, suborno, perda (negativo). Recusa gasto maior que o saldo. Pagamento de missão registrada com pay entra sozinho ao concluí-la: não repita aqui.",
+      parameters: S(
+        {
+          character: { type: "string", description: "nome exato" },
+          amount: { type: "number", description: "quanto, na moeda de unit (+recebeu, -gastou)" },
+          unit: { type: "string", description: "key da moeda (DINHEIRO na mecânica); pode omitir se o mundo tem uma só" },
+          reason: { type: "string", description: "o quê, em poucas palavras (ex.: 'kunai e shuriken', 'parte da missão do gato')" },
+        },
+        ["character", "amount", "reason"]
       ),
     },
   },
@@ -485,7 +503,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "add_objective",
       description:
-        "Registra uma missão, um evento marcado ou outro compromisso da história, com prazo opcional em tempo do jogo. Prazo absoluto (day + hour/minute; sem day, a próxima vez que der essa hora) ou relativo (inMinutes/inHours/inDays a partir de agora). Quando o relógio passa do prazo, o sistema marca como perdido. status oferecida: missão proposta que o jogador ainda não aceitou (não vence; o prazo só conta depois de aceita). xpSize: a XP que a missão dá ao ser concluída, calculada pela regra de XP da mesa.",
+        "Registra uma missão, um evento marcado ou outro compromisso da história, com prazo opcional em tempo do jogo. Prazo absoluto (day + hour/minute; sem day, a próxima vez que der essa hora) ou relativo (inMinutes/inHours/inDays a partir de agora). Quando o relógio passa do prazo, o sistema marca como perdido. status oferecida: missão proposta que o jogador ainda não aceitou (não vence; o prazo só conta depois de aceita). xpSize: a XP que a missão dá ao ser concluída, calculada pela regra de XP da mesa. pay: o dinheiro que o jogador recebe ao concluir (entra sozinho na ficha).",
       parameters: S(
         {
           title: { type: "string", description: "nome curto (ex: 'Escoltar o Tazuna', 'Exame Chūnin')" },
@@ -500,6 +518,8 @@ export const GM_TOOLS: ToolDef[] = [
             description: "peso na história (XP ao concluir): pequena = favor ou tarefa curta; media = trabalho de um dia ou com algum risco; grande = missão perigosa ou que move um arco; excepcional = só o que as faixas não cobrem (com xp)",
           },
           xp: { type: "number", description: "só com xpSize excepcional: XP livre, proporcional ao feito" },
+          pay: { type: "number", description: "pagamento que vai para o JOGADOR ao concluir (a parte dele, se é dividido com a equipe), na moeda de payUnit; o total vai em reward" },
+          payUnit: { type: "string", description: "key da moeda do pay; pode omitir se o mundo tem uma só" },
           day: { type: "number", description: "prazo absoluto: dia da campanha" },
           hour: { type: "number", description: "prazo absoluto: hora 0-23 (com day e sem hour: fim do dia)" },
           minute: { type: "number", description: "prazo absoluto: minuto 0-59" },
@@ -516,7 +536,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "update_objective",
       description:
-        "Atualiza uma missão/evento registrado: concluir quando cumprido (missão com xpSize já dá a XP ao jogador), cancelar quando deixou de valer na história (ou o jogador recusou a oferecida), aberto quando o jogador aceitou a oferecida, ou mudar o prazo e o tamanho (mesmos campos de add_objective; noDeadline=true tira o prazo). Um objetivo perdido não volta.",
+        "Atualiza uma missão/evento registrado: concluir quando cumprido (missão com xpSize já dá a XP ao jogador, e com pay o pagamento), cancelar quando deixou de valer na história (ou o jogador recusou a oferecida), aberto quando o jogador aceitou a oferecida, ou mudar o prazo e o tamanho (mesmos campos de add_objective; noDeadline=true tira o prazo). Um objetivo perdido não volta.",
       parameters: S(
         {
           objective: { type: "string", description: "id (ex: o2) ou título" },
@@ -528,6 +548,8 @@ export const GM_TOOLS: ToolDef[] = [
             description: "peso na história (XP ao concluir): pequena = favor ou tarefa curta; media = trabalho de um dia ou com algum risco; grande = missão perigosa ou que move um arco; excepcional = só o que as faixas não cobrem (com xp)",
           },
           xp: { type: "number", description: "só com xpSize excepcional: XP livre, proporcional ao feito" },
+          pay: { type: "number", description: "pagamento que vai para o JOGADOR ao concluir (a parte dele, se é dividido com a equipe), na moeda de payUnit; o total vai em reward" },
+          payUnit: { type: "string", description: "key da moeda do pay; pode omitir se o mundo tem uma só" },
           day: { type: "number" },
           hour: { type: "number" },
           minute: { type: "number" },
@@ -648,7 +670,7 @@ export const GM_TOOLS: ToolDef[] = [
 
 // o Escrivão registra estas depois da narração, pelo que ela mostra: saem do turno do Mestre (o fora do jogo fica com todas)
 export const SCRIBE_TOOLS = new Set([
-  "update_resource", "add_item", "remove_item", "add_memory", "grant_xp", "update_ability_progress", "update_extra_field",
+  "update_resource", "update_money", "add_item", "remove_item", "add_memory", "grant_xp", "update_ability_progress", "update_extra_field",
   "add_objective", "update_objective",
 ]);
 
@@ -663,8 +685,8 @@ export const GM_TURN_TOOLS: ToolDef[] = [
     function: {
       name: "note_objective",
       description:
-        "Anota numa frase uma missão, evento marcado ou compromisso com prazo que a história criou, mudou, cumpriu ou cancelou (ex.: \"Hokage deu a missão de escoltar o Tazuna até a Vila da Névoa, prazo de 3 dias; recompensa 30 mil ryō\", \"missão do Tazuna concluída\"). Diga o tamanho (pequena, média, grande ou excepcional) e se é só oferecida (o jogador ainda não aceitou). O Escrivão registra com o prazo em tempo do jogo depois da narração.",
-      parameters: S({ brief: { type: "string", description: "o que foi combinado, prazo, recompensa e tamanho, como a história disse" } }, ["brief"]),
+        "Anota numa frase uma missão, evento marcado ou compromisso com prazo que a história criou, mudou, cumpriu ou cancelou (ex.: \"Hokage deu a missão de escoltar o Tazuna até a Vila da Névoa, prazo de 3 dias; paga 30 mil ryō à equipe, 10 mil para Hugo\", \"missão do Tazuna concluída\"). Em missão paga, diga o total e a parte do personagem do jogador. Diga o tamanho (pequena, média, grande ou excepcional) e se é só oferecida (o jogador ainda não aceitou). O Escrivão registra com o prazo em tempo do jogo depois da narração.",
+      parameters: S({ brief: { type: "string", description: "o que foi combinado, prazo, pagamento (total e parte do jogador) ou recompensa e tamanho, como a história disse" } }, ["brief"]),
     },
   },
 ];
@@ -859,6 +881,22 @@ export async function executeGmTool(
         summary: `${c.name}: ${key} → ${res.current}/${res.max}`,
       });
       return `${c.name} agora tem ${key} = ${res.current}/${res.max}.`;
+    }
+    case "update_money": {
+      const cur = ctx.campaign.ruleset.currency;
+      if (!cur) return "Nada mudou: este mundo não tem dinheiro na ficha.";
+      const c = await getChar(cid, String(args.character));
+      const delta = toBase(Number(args.amount), args.unit ? String(args.unit) : undefined, cur);
+      if (typeof delta === "string") return delta;
+      if (!delta) return "amount precisa ser diferente de zero.";
+      const before = c.sheet.money ?? 0;
+      if (before + delta < 0) return `Nada mudou: ${c.name} tem ${formatMoney(before, cur)} e não paga ${formatMoney(-delta, cur)}.`;
+      c.sheet.money = before + delta;
+      await saveSheet(c.id, c.sheet);
+      ctx.emit({ type: "state" });
+      const reason = String(args.reason || "").trim();
+      ctx.emit({ type: "tool", name, summary: `💰 ${c.name}: ${delta > 0 ? "+" : "−"}${formatMoney(Math.abs(delta), cur)}${reason ? ` (${reason})` : ""} → ${formatMoney(c.sheet.money, cur)}` });
+      return `${c.name} agora tem ${formatMoney(c.sheet.money, cur)}.`;
     }
     case "update_attribute": {
       const c = await getChar(cid, String(args.character));
@@ -1371,6 +1409,10 @@ export async function executeGmTool(
       if (size !== undefined && !OBJECTIVE_XP_SIZES.includes(size)) return `xpSize: use ${OBJECTIVE_XP_SIZES.join(", ")}.`;
       const xpArg = args.xp === undefined ? undefined : Math.round(Number(args.xp));
       if (xpArg !== undefined && !(xpArg > 0)) return "xp precisa ser um número positivo (só com xpSize excepcional).";
+      const cur = ctx.campaign.ruleset.currency;
+      const payArg = args.pay === undefined || args.pay === null || !cur ? undefined : toBase(Number(args.pay), args.payUnit ? String(args.payUnit) : undefined, cur);
+      if (typeof payArg === "string") return payArg;
+      if (payArg !== undefined && payArg < 0) return "pay não pode ser negativo.";
       const setSize = (o: Objective): string | null => {
         if (size !== undefined) o.xpSize = size;
         if (xpArg !== undefined) o.xp = xpArg;
@@ -1405,6 +1447,7 @@ export async function executeGmTool(
         };
         const bad = setSize(o);
         if (bad) return bad;
+        if (payArg) o.pay = payArg;
         list.push(o);
         chip = `📜 ${o.status === "oferecida" ? "Oferecida" : OBJECTIVE_KIND_LABEL[kind]}: ${title} (${deadlineText(deadline, now)})`;
       } else {
@@ -1432,6 +1475,7 @@ export async function executeGmTool(
         if (args.noDeadline === true) (o.deadlineMinutes = undefined), changes.push("sem prazo");
         else if (deadline !== undefined) (o.deadlineMinutes = deadline), changes.push(deadlineText(deadline, now));
         if (size !== undefined || xpArg !== undefined) changes.push(`tamanho ${o.xpSize}`);
+        if (payArg !== undefined && !o.payGiven) (o.pay = payArg || undefined), changes.push(`pagamento ${cur ? formatMoney(payArg, cur) : payArg}`);
         const accepted = args.status === "aberto" && found.status === "oferecida";
         // aceitar com o prazo já vencido viraria perdida no próximo relógio (ex.: a oferta era o próprio bloco de treino)
         const due = args.noDeadline === true ? undefined : deadline ?? found.deadlineMinutes; // prazo que vale depois desta chamada
@@ -1450,10 +1494,19 @@ export async function executeGmTool(
       }
       // missão com tamanho concluída: a XP vai para o personagem do jogador pela mesma soma do grant_xp
       const [player] =
-        o.status === "concluido" && o.xpSize
+        o.status === "concluido" && (o.xpSize || (o.pay && !o.payGiven))
           ? await hydrateSheets(await q<Character>(`SELECT * FROM characters WHERE campaign_id = $1 AND kind = 'player' LIMIT 1`, [cid]))
           : [];
-      const xp = player ? objectiveXp(o, ctx.campaign.ruleset, getTable(ctx.campaign.state), player.sheet.xp) : null;
+      const xp = player && o.xpSize ? objectiveXp(o, ctx.campaign.ruleset, getTable(ctx.campaign.state), player.sheet.xp) : null;
+      // pagamento: entra na ficha uma vez (payGiven), antes da XP (grantXp salva a ficha que já tem o dinheiro)
+      let paid = "";
+      if (player && cur && o.pay && !o.payGiven) {
+        player.sheet.money = (player.sheet.money ?? 0) + o.pay;
+        o.payGiven = o.pay;
+        if (!xp) await saveSheet(player.id, player.sheet);
+        paid = formatMoney(o.pay, cur);
+        chip += ` (+${paid})`;
+      }
       if (xp) {
         chip += ` (+${xp} XP)`;
         o.xpGiven = xp; // a correção manual devolve esta XP se a missão sair de concluída
@@ -1462,7 +1515,7 @@ export async function executeGmTool(
       ctx.campaign.state = { ...ctx.campaign.state, objectives: list };
       ctx.emit({ type: "tool", name, summary: chip });
       ctx.emit({ type: "state" });
-      const done = `${o.id} "${o.title}": ${o.status}, ${deadlineText(o.deadlineMinutes, now)}.`;
+      const done = `${o.id} "${o.title}": ${o.status}, ${deadlineText(o.deadlineMinutes, now)}.${paid ? ` Pagamento de ${paid} na ficha de ${player!.name}: não registre de novo.` : ""}`;
       if (!player || !xp) return done;
       if (ctx.scribe) (ctx.missionXp ??= []).push({ charId: player.id, title: o.title, xp }); // a trava é só do Escrivão
       return `${done} A missão deu ${xp} XP: ${await grantXp(ctx, player, xp, `missão: ${o.title}`)}`;

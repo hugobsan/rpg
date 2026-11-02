@@ -28,6 +28,7 @@ import { getObjectives, objectivesPromptBlock, objectiveXp } from "./objectives"
 import { getStage, loadMap, mapPromptBlock, normName } from "./map";
 import { getTable, modeHint, restRuleText, tablePromptBlock, xpRuleText } from "./table";
 import { regenNotes, takeSnapshot } from "./turnSnapshot";
+import { formatMoney } from "./money";
 import { playerFixesLine, scribeState, scribeUndo, type ScribeEntry } from "./corrections";
 import { CONTINUE_INPUT } from "./continueScene";
 import {
@@ -113,6 +114,7 @@ export function sheetSummary(c: Character, full: boolean, rs: Ruleset, compact =
     .map(([k, v]) => `${k}: ${v}`)
     .join("; ");
   if (extra) lines.push(`  ${extra}`);
+  if (rs.currency && (c.kind === "player" || s.money !== undefined)) lines.push(`  dinheiro: ${formatMoney(s.money ?? 0, rs.currency)}`);
   if (costMultOf(s.costMult) !== 1) lines.push(`  ${controlLabel(rs).toLowerCase()}: custo das técnicas ×${String(costMultOf(s.costMult)).replace(".", ",")} (já no custo abaixo)`);
   const said = focus === undefined ? null : ` ${normName(focus)} `;
   const related = (name: string) => !said || [name, name.split(":").pop()!].some((n) => normName(n) && said.includes(` ${normName(n)} `));
@@ -226,8 +228,11 @@ async function buildGmSystem(
           ? `\nAntes desta cena (fim do resumo da anterior): ${before.summary.slice(-1200)}`
           : ""
     }`,
-    objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null, (o) =>
-      objectiveXp(o, campaign.ruleset, getTable(campaign.state), player?.sheet.xp ?? 0)
+    objectivesPromptBlock(
+      getObjectives(campaign.state),
+      clock?.minutes ?? null,
+      (o) => objectiveXp(o, campaign.ruleset, getTable(campaign.state), player?.sheet.xp ?? 0),
+      campaign.ruleset.currency && ((n) => formatMoney(n, campaign.ruleset.currency!))
     ),
     // só local, rotas e palco: o resto do mapa (mapas 3D, locais distantes, regras) vai ao Topógrafo pelo map_brief
     mapPromptBlock(await loadMap(campaign.id, campaign.state), getStage(scene.state), scene.mode),
@@ -985,8 +990,11 @@ async function runScribe(
   const rest = restRuleText(getTable(campaign.state));
   const state = [
     `Hora na história: ${clock ? `${formatClock(clock.minutes)} (${period(clock.minutes)})` : "não definida (missão só sem prazo)"}`,
-    objectivesPromptBlock(getObjectives(campaign.state), clock?.minutes ?? null, (o) =>
-      objectiveXp(o, campaign.ruleset, getTable(campaign.state), player?.sheet.xp ?? 0)
+    objectivesPromptBlock(
+      getObjectives(campaign.state),
+      clock?.minutes ?? null,
+      (o) => objectiveXp(o, campaign.ruleset, getTable(campaign.state), player?.sheet.xp ?? 0),
+      campaign.ruleset.currency && ((n) => formatMoney(n, campaign.ruleset.currency!))
     ),
     `REGRA DE XP DA MESA: ${xpRuleText(getTable(campaign.state))}.`,
     rest && `REGRA DE DESCANSO DA MESA: ${rest}.`,

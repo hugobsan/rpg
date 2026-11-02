@@ -4,6 +4,7 @@ import type { Campaign, Character } from "@/lib/types";
 import { attributeCap, attributePoints, controlLabel, costMultOf, DEFAULT_XP_PER_POINT, levelThatAllows, powerLevel, trainingRules } from "@/lib/progression";
 import { toast } from "./ui/Toast";
 import Portrait, { PortraitButton } from "./Portrait";
+import { formatMoney } from "@/lib/money";
 import s from "./SheetView.module.css";
 
 const reduced = () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -161,6 +162,7 @@ export default function SheetView({ char, campaign, onChange, onFix, fixDisabled
           <div className={s.who}>
             <h3 className={s.name}>{char.name}</h3>
             <div className={s.rank}>{rank?.label || sh.rank || "sem cargo"}</div>
+            {rs.currency && <div className={`${s.money} num`} title="Dinheiro: muda pela história (compras, pagamentos e missões concluídas)">{formatMoney(sh.money ?? 0, rs.currency)}</div>}
             {onChange && <div className={s.portraitAction}><PortraitButton char={char} onChange={onChange} /></div>}
           </div>
           {onFix && !fixing && (

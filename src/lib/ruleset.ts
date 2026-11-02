@@ -1,4 +1,5 @@
 import { Ability, AbilityMilestone, Ruleset, Sheet } from "./types";
+import { currencyPromptLine, normalizeCurrency } from "./money";
 import { controlLabel, costBreakdown, effectiveCost, KIT_MASTERY, mastery, masteryBonus, progressionPromptLines } from "./progression";
 
 /** Ruleset padrão, agnóstico de cenário. Presets (ex: Naruto) são importados por JSON. */
@@ -70,6 +71,7 @@ export function normalizeRuleset(input: unknown): Ruleset {
     if (!bands.length) delete r.abilityCosts.byConsumption;
   }
   r.costControlLabel = text(r.costControlLabel);
+  r.currency = normalizeCurrency(r.currency);
   const sa = r.startingAbilities;
   r.startingAbilities =
     sa && typeof sa === "object" && !Array.isArray(sa)
@@ -204,6 +206,7 @@ export function rulesetPromptSummary(r: Ruleset): string {
     );
   }
   if (r.abilityNaming) lines.push(`Padrão de nomes das habilidades: ${r.abilityNaming}`);
+  if (r.currency) lines.push(currencyPromptLine(r.currency));
   const kits = r.ranks
     .filter((k) => r.startingAbilities?.[k.key]?.length)
     .map((k) => `${k.label}: ${r.startingAbilities![k.key].map((a) => a.name).join(", ")}`);

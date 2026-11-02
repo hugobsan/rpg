@@ -25,6 +25,8 @@ export interface Objective {
   xpSize?: ObjectiveXpSize; // XP dada ao concluir, pela regra de XP da mesa
   xp?: number; // só com excepcional: valor livre
   xpGiven?: number; // XP que a conclusão deu e não devolveu (0 = deu antes de existir este campo): não dá de novo
+  pay?: number; // dinheiro do jogador ao concluir (a parte dele), na menor moeda do mundo
+  payGiven?: number; // pagamento que a conclusão deu e não devolveu: não paga de novo
   createdAt: number; // minutos do relógio (0 se ainda não havia relógio)
   closedAt?: number;
   // aceita ou recusada pelo painel (Date.now): o Mestre reconhece na cena; sai quando o turno seguinte termina
@@ -92,7 +94,7 @@ export function decideOffer(list: Objective[], id: string, accept: boolean, now:
  * Bloco do contexto do Mestre: oferecidas, abertos com o tempo restante e perdidos nos últimos 3 dias.
  * xpOf (objectiveXp com ruleset, mesa e XP do jogador) põe a XP estimada na recompensa.
  */
-export function objectivesPromptBlock(list: Objective[], now: number | null, xpOf?: (o: Objective) => number | null): string {
+export function objectivesPromptBlock(list: Objective[], now: number | null, xpOf?: (o: Objective) => number | null, moneyOf?: (n: number) => string): string {
   const offered = list.filter((o) => o.status === "oferecida");
   const open = list.filter((o) => o.status === "aberto");
   const lost = list.filter((o) => o.status === "perdido" && now !== null && (o.closedAt ?? 0) >= now - 3 * 1440);
@@ -102,7 +104,7 @@ export function objectivesPromptBlock(list: Objective[], now: number | null, xpO
   if (!offered.length && !open.length && !lost.length && !refused.length && !done.length) return "";
   const reward = (o: Objective) => {
     const xp = xpOf?.(o);
-    const r = [o.reward, xp != null && `≈ ${xp} XP`].filter(Boolean).join(" + ");
+    const r = [o.reward, o.pay && moneyOf && `${moneyOf(o.pay)} para o jogador`, xp != null && `≈ ${xp} XP`].filter(Boolean).join(" + ");
     return r ? ` | recompensa: ${r}` : "";
   };
   const line = (o: Objective) =>

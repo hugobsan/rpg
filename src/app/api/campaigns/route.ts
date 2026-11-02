@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
   const sheet = blankSheet(ruleset);
   if (body.character.attributes) Object.assign(sheet.attributes, body.character.attributes);
   if (body.character.extra) Object.assign(sheet.extra, body.character.extra);
+  if (ruleset.currency) sheet.money = ruleset.currency.start ?? 0;
   // kit do rank inicial + extras da tela entram na biblioteca do mundo (a existente pelo nome, se já há) e a ficha
   // guarda { ref, progress }; extra que cai na mesma entrada do kit substitui o domínio
   const abilities = new Map<number, StoredAbility>();

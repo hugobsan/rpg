@@ -28,6 +28,7 @@ export class FixError extends Error {}
 type CharUndo = {
   id: string;
   xp?: number;
+  money?: number;
   res?: Record<string, [current: number, max: number]>;
   items?: { name: string; qty: number; description?: string }[];
   mastery?: Record<string, number>; // ref (ou nome, ficha antiga) → pontos
@@ -73,6 +74,7 @@ const abilityKey = (a: Pick<Ability, "ref" | "name">) => String(a.ref ?? a.name)
 export function sheetDiff(a: Sheet, b: Sheet): Omit<CharUndo, "id"> | null {
   const d: Omit<CharUndo, "id"> = {};
   if ((b.xp ?? 0) !== (a.xp ?? 0)) d.xp = (b.xp ?? 0) - (a.xp ?? 0);
+  if ((b.money ?? 0) !== (a.money ?? 0)) d.money = (b.money ?? 0) - (a.money ?? 0);
   for (const [k, r] of Object.entries(b.resources ?? {})) {
     const o = a.resources?.[k];
     if (o && (r.current !== o.current || r.max !== o.max)) (d.res ??= {})[k] = [r.current - o.current, r.max - o.max];
@@ -96,6 +98,7 @@ export function sheetDiff(a: Sheet, b: Sheet): Omit<CharUndo, "id"> | null {
 /** Desfaz na ficha (hidratada) o que sheetDiff registrou. */
 export function revertSheet(s: Sheet, d: Omit<CharUndo, "id">): void {
   if (d.xp) s.xp -= d.xp;
+  if (d.money) s.money = Math.max(0, (s.money ?? 0) - d.money);
   for (const [k, [cur, max]] of Object.entries(d.res ?? {})) {
     const r = s.resources[k];
     if (!r) continue;
@@ -223,7 +226,7 @@ const STATUS_TEXT: Record<ObjectiveStatus, string> = {
  * xpGiven; sair de concluída devolve a que deu. Concluída antes de existir xpGiven (valor desconhecido) fica com 0:
  * não devolve nem dá de novo.
  */
-export function fixStatus(o: Objective, status: ObjectiveStatus, now: number | undefined, xpNow: number | null): { next: Objective; xp: number } {
+export function fixStatus(o: Objective, status: ObjectiveStatus, now: number | undefined, xpNow: number | null): { next: Objective; xp: number; money: number } {
   const next: Objective = { ...o, status };
   if (status === "aberto") delete next.closedAt;
   else next.closedAt = now ?? 0;
@@ -237,7 +240,11 @@ export function fixStatus(o: Objective, status: ObjectiveStatus, now: number | u
     xp = xpNow;
     next.xpGiven = xpNow;
   }
-  return { next, xp };
+  // pagamento: mesma regra (sair de concluída devolve o que pagou; concluir paga uma vez)
+  let money = 0;
+  if (o.status === "concluido" && o.payGiven) (money = -o.payGiven), delete next.payGiven;
+  if (status === "concluido" && !next.payGiven && o.pay) (money = o.pay), (next.payGiven = o.pay);
+  return { next, xp, money };
 }
 
 const int = (v: unknown) => (v === undefined || v === null || v === "" ? undefined : Number.isFinite(Number(v)) ? Math.round(Number(v)) : NaN);
@@ -319,9 +326,14 @@ export async function applyFix(campaignId: string, body: Fix): Promise<string> {
       // aberta com o prazo vencido viraria perdida no próximo avanço do relógio
       if (status === "aberto" && o.deadlineMinutes !== undefined && now !== undefined && o.deadlineMinutes < now)
         throw new FixError(`O prazo já passou (${formatClock(o.deadlineMinutes)}): conclua, cancele ou peça um prazo novo ao Mestre.`);
-      const { next, xp } = fixStatus(o, status, now, objectiveXp(o, rs, getTable(campaign.state), s.xp));
+      const { next, xp, money } = fixStatus(o, status, now, objectiveXp(o, rs, getTable(campaign.state), s.xp));
       await saveObjectives(campaignId, list.map((x) => (x === o ? next : x)));
       if (xp) await run("grant_xp", { amount: xp, reason: `missão: ${o.title}` });
+      // devolver mais do que sobrou zera o saldo (o resto já foi gasto na história)
+      if (money && rs.currency) {
+        const amount = money < 0 ? -Math.min(-money, s.money ?? 0) : money;
+        if (amount) await run("update_money", { amount, unit: rs.currency.units.at(-1)!.key, reason: `missão: ${o.title}` });
+      }
       summary = `missão ${o.id} "${o.title}" ${STATUS_TEXT[o.status]} → ${STATUS_TEXT[status]}${xp ? ` (${xp > 0 ? "+" : ""}${xp} XP)` : ""}`;
       break;
     }
