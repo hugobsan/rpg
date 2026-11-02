@@ -6,15 +6,19 @@ import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummar
 import {
   activeDirectives,
   addMemory,
+  ChunkHit,
+  excerpt,
   formatHistory,
   HistoryHit,
   historyLine,
   indexHistory,
   MemoryHit,
   recentMemories,
+  searchBookChunks,
   searchHistory,
   searchMemories,
 } from "./retrieval";
+import { listBooks } from "./books";
 import { decideCast, decideElapsed, decideMoved, decideTurn, scoreImportance } from "./decisions";
 import { attributeCap, attributePoints, controlLabel, costMultOf, powerLevel, progressionPromptLines } from "./progression";
 import { formatClock, getClock, period } from "./clock";
@@ -79,8 +83,10 @@ export async function getCharacters(campaignId: string): Promise<Character[]> {
 /**
  * Ficha em texto. compact (contexto do turno do Mestre, que vai a cada chamada): efeito e requisito de cada técnica
  * e o passado do jogador encurtados; ficam marco atual e próximo (guiam a cena ao roteiro). O completo sai no get_character.
+ * focus (texto da ação, da última narração e o que o Árbitro resolveu): só as técnicas citadas nele (nome inteiro ou a
+ * parte depois de ":", sem acento nem caixa) vão completas; as outras numa linha com nome, rank, domínio e custo.
  */
-export function sheetSummary(c: Character, full: boolean, rs: Ruleset, compact = false): string {
+export function sheetSummary(c: Character, full: boolean, rs: Ruleset, compact = false, focus?: string): string {
   const s = c.sheet;
   const res = Object.entries(s.resources)
     .map(([k, v]) => `${k} ${v.current}/${v.max}`)
@@ -107,14 +113,17 @@ export function sheetSummary(c: Character, full: boolean, rs: Ruleset, compact =
     .join("; ");
   if (extra) lines.push(`  ${extra}`);
   if (costMultOf(s.costMult) !== 1) lines.push(`  ${controlLabel(rs).toLowerCase()}: custo das técnicas ×${String(costMultOf(s.costMult)).replace(".", ",")} (já no custo abaixo)`);
+  const said = focus === undefined ? null : ` ${normName(focus)} `;
+  const related = (name: string) => !said || [name, name.split(":").pop()!].some((n) => normName(n) && said.includes(` ${normName(n)} `));
   if (s.abilities.length)
     lines.push(
-      `  habilidades:\n` +
+      `  habilidades${said ? " (completas as citadas na ação, na última narração ou resolvidas neste turno; as outras resumidas, inteiras no get_character)" : ""}:\n` +
         s.abilities
           .map((a) => {
-            let line = `    - ${abilityPromptLine(rs, a, compact ? 160 : Infinity, s)}`;
-            const cur = currentMilestone(a);
-            const next = nextMilestone(a);
+            const brief = !related(a.name);
+            let line = `    - ${abilityPromptLine(rs, a, compact ? 160 : Infinity, s, brief)}`;
+            const cur = brief ? null : currentMilestone(a);
+            const next = brief ? null : nextMilestone(a);
             if (cur) line += ` — atual: ${cur.description}`;
             if (next) line += ` | próximo marco aos ${next.threshold}%: ${next.description}`;
             if (a.incomplete && !a.removed) line += ` [INCOMPLETA na biblioteca: complete com edit_ability]`;
@@ -156,7 +165,9 @@ async function buildGmSystem(
   memories: MemoryHit[],
   past: string, // trechos antigos do chat aprovados pelo Jev (formatHistory)
   basePrompt: string,
-  resolved: string[] = [] // o que o Árbitro resolveu antes do Mestre (ferramenta args → resultado)
+  resolved: string[] = [], // o que o Árbitro resolveu antes do Mestre (ferramenta args → resultado)
+  books = "", // trechos dos livros de referência aprovados pelo Jev
+  focus?: string // ação, última narração e técnicas resolvidas: escolhe as técnicas do jogador que vão completas
 ): Promise<[fixed: string, turn: string]> {
   const player = chars.find((c) => c.kind === "player");
   const activeNpcs = chars.filter((c) => c.kind === "npc" && c.active);
@@ -164,7 +175,12 @@ async function buildGmSystem(
     .filter((c) => c.kind === "npc" && !c.active)
     .map((c) => c.name);
 
-  const activeArc = campaign.script?.arcs.find((a) => a.status === "active");
+  // roteiro: arco ativo, ponto atual (última nota), próximos eventos e o arco seguinte, para não gastar uma rodada no get_script
+  const arcs = campaign.script?.arcs ?? [];
+  const arcIdx = arcs.findIndex((a) => a.status === "active");
+  const activeArc = arcs[arcIdx];
+  const ahead = arcs.slice(arcIdx + 1).filter((a) => a.status !== "done");
+  const nextEvents = ahead.flatMap((a) => a.canonEvents).slice(0, 2);
   const clock = getClock(campaign.state);
   const directives = await activeDirectives(campaign.id);
   // o que o Escrivão gravou depois da narração anterior (meta.notes da última mensagem do Mestre)
@@ -214,7 +230,7 @@ async function buildGmSystem(
     // só local, rotas e palco: o resto do mapa (mapas 3D, locais distantes, regras) vai ao Topógrafo pelo map_brief
     mapPromptBlock(await loadMap(campaign.id, campaign.state), getStage(scene.state), scene.mode),
     player
-      ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset, true)}`
+      ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset, true, focus)}`
       : "",
     activeNpcs.length
       ? `\n--- NPCs EM CENA ---\n${activeNpcs.map((n) => sheetSummary(n, true, campaign.ruleset, true)).join("\n")}`
@@ -223,7 +239,18 @@ async function buildGmSystem(
       ? `NPCs conhecidos fora de cena (não interagem; reative com set_npc_active): ${inactiveNames.join(", ")}`
       : "",
     activeArc
-      ? `\n--- ROTEIRO: ARCO ATIVO ---\n${activeArc.title}: ${activeArc.summary}\nEventos canônicos deste arco: ${activeArc.canonEvents.join(" | ") || "-"}\nGanchos: ${activeArc.hooks.join(" | ") || "-"}\nNotas: ${activeArc.notes.slice(-5).join(" | ") || "-"}\n(roteiro completo via get_script)`
+      ? [
+          `\n--- ROTEIRO: ARCO ATIVO (${arcIdx + 1}º de ${arcs.length}) ---\n${activeArc.title}: ${activeArc.summary}`,
+          `Eventos canônicos deste arco: ${activeArc.canonEvents.join(" | ") || "-"}`,
+          `Ganchos: ${activeArc.hooks.join(" | ") || "-"}`,
+          `Ponto atual: ${activeArc.notes.at(-1) ?? "começo do arco (nenhuma nota de progresso ainda)"}`,
+          activeArc.notes.length > 1 ? `Notas anteriores: ${activeArc.notes.slice(-5, -1).join(" | ")}` : "",
+          nextEvents.length ? `Próximos eventos canônicos (depois deste arco): ${nextEvents.join(" | ")}` : "",
+          ahead[0] ? `Arco seguinte: ${ahead[0].title}: ${ahead[0].summary.length > 220 ? `${ahead[0].summary.slice(0, 220).trimEnd()}…` : ahead[0].summary}` : "Arco seguinte: nenhum (é o último)",
+          "(premissa e ganchos do arco seguinte: get_script; roteiro inteiro: get_script com full=true)",
+        ]
+          .filter(Boolean)
+          .join("\n")
       : "",
     memories.length
       ? `\n--- MEMÓRIAS RELEVANTES ---\n${memories
@@ -231,6 +258,7 @@ async function buildGmSystem(
           .join("\n")}`
       : "",
     past ? `\n--- TRECHOS ANTIGOS DO CHAT (lembrados para esta ação) ---\n${past}` : "",
+    books ? `\n--- TRECHOS DOS LIVROS DE REFERÊNCIA (buscados para esta ação; a página inteira com read_pages) ---\n${books}` : "",
     lastNotes.length
       ? `\n--- O ESCRIVÃO REGISTROU DEPOIS DA SUA ÚLTIMA NARRAÇÃO (já está nas fichas; reconheça na história se for marcante, como um marco de domínio ou nível novo) ---\n${lastNotes.map((n) => `- ${n}`).join("\n")}`
       : "",
@@ -402,6 +430,10 @@ export async function runTurn(
   const pastP = playerInput && adv.history.autoTopK
     ? searchHistory(campaignId, playerInput, { limit: adv.history.autoTopK, auto: true }).catch((): HistoryHit[] => [])
     : Promise.resolve([]);
+  // com livros indexados, os 2 trechos mais próximos da ação já vêm buscados; só entram se o Jev disser que a ação precisa
+  const acting = !!playerInput && playerInput !== CONTINUE_INPUT;
+  const booksP = acting ? listBooks(campaignId).catch(() => []) : Promise.resolve([]);
+  const bookHitsP = booksP.then((b) => (b.length ? searchBookChunks(campaignId, playerInput, 2) : [])).catch((): ChunkHit[] => []);
   const [campaign, firstScene, chars, gm] = await Promise.all([
     getCampaign(campaignId),
     getCurrentScene(campaignId),
@@ -412,10 +444,11 @@ export async function runTurn(
   const params = gm.params as { historyBudgetTokens?: number; maxToolRounds?: number; complexModel?: string };
   const complexModel = params.complexModel?.trim();
 
-  const [history, candidates, pastHits] = await Promise.all([
+  const [history, candidates, pastHits, books] = await Promise.all([
     historyWindow(campaignId, params.historyBudgetTokens ?? 9000),
     candidatesP,
     pastP,
+    booksP,
   ]);
 
   // Jev, numa chamada só: modelo do turno (1), busca web (2), filtro de memórias (4), Árbitro (6) e fora do jogo
@@ -445,6 +478,7 @@ export async function runTurn(
       askWeb: gm.web_search,
       askMeta: askMeta && playerInput !== CONTINUE_INPUT,
       askTalk: askMeta && playerInput !== CONTINUE_INPUT && scene.mode !== "battle",
+      books: books.map((b) => b.title),
     },
     campaignId
   );
@@ -483,6 +517,10 @@ export async function runTurn(
   const useWeb = gm.web_search && decision.web !== false;
   const memories = candidates.filter((m) => decision.keepMemory(m.id, m.importance));
   const past = pastHits.filter((h) => decision.keepHistory(h.id));
+  // trechos curtos (~700 caracteres, a janela com mais termos da ação), com título e página para o read_pages
+  const bookText = decision.book
+    ? (await bookHitsP).map((h) => `[${h.title} | bookId=${h.book_id} | pág. ${h.page}]\n${excerpt(h.content, playerInput, 700)}`).join("\n---\n")
+    : "";
 
   const toolCtx: ToolContext = { campaign, scene, emit };
   // Árbitro: técnica da ficha ou treino resolvidos antes do Mestre, que narra numa chamada só. Jev falhou = não roda
@@ -502,7 +540,9 @@ export async function runTurn(
     memories,
     past.length ? formatHistory(past, playerInput, adv.history.excerptChars) : "",
     gm.system_prompt,
-    settled.map(settledLine)
+    settled.map(settledLine),
+    bookText,
+    [playerInput, lastGmText, ...settled.map((r) => String(r.args.ability ?? r.args.target ?? ""))].join("\n")
   );
   // a janela foi lida antes de salvar a ação: ela vem depois do contexto do turno
   if (history.length) history[history.length - 1] = { ...history[history.length - 1], cache: true };

@@ -569,8 +569,19 @@ export const GM_TOOLS: ToolDef[] = [
     type: "function",
     function: {
       name: "get_character",
-      description: "Lê a ficha completa e persona de um personagem (player ou NPC, ativo ou não).",
-      parameters: S({ name: { type: "string" } }, ["name"]),
+      description:
+        "Lê a ficha completa e persona de um personagem (player ou NPC, ativo ou não). Recursos, atributos, XP e cargo vêm sempre; peça em sections só o que precisa (sem sections, vem tudo).",
+      parameters: S(
+        {
+          name: { type: "string" },
+          sections: {
+            type: "array",
+            items: { type: "string", enum: ["abilities", "inventory", "persona"] },
+            description: "abilities: técnicas completas (efeito, marcos); inventory: itens; persona: aparência, personalidade, passado, relações, segredos",
+          },
+        },
+        ["name"]
+      ),
     },
   },
   {
@@ -578,8 +589,8 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "get_script",
       description:
-        "Lê o roteiro interno da campanha (premissa, arcos, eventos canônicos, progresso). Use para se situar na linha do tempo.",
-      parameters: S({}, []),
+        "Lê o roteiro interno da campanha: premissa, arco ativo e o seguinte por inteiro (eventos canônicos, ganchos, notas) e o título dos outros. O contexto do turno já traz o ponto atual e o que vem a seguir.",
+      parameters: S({ full: { type: "boolean", description: "true = todos os arcos por inteiro" } }, []),
     },
   },
   {
@@ -1496,16 +1507,40 @@ export async function executeGmTool(
     }
     case "get_character": {
       const c = await getChar(cid, String(args.name));
+      const want = Array.isArray(args.sections) && args.sections.length ? args.sections.map(String) : ["abilities", "inventory", "persona"];
+      // sem indentação e sem o que é da biblioteca e não deste personagem (users: quem mais usa; ref: id interno)
+      const { abilities, inventory, ...sheet } = c.sheet;
+      return JSON.stringify({
+        name: c.name,
+        kind: c.kind,
+        active: c.active,
+        canon: c.canon,
+        sheet: {
+          ...sheet,
+          ...(want.includes("abilities") ? { abilities: abilities.map(({ users: _u, ref: _r, ...a }) => a) } : {}),
+          ...(want.includes("inventory") ? { inventory } : {}),
+        },
+        ...(want.includes("persona") ? { persona: c.persona } : {}),
+      });
+    }
+    case "get_script": {
+      const s = ctx.campaign.script;
+      if (!s) return "Esta campanha não tem roteiro gerado.";
+      if (String(args.full) === "true") return JSON.stringify(s, null, 1);
+      // por padrão só o arco ativo (ou o 1º não concluído) e o seguinte: o roteiro inteiro passava de 10 mil caracteres
+      const i = s.arcs.findIndex((a) => a.status === "active");
+      const from = i >= 0 ? i : Math.max(s.arcs.findIndex((a) => a.status !== "done"), 0);
+      const shown = s.arcs.slice(from, from + 2);
       return JSON.stringify(
-        { name: c.name, kind: c.kind, active: c.active, canon: c.canon, sheet: c.sheet, persona: c.persona },
+        {
+          premise: s.premise,
+          arcs: shown,
+          otherArcs: s.arcs.filter((a) => !shown.includes(a)).map((a) => `${a.title} (${a.status})`),
+          note: "roteiro inteiro: get_script com full=true",
+        },
         null,
         1
       );
-    }
-    case "get_script": {
-      return ctx.campaign.script
-        ? JSON.stringify(ctx.campaign.script, null, 1)
-        : "Esta campanha não tem roteiro gerado.";
     }
     case "update_script": {
       const script = ctx.campaign.script;

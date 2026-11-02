@@ -41,6 +41,10 @@ export const META_MIN = D.jev.metaMin;
 // 0.85-1.00; ação no mundo com ou sem fala, dois NPCs, NPC fora de cena 0.00-0.05; "sorrio e pergunto ao Teuchi..." 0.65.
 // Alto pelo mesmo motivo do meta: desviar uma ação de verdade é pior que gastar um turno.
 export const TALK_MIN = D.jev.talkMin;
+// Trechos dos livros de referência no contexto do turno (2, curtos) se P(a ação precisa dos livros) >= limiar. Probe
+// (2026-11-02, 3 rodadas): precisa de fato da obra 0.59-0.97; rotina, treino, o que já está em npcs_em_cena 0.06-0.36.
+// Abaixo do meio do vão: errar para baixo custa uma rodada do Mestre no search_book; para cima, ~400 tokens à toa.
+export const BOOK_MIN = D.jev.bookMin;
 
 // ---------- tipos da API ----------
 
@@ -141,6 +145,7 @@ export interface TurnInput {
   askWeb: boolean;
   askMeta?: boolean; // pergunta se a ação é fala fora do jogo sobre o registro (não no Continuar nem no gerar novamente)
   askTalk?: boolean; // pergunta se a ação é conversa direta com um dos npcsInScene (idem; o chamador pula batalha)
+  books?: string[]; // títulos dos livros de referência indexados: presente e não vazio = pergunta se a ação precisa deles
 }
 
 export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest {
@@ -191,6 +196,16 @@ export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest
           "Não: o personagem age, fala ou pergunta algo dentro da história, inclusive a um NPC (\"você sabe se ele comeu?\") ou sobre o que vê; ou a fala mistura uma ação do personagem com um comentário fora do jogo.",
       },
     };
+  if (t.books?.length)
+    questions.needs_book = {
+      type: "noul",
+      instructions:
+        "Para narrar ou arbitrar a `acao_do_jogador` com fidelidade, o Mestre precisa de um trecho dos `livros_de_referencia` (um fato do material: personagem, técnica, lugar, evento ou regra) que não está em `cena`, `arco_ativo`, `npcs_em_cena` nem `memorias`?",
+      criteria: {
+        true: "Sim: a ação depende de um detalhe concreto que esses livros devem cobrir e que falta nesses dados.",
+        false: "Não: a ação se resolve com o que está nos dados, é rotina da cena (andar, conversar, comer, treinar o que já sabe) ou é invenção livre da campanha.",
+      },
+    };
   const npcs = Object.keys(t.npcsInScene).filter((n) => n !== "nenhum");
   if (t.askTalk && npcs.length)
     questions.talk = {
@@ -235,6 +250,7 @@ export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest
       ultima_narracao_do_mestre: t.lastGmNarration.slice(-1500) || null,
       acao_do_jogador: t.playerAction,
       ...(t.playerAbilities ? { tecnicas_do_jogador: t.playerAbilities } : {}),
+      ...(t.books?.length ? { livros_de_referencia: t.books } : {}),
       memorias: Object.fromEntries(
         t.memories.map((m) => [`m${m.id}`, `[${m.kind}${m.subject ? `/${m.subject}` : ""}] ${m.content}`])
       ),
@@ -250,6 +266,7 @@ export interface TurnDecision {
   mechanic: boolean; // falha do Jev = não (o Árbitro não roda)
   meta: boolean; // fala fora do jogo sobre o registro; falha do Jev = não (turno normal)
   talk: string | null; // nome do NPC com quem a ação é conversa direta; falha do Jev = null (turno normal)
+  book: boolean; // trechos dos livros no contexto; falha do Jev = não (o Mestre ainda tem search_book)
   keepMemory: (id: number, importance: number) => boolean;
   keepHistory: (id: number) => boolean; // falha do Jev = nenhum trecho (não infla o contexto)
 }
@@ -263,6 +280,7 @@ export function gateTurn(answers: Record<string, Answer> | null, a: Advanced = D
     web: web === undefined ? null : web >= a.jev.webMin,
     mechanic: (answers ? (noulOf(answers, "mechanic") ?? 0) : 0) >= a.jev.mechanicMin,
     meta: (answers ? (noulOf(answers, "meta") ?? 0) : 0) >= a.jev.metaMin,
+    book: (answers ? (noulOf(answers, "needs_book") ?? 0) : 0) >= a.jev.bookMin,
     talk: t?.type === "choice" && t.choice !== "nenhum" && (t.probabilities?.[t.choice] ?? 1) >= a.jev.talkMin ? t.choice : null,
     keepMemory: (id, importance) => {
       if (importance >= a.memory.alwaysKeep || !answers) return true;

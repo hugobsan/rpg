@@ -48,7 +48,7 @@ export const ADVANCED_SPEC = {
     fields: {
       chunkChars: { label: "chunk size (chars)", help: "Tamanho máximo do chunk. Maior: mais contexto por hit e vetor mais diluído. Menor: hit mais preciso e mais chunks.", def: 2400, min: 200, max: 12000, step: 1, reprocess: true },
       overlapChars: { label: "chunk overlap (chars)", help: "Fim de um chunk repetido no começo do seguinte, para não partir uma ideia no meio. Máximo: metade do chunk size.", def: 0, min: 0, max: 6000, step: 1, reprocess: true },
-      topK: { label: "search_book top-k", help: "Chunks devolvidos pela ferramenta search_book do Mestre.", def: 5, min: 1, max: 30, step: 1 },
+      topK: { label: "search_book top-k", help: "Chunks devolvidos pela ferramenta search_book do Mestre (~1.900 caracteres cada na campanha real; o 4º e o 5º quase sempre eram ruído, e read_pages lê a página inteira).", def: 3, min: 1, max: 30, step: 1 },
       maxPages: { label: "read_pages: máx. de páginas por chamada", help: "Páginas inteiras por chamada de read_pages; o resto do intervalo é cortado.", def: 8, min: 1, max: 50, step: 1 },
     },
   },
@@ -74,6 +74,7 @@ export const ADVANCED_SPEC = {
       metaMin: { label: "P(fala sobre o registro do jogo) ≥ → conversa fora do jogo", help: "META_MIN. Probe (2026-11-02, falas reais com a narração real de antes): reclamação ou pergunta sobre o registro 0,85–0,99; perguntas a NPC com \"você\", ações e treino 0,02–0,07; \"cancelou 3 missões?\" com um NPC em cena 0,74–0,78; \"por que você me deu uma tigela?\" com o Teuchi em cena 0,07–0,33 (fica turno normal). Acima: a ação (pergunta, reclamação ou correção ao Mestre sobre ficha, inventário, missões, XP, relógio ou regras) vai para a conversa fora do jogo, sem turno do Mestre nem Escrivão. Acima do meio do vão de propósito: desviar uma ação de verdade é pior que gastar um turno.", def: 0.6, min: 0, max: 1, step: 0.01 },
       genderMin: { label: "P(sexo) ≥ → voz padrão", help: "GENDER_MIN. Abaixo disso o sexo fica desconhecido (voz masculina padrão).", def: 0.7, min: 0, max: 1, step: 0.01 },
       talkMin: { label: "P(conversa com um NPC em cena) ≥ → chat do NPC", help: "TALK_MIN. Probe (2026-11-02, 2 rodadas): fala só com o NPC 0,85–1,00 (ex.: com dois NPCs em cena, a pergunta à dona do gato 0,85–0,87); entrar e falar, entregar e perguntar, oferecer, treinar, falar com dois ou com quem não está em cena 0,00–0,05; gesto + pergunta (\"sorrio e pergunto ao Teuchi...\") 0,65. Acima: a fala dirigida a um só NPC em cena vira a 1ª mensagem da conversa particular com ele (agente NPC, ~3 mil tokens), sem turno do Mestre (~20 mil). Alto de propósito: desviar uma ação de verdade é pior que gastar um turno.", def: 0.75, min: 0, max: 1, step: 0.01 },
+      bookMin: { label: "P(precisa de trecho dos livros) ≥ → 2 trechos no contexto do turno", help: "BOOK_MIN. Só com livros indexados na campanha. Probe (2026-11-02, 3 rodadas, falas reais): precisa de fato da obra 0,59–0,97 (Minato era rápido? 0,59–0,63); rotina, treino, ir com o NPC, o que já está em npcs_em_cena 0,06–0,36. Abaixo do meio do vão: errar para baixo custa uma rodada do Mestre no search_book, para cima ~400 tokens.", def: 0.45, min: 0, max: 1, step: 0.01 },
     },
   },
 } satisfies Record<string, { title: string; note: string; fields: Record<string, Field> }>;
