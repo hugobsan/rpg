@@ -13,7 +13,7 @@ export default async function UsagePage({ searchParams }: { searchParams: Promis
   return (
     <main className="container">
       <h1>Custos e uso</h1>
-      <p className={`muted ${s.lede}`}>Todas as chamadas de IA, de todas as fontes, somadas no recorte dos filtros. O custo é o real do OpenRouter e, nas outras fontes, uma estimativa pelo preço do mesmo modelo no OpenRouter (≈).</p>
+      <p className={`muted ${s.lede}`}>Todas as chamadas de IA, de todas as fontes, somadas no recorte dos filtros. O custo cobrado é o real do OpenRouter e, nas fontes com chave (Anthropic, API key), uma estimativa pelo preço do mesmo modelo no OpenRouter (≈). O Login com ChatGPT gasta a cota da assinatura: o custo dele é só estimado e fica à parte. Cache é a parte dos tokens de entrada lida do cache de prompt.</p>
       {/* useSearchParams pede Suspense no App Router */}
       <Suspense>
         <UsageClient initial={{ qs: sp.toString(), summary, logs }} />

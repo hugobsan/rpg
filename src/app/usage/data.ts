@@ -1,18 +1,21 @@
 // Consultas da tela /usage: usadas pela página (Server Component, 1ª carga) e pelas rotas /api/usage/*.
 import { q } from "@/lib/db";
-import { AGG, TZ, parseFilter } from "@/lib/usage";
+import { AGG, CACHE, SUB_COST, TZ, parseFilter } from "@/lib/usage";
 import { getSources, OPENROUTER } from "@/lib/openrouter";
 
 export interface Agg {
   calls: number;
   errors: number;
-  cost: number;
+  cost: number; // tudo, cobrado + estimado da assinatura
+  sub_cost: number; // estimado da assinatura ChatGPT (não cobrado)
+  cached: number; // tokens de entrada lidos do cache
+  cache_base: number; // tokens de entrada das chamadas que informam o cache
   prompt_tokens: number;
   completion_tokens: number;
   avg_ms: number | null;
   last_at: string | null;
 }
-export interface DayRow { day: string; agent_id: string | null; calls: number; cost: number }
+export interface DayRow { day: string; agent_id: string | null; calls: number; cost: number; sub_cost: number; cached: number; cache_base: number }
 export interface Summary {
   totals: Agg;
   byAgent: (Agg & { agent_id: string | null })[];
@@ -20,7 +23,7 @@ export interface Summary {
   byDay: DayRow[];
   start: string | null;
   today: string;
-  options: { agents: { id: string; name: string }[]; campaigns: { id: string; name: string }[]; models: string[]; providers: { id: string; name: string }[] };
+  options: { agents: { id: string; name: string }[]; campaigns: { id: string; name: string }[]; models: string[]; providers: { id: string; name: string; sub?: boolean }[] };
 }
 /** Linha do histórico sem request/response (o detalhe vem de /api/usage/logs/[id] ao expandir). */
 export interface LogRow {
@@ -41,14 +44,20 @@ export interface LogPage { rows: LogRow[]; total: number; page: number; pageSize
 
 /** totais, quebras por agente/modelo/dia do recorte filtrado + opções dos filtros */
 export async function usageSummary(sp: URLSearchParams): Promise<Summary> {
-  const { where, params, interval } = parseFilter(sp);
+  const { where, params: base, interval } = parseFilter(sp);
+  const sources = await getSources();
+  // $SUB do AGG: fontes do Login com ChatGPT, último parâmetro
+  const sub = sources.filter((x) => x.auth === "chatgpt").map((x) => x.id);
+  const params = [...base, sub];
+  const agg = AGG.replace("$SUB", `$${params.length}`);
   const [[totals], byAgent, byModel, byDay, [bounds], agents, campaigns, models, providers] = await Promise.all([
-    q<Agg>(`SELECT ${AGG} FROM api_logs ${where}`, params),
-    q<Agg & { agent_id: string | null }>(`SELECT agent_id, ${AGG} FROM api_logs ${where} GROUP BY agent_id ORDER BY cost DESC, calls DESC`, params),
-    q<Agg & { model: string; provider: string }>(`SELECT model, provider, ${AGG} FROM api_logs ${where} GROUP BY model, provider ORDER BY cost DESC, calls DESC`, params),
+    q<Agg>(`SELECT ${agg} FROM api_logs ${where}`, params),
+    q<Agg & { agent_id: string | null }>(`SELECT agent_id, ${agg} FROM api_logs ${where} GROUP BY agent_id ORDER BY cost DESC, calls DESC`, params),
+    q<Agg & { model: string; provider: string }>(`SELECT model, provider, ${agg} FROM api_logs ${where} GROUP BY model, provider ORDER BY cost DESC, calls DESC`, params),
     q<DayRow>(
       `SELECT to_char((created_at AT TIME ZONE '${TZ}')::date, 'YYYY-MM-DD') AS day, agent_id,
-              COUNT(*)::int AS calls, COALESCE(SUM(cost), 0)::float AS cost
+              COUNT(*)::int AS calls, COALESCE(SUM(cost), 0)::float AS cost,
+              ${SUB_COST.replace("$SUB", `$${params.length}`)}, ${CACHE}
        FROM api_logs ${where} GROUP BY 1, 2 ORDER BY 1`,
       params
     ),
@@ -64,8 +73,8 @@ export async function usageSummary(sp: URLSearchParams): Promise<Summary> {
     q<{ provider: string }>(`SELECT DISTINCT provider FROM api_logs ORDER BY provider`),
   ]);
   // fontes: o OpenRouter, as configuradas e as que só aparecem no histórico (fonte apagada: fica o id)
-  const sources = [{ id: OPENROUTER, name: "OpenRouter" }, ...(await getSources()).map(({ id, name }) => ({ id, name }))];
-  for (const { provider } of providers) if (!sources.some((x) => x.id === provider)) sources.push({ id: provider, name: provider });
+  const opts: Summary["options"]["providers"] = [{ id: OPENROUTER, name: "OpenRouter" }, ...sources.map(({ id, name, auth }) => ({ id, name, sub: auth === "chatgpt" || undefined }))];
+  for (const { provider } of providers) if (!opts.some((x) => x.id === provider)) opts.push({ id: provider, name: provider });
   return {
     totals,
     byAgent,
@@ -73,7 +82,7 @@ export async function usageSummary(sp: URLSearchParams): Promise<Summary> {
     byDay,
     start: interval ? bounds.start : null,
     today: bounds.today,
-    options: { agents, campaigns, models: models.map((m) => m.model), providers: sources },
+    options: { agents, campaigns, models: models.map((m) => m.model), providers: opts },
   };
 }
 

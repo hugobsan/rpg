@@ -8,9 +8,10 @@ import s from "./usage.module.css";
 
 // cor fixa por agente (paleta categórica validada no fundo escuro: scripts/validate_palette da skill dataviz);
 // a ordem é a do empilhamento e não muda com os filtros
-const AGENT_ORDER = ["gm", "npc", "chronicler", "scriptwriter", "decider", "image", "voice", "cartographer", "pixel", "scribe", "characters", "abilities", "items", "adventure", "surveyor", "suggest"];
-// 8 cores da paleta + 1 extra para o Pixel artista (aposentado; fica pelo histórico de custo) + 1 do Escrivão; os criadores grátis ficam no cinza de "outros"
-const COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767", "#a8875c", "#7fb3a0"];
+const AGENT_ORDER = ["gm", "npc", "chronicler", "scriptwriter", "decider", "image", "voice", "cartographer", "pixel", "scribe", "referee", "characters", "abilities", "items", "adventure", "surveyor", "suggest"];
+// 8 cores da paleta + 1 extra para o Pixel artista (aposentado; fica pelo histórico de custo) + 1 do Escrivão + 1 do Árbitro;
+// os criadores grátis ficam no cinza de "outros"
+const COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767", "#a8875c", "#7fb3a0", "#22b0c8"];
 const colorOf = (id: string | null) => COLORS[AGENT_ORDER.indexOf(id ?? "")] ?? "#898781";
 const rank = (id: string | null) => { const i = AGENT_ORDER.indexOf(id ?? ""); return i < 0 ? 99 : i; };
 
@@ -23,6 +24,11 @@ const secs = (ms: number | null) => (ms ? `${(ms / 1000).toFixed(1).replace(".",
 const when = (s: string | null) => (s ? new Date(s).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "-");
 const ddmm = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
 const pct = (a: number, b: number) => `${((a / b) * 100).toFixed(1).replace(".", ",")}%`;
+// % dos tokens de entrada lidos do cache, só nas chamadas que informam o cache
+const cachePct = (r: { cached: number; cache_base: number }) => (r.cache_base ? pct(r.cached, r.cache_base) : "-");
+// cobrado = tudo menos o estimado da assinatura ChatGPT (gasta a cota, não é cobrado)
+const billed = (r: { cost: number; sub_cost: number }) => r.cost - r.sub_cost;
+const SUB_HINT = "Estimado pelo preço do OpenRouter: assinatura ChatGPT, gasta a cota e não é cobrado";
 const num: React.CSSProperties = { textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
 
 /** tira paginação e ordenação: o que sobra são os filtros, que valem para o resumo */
@@ -122,6 +128,7 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
   const opts = summary.options;
   const agentName = (id: string | null) => opts.agents.find((a) => a.id === id)?.name ?? id ?? "(sem agente)";
   const srcName = (id: string) => opts.providers.find((p) => p.id === id)?.name ?? id;
+  const isSub = (id: string) => !!opts.providers.find((p) => p.id === id)?.sub;
   const agentList = [...opts.agents].sort((a, b) => rank(a.id) - rank(b.id));
   const toggleAgent = (id: string) => {
     const next = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
@@ -134,7 +141,8 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
   // ordenação do histórico: no servidor (é paginado) e na URL; padrão = mais recentes primeiro
   const logSort: Sort = { key: sp.get("sort") || "when", dir: sp.get("dir") === "asc" ? "asc" : "desc" };
   const sortLogs = (key: string, dir: Dir) => set({ sort: key === "when" ? null : key, dir: key === "when" && dir === "desc" ? null : dir });
-  const shares = [...summary.byAgent].filter((r) => r.cost > 0).sort((a, b) => rank(a.agent_id) - rank(b.agent_id));
+  const tb = billed(t);
+  const shares = [...summary.byAgent].filter((r) => billed(r) > 0).sort((a, b) => rank(a.agent_id) - rank(b.agent_id));
 
   return (
     <>
@@ -212,14 +220,15 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
       <div className={`${s.board} ${loading ? s.stale : ""}`} aria-busy={loading}>
         <div className={s.kpis}>
           <div className={`card ${s.tile} ${s.hero}`}>
-            <span className={s.tileLabel}>Custo total</span>
-            <span className={s.tileValue} title={usd(t.cost)}>${t.cost.toFixed(2)}</span>
+            <span className={s.tileLabel}>Custo cobrado</span>
+            <span className={s.tileValue} title={usd(tb)}>${tb.toFixed(2)}</span>
+            {t.sub_cost > 0 && <span className={s.tileSub} title={SUB_HINT}>+ ≈ ${t.sub_cost.toFixed(2)} na assinatura ChatGPT (estimado, não cobrado)</span>}
             {shares.length > 0 && (
               <>
-                <div className={s.share} role="img" aria-label={`Custo por agente: ${shares.map((r) => `${agentName(r.agent_id)} ${pct(r.cost, t.cost)}`).join(", ")}`}>
+                <div className={s.share} role="img" aria-label={`Custo cobrado por agente: ${shares.map((r) => `${agentName(r.agent_id)} ${pct(billed(r), tb)}`).join(", ")}`}>
                   {shares.map((r) => (
-                    <span key={r.agent_id ?? "-"} title={`${agentName(r.agent_id)}: ${usd(r.cost)} (${pct(r.cost, t.cost)})`}
-                      style={{ flex: `${(r.cost / t.cost) * 1000} 1 0`, background: colorOf(r.agent_id) }} />
+                    <span key={r.agent_id ?? "-"} title={`${agentName(r.agent_id)}: ${usd(billed(r))} (${pct(billed(r), tb)})`}
+                      style={{ flex: `${(billed(r) / tb) * 1000} 1 0`, background: colorOf(r.agent_id) }} />
                   ))}
                 </div>
                 <div className={s.shareLegend}>
@@ -228,16 +237,17 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
               </>
             )}
           </div>
-          <Tile label="Chamadas" value={fmtInt(t.calls)} sub={t.calls ? `${usd(t.cost / t.calls)} por chamada` : undefined} />
+          <Tile label="Chamadas" value={fmtInt(t.calls)} sub={t.calls ? `${usd(t.cost / t.calls)} por chamada${t.sub_cost ? " (com o estimado)" : ""}` : undefined} />
           <Tile label="Tempo médio" value={secs(t.avg_ms)} sub="sem contar erros" />
           <Tile label="Erros" value={fmtInt(t.errors)} sub={t.calls ? `${pct(t.errors, t.calls)} das chamadas` : undefined} danger={t.errors > 0} />
           <Tile label="Tokens" value={compact(t.prompt_tokens + t.completion_tokens)} sub={`${compact(t.prompt_tokens)} entrada · ${compact(t.completion_tokens)} saída`} />
+          <Tile label="Cache" value={cachePct(t)} sub={t.cache_base ? `${compact(t.cached)} de ${compact(t.cache_base)} tokens de entrada` : "nenhuma chamada informa o cache"} />
         </div>
         <p className={s.facts}>Uso mais recente: <b>{when(t.last_at)}</b></p>
 
         <section className={`card ${s.panel}`}>
           <div className={s.panelHead}>
-            <h2>{metric === "cost" ? "Custo por dia" : "Chamadas por dia"}</h2>
+            <h2>{metric === "cost" ? "Custo cobrado por dia" : "Chamadas por dia"}</h2>
             <button className={`pill filter-pill${metric === "cost" ? " on" : ""}`} aria-pressed={metric === "cost"} onClick={() => setMetric("cost")}>Custo</button>
             <button className={`pill filter-pill${metric === "calls" ? " on" : ""}`} aria-pressed={metric === "calls"} onClick={() => setMetric("calls")}>Chamadas</button>
           </div>
@@ -246,12 +256,12 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
 
         <section className={`card ${s.panel}`}>
           <div className={s.panelHead}><h2>Por agente</h2></div>
-          <Breakdown label="Agente" total={t.cost}
+          <Breakdown label="Agente" total={tb}
             rows={summary.byAgent.map((r) => ({ ...r, key: r.agent_id ?? "-", name: agentName(r.agent_id), color: colorOf(r.agent_id) }))} />
         </section>
         <section className={`card ${s.panel}`}>
           <div className={s.panelHead}><h2>Por modelo</h2></div>
-          <Breakdown label="Modelo" total={t.cost} rows={summary.byModel.map((r) => ({ ...r, key: `${r.provider}:${r.model}`, name: r.provider === "openrouter" ? r.model : `${r.model} (${srcName(r.provider)})` }))} />
+          <Breakdown label="Modelo" total={tb} rows={summary.byModel.map((r) => ({ ...r, key: `${r.provider}:${r.model}`, name: r.provider === "openrouter" ? r.model : `${r.model} (${srcName(r.provider)})` }))} />
         </section>
       </div>
 
@@ -290,8 +300,9 @@ export default function UsageClient({ initial }: { initial: { qs: string; summar
                         <td>{l.purpose}</td>
                         <td>{l.model}{l.provider !== "openrouter" && <> <span className="pill">{srcName(l.provider)}</span></>}</td>
                         <td style={num}>{l.prompt_tokens ?? "-"} / {l.completion_tokens ?? "-"}</td>
-                        {/* fora do OpenRouter, custo só existe estimado pelo catálogo (opção do agente) */}
-                        <td style={num} title={l.provider !== "openrouter" && l.cost != null ? "Estimado pelo preço do OpenRouter" : undefined}>
+                        {/* fora do OpenRouter, custo só existe estimado pelo catálogo (opção do agente); na assinatura nem é cobrado */}
+                        <td style={num} className={isSub(l.provider) ? "muted" : undefined}
+                          title={l.provider !== "openrouter" && l.cost != null ? (isSub(l.provider) ? SUB_HINT : "Estimado pelo preço do OpenRouter") : undefined}>
                           {l.provider !== "openrouter" && l.cost != null && "≈ "}{usd(l.cost)}
                         </td>
                         <td style={num}>{secs(l.duration_ms)}</td>
@@ -371,7 +382,8 @@ function SortTh({ col, label, right, sort, onSort }: { col: string; label: strin
 type BRow = Agg & { key: string; name: string; color?: string };
 // valor de cada coluna das quebras para ordenar no cliente (% do custo segue o custo)
 const B_VAL: Record<string, (r: BRow) => number | string> = {
-  name: (r) => r.name.toLowerCase(), calls: (r) => r.calls, cost: (r) => r.cost, pct: (r) => r.cost,
+  name: (r) => r.name.toLowerCase(), calls: (r) => r.calls, cost: billed, pct: (r) => billed(r),
+  cache: (r) => (r.cache_base ? r.cached / r.cache_base : -1),
   tokens: (r) => r.prompt_tokens + r.completion_tokens, avg_ms: (r) => r.avg_ms ?? -1, last_at: (r) => r.last_at ?? "",
 };
 
@@ -388,8 +400,8 @@ function Breakdown({ label, total, rows: raw }: { label: string; total: number; 
       <table className="plain">
         <thead>
           <tr>
-            {th("name", label, false)}{th("calls", "Chamadas")}{th("cost", "Custo")}{th("pct", "% do custo")}
-            {th("tokens", "Tokens (in/out)")}{th("avg_ms", "Tempo médio")}{th("last_at", "Último uso", false)}
+            {th("name", label, false)}{th("calls", "Chamadas")}{th("cost", "Custo cobrado")}{th("pct", "% do cobrado")}
+            {th("tokens", "Tokens (in/out)")}{th("cache", "Cache")}{th("avg_ms", "Tempo médio")}{th("last_at", "Último uso", false)}
           </tr>
         </thead>
         <tbody>
@@ -397,9 +409,13 @@ function Breakdown({ label, total, rows: raw }: { label: string; total: number; 
             <tr key={r.key}>
               <td style={{ whiteSpace: "nowrap" }}>{r.color && <Swatch color={r.color} />}{r.name}</td>
               <td style={num}>{fmtInt(r.calls)}{r.errors > 0 && <span className="muted"> ({r.errors} erro{r.errors > 1 ? "s" : ""})</span>}</td>
-              <td style={num}>{usd(r.cost)}</td>
-              <td style={num}>{total ? pct(r.cost, total) : "-"}</td>
+              <td style={num}>
+                {(billed(r) > 0 || !r.sub_cost) && usd(billed(r))}
+                {r.sub_cost > 0 && <span className="muted" title={SUB_HINT}>{billed(r) > 0 && " + "}≈ {usd(r.sub_cost)} assinatura</span>}
+              </td>
+              <td style={num}>{total ? pct(billed(r), total) : "-"}</td>
               <td style={num}>{fmtInt(r.prompt_tokens)} / {fmtInt(r.completion_tokens)}</td>
+              <td style={num}>{cachePct(r)}</td>
               <td style={num}>{secs(r.avg_ms)}</td>
               <td style={{ whiteSpace: "nowrap" }}>{when(r.last_at)}</td>
             </tr>
@@ -450,7 +466,8 @@ function DailyChart({ summary, from, to, metric, agentName }: {
   const byDay = new Map<string, DayRow[]>();
   for (const r of data) byDay.set(r.day, [...(byDay.get(r.day) ?? []), r]);
   for (const rows of byDay.values()) rows.sort((a, b) => rank(a.agent_id) - rank(b.agent_id));
-  const total = (rows: DayRow[] = []) => rows.reduce((sum, r) => sum + r[metric], 0);
+  const val = (r: DayRow) => (metric === "cost" ? billed(r) : r.calls);
+  const total = (rows: DayRow[] = []) => rows.reduce((sum, r) => sum + val(r), 0);
   const max = Math.max(...days.map((d) => total(byDay.get(d))), metric === "calls" ? 1 : 1e-6);
   const step = metric === "calls" ? Math.max(1, Math.ceil(niceStep(max))) : niceStep(max);
   const top = Math.ceil(max / step) * step;
@@ -483,7 +500,7 @@ function DailyChart({ summary, from, to, metric, agentName }: {
             ))}
             {days.map((d, i) => {
               const cx = ml + band * i + band / 2;
-              const rows = (byDay.get(d) ?? []).filter((r) => r[metric] > 0);
+              const rows = (byDay.get(d) ?? []).filter((r) => val(r) > 0);
               let acc = 0;
               return (
                 <g key={d} tabIndex={0} aria-label={`${ddmm(d)}: ${fmtFull(total(rows))}`} style={{ outline: "none" }}
@@ -491,7 +508,7 @@ function DailyChart({ summary, from, to, metric, agentName }: {
                   {/* alvo do hover: a faixa inteira do dia, maior que a coluna */}
                   <rect x={ml + band * i} y={mt} width={band} height={ph} fill={hover === i ? "color-mix(in srgb, var(--text) 5%, transparent)" : "transparent"} />
                   {rows.map((r, k) => {
-                    const y0 = y(acc), y1 = y((acc += r[metric]));
+                    const y0 = y(acc), y1 = y((acc += val(r)));
                     const isTop = k === rows.length - 1;
                     const h = Math.max(y0 - y1 - (isTop ? 0 : 2), 0); // 2px de fundo entre segmentos
                     if (h <= 0) return null;
@@ -516,7 +533,7 @@ function DailyChart({ summary, from, to, metric, agentName }: {
             {(byDay.get(hd) ?? []).map((r) => (
               <div key={r.agent_id ?? "-"} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ width: 10, height: 2, background: colorOf(r.agent_id), flexShrink: 0 }} />
-                <b style={{ fontVariantNumeric: "tabular-nums" }}>{fmtFull(r[metric])}</b>
+                <b style={{ fontVariantNumeric: "tabular-nums" }}>{fmtFull(val(r))}</b>
                 <span className="muted">{agentName(r.agent_id)}</span>
               </div>
             ))}
@@ -528,11 +545,18 @@ function DailyChart({ summary, from, to, metric, agentName }: {
         <summary>Ver como tabela</summary>
         <div className={s.scroll}>
           <table className="plain">
-            <thead><tr><th>Dia</th><th style={num}>Chamadas</th><th style={num}>Custo</th></tr></thead>
+            <thead><tr><th>Dia</th><th style={num}>Chamadas</th><th style={num}>Cobrado</th><th style={num} title={SUB_HINT}>≈ Assinatura</th><th style={num}>Cache</th></tr></thead>
             <tbody>
               {days.filter((d) => byDay.has(d)).map((d) => {
                 const rows = byDay.get(d)!;
-                return <tr key={d}><td>{ddmm(d)}</td><td style={num}>{fmtInt(rows.reduce((sum, r) => sum + r.calls, 0))}</td><td style={num}>{usd(rows.reduce((sum, r) => sum + r.cost, 0))}</td></tr>;
+                const sum = (f: (r: DayRow) => number) => rows.reduce((a, r) => a + f(r), 0);
+                return (
+                  <tr key={d}>
+                    <td>{ddmm(d)}</td><td style={num}>{fmtInt(sum((r) => r.calls))}</td><td style={num}>{usd(sum(billed))}</td>
+                    <td style={num} className="muted">{sum((r) => r.sub_cost) ? usd(sum((r) => r.sub_cost)) : "-"}</td>
+                    <td style={num}>{cachePct({ cached: sum((r) => r.cached), cache_base: sum((r) => r.cache_base) })}</td>
+                  </tr>
+                );
               })}
             </tbody>
           </table>
