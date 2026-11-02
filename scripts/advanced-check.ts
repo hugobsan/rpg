@@ -12,7 +12,7 @@ import { chunkPage, ingestBook } from "../src/lib/books";
 import { getSetting, pool, q, setSetting } from "../src/lib/db";
 import { embed } from "../src/lib/embeddings";
 import { searchBookChunks, searchHistory, searchMemories } from "../src/lib/retrieval";
-import { HISTORY_MIN, MEMORY_MIN } from "../src/lib/decisions";
+import { HISTORY_MIN, importanceLevel, MEMORY_MIN } from "../src/lib/decisions";
 import { POST as reprocess } from "../src/app/api/embeddings/reprocess/route";
 
 const BASE = process.env.DATABASE_URL || "postgres://rpg:rpg@localhost:5433/rpg";
@@ -172,6 +172,11 @@ async function main() {
     assert.deepEqual((await searchHistory(cid, "q", { auto: true })).map((h) => h.content), ["h outra"]);
     out = 7; // ninguém nessa dimensão: memórias caem no full-text, a automática não devolve nada
     assert.deepEqual((await searchMemories(cid, "longe")).map((m) => m.content), ["longe"]);
+    // importância: Jev em dúvida (nenhum nível com P ≥ 0,5) não substitui a do Cronista
+    const score = (p: number[]) => ({ type: "score" as const, score: 0, probabilities: Object.fromEntries(p.map((v, i) => [String(i), v])) });
+    assert.equal(importanceLevel(score([0.39, 0.14, 0.25, 0.16, 0.06])), undefined, "dúvida: fica a do Cronista");
+    assert.equal(importanceLevel(score([0.83, 0, 0, 0, 0.17])), 1, "certeza: vale o Jev");
+    assert.deepEqual((await searchMemories(cid, "longe", { subject: "ong" })).map((m) => m.content), ["longe"], "subject acha quem o texto cita");
     assert.deepEqual(await searchHistory(cid, "q", { auto: true }), []);
 
     // livro indexado com os padrões; reprocessar com outro chunk size/overlap refaz os chunks a partir das páginas

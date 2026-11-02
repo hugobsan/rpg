@@ -65,7 +65,7 @@ export async function npcTalk(
 
   const [relationMemories, playerRows, [lastGm]] = await Promise.all([
     searchMemories(campaignId, `${npc.name} ${playerText}`, {
-      subject: npc.name,
+      subject: npc.name.split(/\s+/)[0], // "Naruto" acha "Naruto Uzumaki" e as que só dizem "Naruto"
       limit: (await getAdvanced()).memory.npcTopK,
     }),
     q<Character>(
@@ -103,7 +103,7 @@ export async function npcTalk(
       : "",
     player ? `\n--- QUEM FALA COM VOCÊ ---\n${player.name}` : "",
     relationMemories.length
-      ? `\n--- O QUE VOCÊ LEMBRA SOBRE ESSA RELAÇÃO ---\n${relationMemories.map((m) => `- ${m.content}`).join("\n")}`
+      ? `\n--- O QUE VOCÊ LEMBRA (da mais antiga para a mais recente; se duas se contradizem, vale a mais recente) ---\n${[...relationMemories].sort((a, b) => a.id - b.id).map((m) => `- ${m.content}`).join("\n")}`
       : "",
   ]
     .filter(Boolean)

@@ -377,13 +377,14 @@ export function buildImportanceRequest(setting: string, memories: string[]): Dec
  * deu 0.83 no nível 1 e 0.10 no 5, média 0.51 → nível 2). */
 export function importanceLevel(a: Answer | undefined): number | undefined {
   if (a?.type !== "score") return undefined;
-  const best = a.probabilities
-    ? Number(Object.entries(a.probabilities).sort((x, y) => y[1] - x[1])[0][0])
-    : Math.round(a.score);
+  const top = a.probabilities && Object.entries(a.probabilities).sort((x, y) => y[1] - x[1])[0];
+  // Jev em dúvida: fica a do Cronista (real: o Time 7 aprovado no teste dos guizos, 5 do Cronista, virou 1 com 0,39)
+  if (top && top[1] < 0.5) return undefined;
+  const best = top ? Number(top[0]) : Math.round(a.score);
   return Math.min(5, Math.max(1, best + 1));
 }
 
-/** Importância 1-5 por memória; quem o Jev não responder fica com a do Cronista. */
+/** Importância 1-5 por memória; quem o Jev não responder, ou responder sem nível com P ≥ 0,5, fica com a do Cronista. */
 export async function scoreImportance(
   setting: string,
   memories: { content: string; kind?: string; subject?: string | null; importance?: number }[],

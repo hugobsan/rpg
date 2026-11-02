@@ -62,9 +62,10 @@ export async function searchMemories(
     params.push(opts.kind);
     filters.push(`kind = $${params.length}`);
   }
+  // sobre quem: marcada com o nome ou que o cita ("Time 7" com Naruto no texto também é do Naruto)
   if (opts.subject) {
     params.push(opts.subject);
-    filters.push(`subject = $${params.length}`);
+    filters.push(`(subject ILIKE '%' || $${params.length} || '%' OR content ILIKE '%' || $${params.length} || '%')`);
   }
   const where = filters.join(" AND ");
 
