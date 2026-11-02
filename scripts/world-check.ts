@@ -4,14 +4,15 @@
  * lidos nem mexidos.
  * Confere: o pedido traz ESTADO DO MUNDO só com o NPC citado; situação atual e cargo do NPC gravados (cargo fora da
  * lista ignorado, NPC fora do trecho ignorado); eventos e nota do arco, arco concluído abre o seguinte; diretriz
- * desatualizada vira um aviso na conversa fora do jogo, uma vez só.
+ * desatualizada vira um aviso na conversa fora do jogo, uma vez só. Roteirista: sem narração, roteiro do zero; com
+ * a campanha em andamento, lê a história e replaneja do ponto atual, mantendo os arcos concluídos e as notas.
  * Rodar: npx tsx scripts/world-check.ts
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { Pool } from "pg";
 import { DEFAULT_AGENTS } from "../src/lib/agents";
-import { maybeCompact, getCurrentScene } from "../src/lib/engine";
+import { generateScript, getCampaign, getCurrentScene, maybeCompact } from "../src/lib/engine";
 import { blankSheet, normalizeRuleset } from "../src/lib/ruleset";
 import type { TurnEvent } from "../src/lib/types";
 
@@ -26,7 +27,7 @@ g.__pgPool = {
     if (/SELECT source(, params)? FROM agents/.test(text)) return { rows: [{ source: "openrouter", params: {} }] };
     if (/INSERT INTO api_logs/.test(text)) return { rows: [] };
     if (/^\s*(INSERT INTO|UPDATE|DELETE FROM) agents/.test(text)) return { rows: [] };
-    if (/SELECT \* FROM agents WHERE id/.test(text) && ["chronicler", "decider"].includes(params[0] as string)) return { rows: [row(params[0] as string)] };
+    if (/SELECT \* FROM agents WHERE id/.test(text) && ["chronicler", "decider", "scriptwriter"].includes(params[0] as string)) return { rows: [row(params[0] as string)] };
     return real.query(text, params);
   },
   connect: () => real.connect(),
@@ -122,7 +123,31 @@ async function main() {
     assert.deepEqual(n2, { rank: "genin", current: "Genin do Time 7, em missões rank D." }, "cargo inválido ignorado, situação reescrita");
     assert.equal((await notes()).length, 1, "aviso uma vez só");
 
-    console.log("world-check: ok (o Cronista recebe NPCs citados, arco e diretrizes; situação atual e cargo gravados, arco concluído abre o seguinte, diretriz desatualizada avisada uma vez)");
+    // Roteirista com a campanha em andamento: lê a história e replaneja do ponto atual; concluído fica, notas ficam
+    await real.query(`UPDATE scenes SET summary = 'Hugo assistiu ao teste dos guizos.' WHERE campaign_id = $1`, [id]);
+    reply = {
+      premise: "nova",
+      arcs: [
+        { title: "Raízes", status: "done", summary: "repetido", canonEvents: [], hooks: [] },
+        { title: "Exame Chunin", status: "active", summary: "Do ponto atual aos exames.", canonEvents: ["Exames"], hooks: [] },
+        { title: "Invasão", status: "done", summary: "Ainda não aconteceu.", canonEvents: [], hooks: [] },
+      ],
+    };
+    await real.query(`UPDATE campaigns SET script = jsonb_set(script, '{arcs,1,notes}', '["nota do Mestre"]') WHERE id = $1`, [id]);
+    const re = await generateScript(await getCampaign(id));
+    assert.ok(request.includes("HISTÓRIA ATÉ AGORA") && request.includes("REPLANEJE") && request.includes("Hugo assistiu ao teste dos guizos."), "lê a história");
+    assert.ok(request.includes("Os arcos concluídos (Raízes)") && request.includes("Naruto Uzumaki | cargo: genin | agora: Genin do Time 7"), "concluídos e NPCs no pedido");
+    assert.ok(request.includes("A história se passa ANTES"), "diretrizes no pedido");
+    assert.deepEqual(re?.arcs.map((a) => [a.title, a.status]), [["Raízes", "done"], ["Exame Chunin", "active"], ["Invasão", "pending"]], "concluído fica, repetido sai, só o que já estava fica concluído");
+    assert.deepEqual(re?.arcs[0].canonEvents, ["Time 7 aprovado no teste dos guizos (já aconteceu).", "Primeiras missões rank D."], "arco concluído intacto");
+    assert.deepEqual(re?.arcs[1].notes, ["nota do Mestre"], "notas do arco que continua ficam");
+
+    // campanha sem narração: roteiro do zero, como antes
+    await real.query(`DELETE FROM messages WHERE campaign_id = $1`, [id]);
+    await generateScript(await getCampaign(id));
+    assert.ok(request.includes("Monte o roteiro") && !request.includes("HISTÓRIA ATÉ AGORA"), "sem história: do zero");
+
+    console.log("world-check: ok (o Cronista recebe NPCs citados, arco e diretrizes; situação atual e cargo gravados, arco concluído abre o seguinte, diretriz desatualizada avisada uma vez; o Roteirista replaneja do ponto atual da história, mantendo concluídos e notas, e começa do zero sem narração)");
   } finally {
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);
     await real.end();

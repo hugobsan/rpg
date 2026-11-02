@@ -51,7 +51,7 @@ export default function ScriptView({
         </p>
         <p>
           Durante o jogo o Mestre consulta o roteiro para saber em que ponto está e anota o progresso. É um guia, não um trilho: suas
-          escolhas podem desviar a história, e o Mestre adapta. Regenerar cria um plano novo e descarta as anotações.
+          escolhas podem desviar a história, e o Mestre adapta. Com a campanha em andamento, regenerar replaneja a partir de onde a história parou: o Roteirista lê o que já aconteceu, os arcos concluídos ficam e as anotações dos arcos que continuam também.
         </p>
       </details>
 
@@ -102,7 +102,7 @@ export default function ScriptView({
       {script && !busy && (
         confirming ? (
           <div className={s.actions}>
-            <span className={s.sub}>Regenerar descarta o roteiro atual, inclusive as anotações de progresso.</span>
+            <span className={s.sub}>Replaneja do ponto atual da história: os arcos seguintes são reescritos; os concluídos ficam.</span>
             <button className="btn danger small" onClick={regen}>Regenerar</button>
             <button className="btn ghost small" onClick={() => setConfirming(false)}>Cancelar</button>
           </div>

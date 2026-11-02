@@ -1227,10 +1227,54 @@ export async function maybeCompact(campaignId: string, scene: Scene, emit?: (e: 
 
 // ---------- roteirista ----------
 
+/**
+ * O que já aconteceu, para o Roteirista replanejar a partir daqui: hora, resumos das cenas em ordem, marcos e memórias
+ * importantes, situação dos NPCs, onde a história parou, diretrizes do jogador e o roteiro atual. Vazio = campanha
+ * sem narração ainda (roteiro do zero). Sem isso, regenerar voltava a história ao ponto de inserção.
+ */
+async function storySoFar(campaign: Campaign, chars: Character[]): Promise<string> {
+  const id = campaign.id;
+  const [scenes, mems, [last], directives] = await Promise.all([
+    q<{ seq: number; location: string | null; summary: string }>(
+      `SELECT seq, location, summary FROM scenes WHERE campaign_id = $1 AND summary IS NOT NULL AND summary <> '' ORDER BY seq`,
+      [id]
+    ),
+    q<{ content: string }>(
+      `SELECT content FROM memories WHERE campaign_id = $1 AND kind <> 'directive' AND (kind = 'milestone' OR importance >= 4) ORDER BY id`,
+      [id]
+    ),
+    q<{ content: string }>(`SELECT content FROM messages WHERE campaign_id = $1 AND role = 'gm' ORDER BY id DESC LIMIT 1`, [id]),
+    activeDirectives(id),
+  ]);
+  if (!last) return "";
+  const clock = getClock(campaign.state);
+  // ponytail: corta pelo começo se passar de ~16 mil caracteres (campanhas muito longas); depois, resumo por arco
+  const story = scenes.map((s) => `Cena ${s.seq}${s.location ? ` (${s.location})` : ""}: ${s.summary}`).join("\n").slice(-16000);
+  const npcs = chars.filter((c) => c.kind === "npc" && (c.canon || c.persona.current));
+  const arcs = (campaign.script?.arcs ?? []).map(
+    (a) => `- ${a.title} [${a.status}]: ${a.summary.slice(0, 300)}${a.notes.length ? ` | notas: ${a.notes.slice(-3).join(" | ")}` : ""}`
+  );
+  return [
+    "HISTÓRIA ATÉ AGORA (a campanha já está em andamento):",
+    clock ? `Agora: ${formatClock(clock.minutes)}` : "",
+    story ? `Resumo das cenas, em ordem:\n${story}` : "",
+    mems.length ? `Marcos e fatos importantes, em ordem:\n${mems.map((m) => `- ${m.content.slice(0, 300)}`).join("\n")}` : "",
+    npcs.length ? `NPCs:\n${npcs.map((c) => `- ${c.name} | cargo: ${c.sheet.rank || "-"}${c.persona.current ? ` | agora: ${c.persona.current}` : c.persona.role ? ` | ${c.persona.role}` : ""}`).join("\n")}` : "",
+    `Onde a história parou (última narração):\n${last.content.slice(-1500)}`,
+    directives.length ? `Diretrizes do jogador (siga):\n${directives.map((d) => `- ${d.content.slice(0, 300)}`).join("\n")}` : "",
+    arcs.length ? `Roteiro atual:\n${arcs.join("\n")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export async function generateScript(campaign: Campaign): Promise<CampaignScript | null> {
   const writer = await getAgent("scriptwriter");
   const chars = await getCharacters(campaign.id);
   const player = chars.find((c) => c.kind === "player");
+  const story = await storySoFar(campaign, chars);
+  const old = campaign.script;
+  const done = story ? (old?.arcs ?? []).filter((a) => a.status === "done") : [];
   const result = await chat({
     model: writer.model,
     messages: [
@@ -1239,10 +1283,20 @@ export async function generateScript(campaign: Campaign): Promise<CampaignScript
         role: "user",
         content: `MECÂNICA/CENÁRIO:\n${rulesetPromptSummary(campaign.ruleset)}\n\nPERSONAGEM DO JOGADOR:\n${
           player ? sheetSummary(player, true, campaign.ruleset) : "(não criado)"
-        }\n\nMonte o roteiro da campanha "${campaign.name}".${
-          campaign.ruleset.canonBased
-            ? " O cenário é baseado em obra: ancore os arcos na linha do tempo canônica a partir do ponto de inserção do personagem."
-            : ""
+        }\n\n${
+          story
+            ? `${story}\n\nREPLANEJE o roteiro da campanha "${campaign.name}" a partir de onde a história parou: o que já aconteceu é fato e não se repete. ${
+                done.length ? `Os arcos concluídos (${done.map((a) => a.title).join("; ")}) ficam como estão: não os devolva. ` : ""
+              }O 1º arco que você devolver é o atual (status "active"), começando no ponto em que a história está, e os seguintes continuam dele.${
+                campaign.ruleset.canonBased
+                  ? " O cenário é baseado em obra: ancore os arcos na linha do tempo canônica a partir do ponto atual da história (eventos canônicos que já aconteceram não voltam)."
+                  : ""
+              }`
+            : `Monte o roteiro da campanha "${campaign.name}".${
+                campaign.ruleset.canonBased
+                  ? " O cenário é baseado em obra: ancore os arcos na linha do tempo canônica a partir do ponto de inserção do personagem."
+                  : ""
+              }`
         }`,
       },
     ],
@@ -1257,16 +1311,21 @@ export async function generateScript(campaign: Campaign): Promise<CampaignScript
     const jsonText = result.content.replace(/```json|```/g, "").trim();
     const script = JSON.parse(jsonText) as CampaignScript;
     if (!script.premise || !Array.isArray(script.arcs)) return null;
-    script.arcs = script.arcs.map((a) => ({
-      title: a.title || "Arco",
-      summary: a.summary || "",
-      canonEvents: a.canonEvents || [],
-      hooks: a.hooks || [],
-      status: a.status || "pending",
-      notes: a.notes || [],
-    }));
+    const doneTitles = new Set(done.map((a) => a.title.toLowerCase()));
+    script.arcs = script.arcs
+      .filter((a) => !doneTitles.has(String(a.title || "").toLowerCase()))
+      .map((a) => ({
+        title: a.title || "Arco",
+        summary: a.summary || "",
+        canonEvents: a.canonEvents || [],
+        hooks: a.hooks || [],
+        status: a.status === "done" ? "pending" : a.status || "pending", // replanejado: concluído só o que já estava
+        // mesmo arco replanejado: as notas do Mestre e do Cronista ficam
+        notes: [...(old?.arcs.find((o) => o.title.toLowerCase() === String(a.title || "").toLowerCase())?.notes ?? []), ...(a.notes || [])],
+      }));
     if (!script.arcs.some((a) => a.status === "active") && script.arcs[0])
       script.arcs[0].status = "active";
+    script.arcs = [...done, ...script.arcs]; // os concluídos ficam na frente, como estavam
     await q(`UPDATE campaigns SET script = $1, updated_at = now() WHERE id = $2`, [
       JSON.stringify(script),
       campaign.id,
