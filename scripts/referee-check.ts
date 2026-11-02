@@ -4,7 +4,8 @@
  * lidos nem mexidos: fonte, chave, api_logs e a semeadura de agentes são interceptados.
  * Confere: com mechanic sim, o Árbitro resolve antes e o Mestre narra numa chamada só, com o resultado no contexto; o
  * dano só rola se a técnica passou; o treino anda o relógio; a guarda não deixa o Mestre repetir; com mechanic não ou
- * o Jev falhando, o Árbitro não é chamado.
+ * o Jev falhando, o Árbitro não é chamado. De carona: o bloco do roteiro no contexto e o get_script curto; com livro na
+ * campanha, o Jev vê os títulos e, se disser que a ação precisa, um trecho curto entra no contexto.
  * Rodar: npx tsx scripts/referee-check.ts
  */
 import assert from "node:assert/strict";
@@ -41,6 +42,8 @@ g.__pgPool = {
 type Call = { name: string; args: Record<string, unknown> };
 type Reply = { text: string; calls: Call[] };
 let jevMechanic: number | "falha" = 0.9;
+let jevBook = 0; // P(a ação precisa dos livros)
+const jevReqs: { state: Record<string, unknown>; questions: Record<string, unknown> }[] = [];
 const refScript: Reply[] = [];
 const gmScript: Reply[] = [];
 const refReqs: { messages: { role: string; content: string }[]; tools: string[] }[] = [];
@@ -56,10 +59,11 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (url.endsWith("/decisions")) {
     // só a decisão do turno (tem a pergunta mechanic); relógio, local e elenco caem no padrão
     if (jevMechanic === "falha" || !body.questions?.mechanic) return new Response("fora do roteiro", { status: 500 });
+    jevReqs.push(body);
     const answers = Object.fromEntries(
       Object.entries(body.questions as Record<string, { type: string; criteria: Record<string, unknown> }>).map(([k, q]) => [
         k,
-        q.type === "choice" ? { type: "choice", choice: Object.keys(q.criteria)[0] } : { type: "noul", noul: k === "mechanic" ? jevMechanic : 0 },
+        q.type === "choice" ? { type: "choice", choice: Object.keys(q.criteria)[0] } : { type: "noul", noul: k === "mechanic" ? jevMechanic : k === "needs_book" ? jevBook : 0 },
       ])
     );
     return Response.json({ answers });
@@ -120,6 +124,13 @@ async function main() {
       `INSERT INTO characters (campaign_id, kind, name, sheet) VALUES ($1, 'player', 'Hugo', $2), ($1, 'npc', 'Iruka', $3)`,
       [id, JSON.stringify({ ...blankSheet(rs), abilities: [{ ref: Number(lib.id), progress: 30 }] }), JSON.stringify(blankSheet(rs))]
     );
+    // livro de referência: sem embeddings (a rede falsa recusa), a busca cai no full-text pela ação do jogador
+    const { rows: [book] } = await real.query(`INSERT INTO books (campaign_id, title, pages) VALUES ($1, 'Livro Teste', 9) RETURNING id`, [id]);
+    await real.query(`INSERT INTO book_chunks (book_id, page, chunk_index, content) VALUES ($1, 4, 0, $2)`, [
+      book.id,
+      `${"Frase de enchimento sem nada a ver. ".repeat(40)}O mestre manda: treino taijutsu por duas horas no tronco. ${"Outra frase longa de enchimento. ".repeat(40)}`,
+    ]);
+    const BOOKS = "TRECHOS DOS LIVROS DE REFERÊNCIA";
     const c0 = await chakra();
 
     // 1. mechanic sim: o Árbitro resolve (sempre para o jogador, mesmo com outro nome) e o dano rola; o Mestre narra numa chamada
@@ -154,6 +165,9 @@ async function main() {
     assert.equal(JSON.parse(await executeGmTool("get_script", { full: true }, toolCtx)).arcs.length, 4, "full=true: o roteiro inteiro");
     assert.equal(await chakra(), c0 - 6, "custo cobrado uma vez, do jogador");
     assert.ok(events.findIndex((e) => e.type === "dice") < events.findIndex((e) => e.type === "status" && e.text === "[mestre]"), "dados antes do Mestre");
+    assert.deepEqual(jevReqs[0].state.livros_de_referencia, ["Livro Teste"], "com livros, o Jev vê os títulos");
+    assert.ok(jevReqs[0].questions.needs_book, "e pergunta se a ação precisa deles");
+    assert.ok(!ctx.includes(BOOKS), "Jev disse não: sem trechos");
     assert.match(scribeReqs[0].messages[1].content, /JÁ FEITO PELO MESTRE NESTE TURNO \(não repita\) ---\nuse_ability .*Katon Teste/, "o Escrivão sabe do que o Árbitro fez");
 
     // 2. guarda: o Mestre chama de novo a mesma técnica para o jogador e recebe o resultado já resolvido; dano de técnica que falhou não rola
@@ -173,8 +187,12 @@ async function main() {
     // 3. treino: o relógio anda pelas horas do treino
     refScript.push({ text: "", calls: [{ name: "train", args: { target: "taijutsu", hours: 2 } }] });
     gmScript.push({ text: "Duas horas de socos no tronco.", calls: [] });
+    jevBook = 0.9; // a ação precisa do livro: trecho curto, em volta dos termos da ação, com título, bookId e página
     await runTurn(id, "treino taijutsu por duas horas", (e) => events.push(e));
+    jevBook = 0;
     assert.match(ctxOf(3), new RegExp(`${BLOCK}[^\\n]*\\n- train .*Treino de 2 h`));
+    const trecho = ctxOf(3).match(new RegExp(`${BOOKS}[^\\n]*\\n\\[Livro Teste \\| bookId=${book.id} \\| pág\\. 4\\]\\n(.*)`))?.[1];
+    assert.ok(trecho && trecho.includes("treino taijutsu por duas horas") && trecho.length <= 704, `trecho curto do livro no contexto: ${trecho?.length}`);
     const [camp] = await db<{ state: { clock: { minutes: number } } }>(`SELECT state FROM campaigns WHERE id = $1`);
     assert.equal(camp.state.clock.minutes, 480 + 120);
 
@@ -190,7 +208,7 @@ async function main() {
     }
     assert.equal(refScript.length + gmScript.length, 0);
 
-    console.log("referee-check: ok (Árbitro resolve antes e o Mestre narra numa chamada, dano só se a técnica passou, treino anda o relógio, guarda contra repetição, mechanic não e Jev falhando não chamam o Árbitro)");
+    console.log("referee-check: ok (Árbitro resolve antes e o Mestre narra numa chamada, dano só se a técnica passou, treino anda o relógio, guarda contra repetição, mechanic não e Jev falhando não chamam o Árbitro, roteiro no contexto e get_script curto, trecho curto do livro só com o Jev dizendo sim)");
   } finally {
     await new Promise((r) => setTimeout(r, 300)); // o índice do histórico roda depois do done
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);

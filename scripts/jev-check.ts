@@ -7,7 +7,7 @@
  */
 import {
   buildCastRequest, buildElapsedRequest, buildPlaceRequest, buildImportanceRequest, buildNpcRequest, ELAPSED_MINUTES, buildTurnRequest, decide, gateTurn, importanceLevel,
-  COMPLEX_MIN, MECHANIC_MIN, MEMORY_MIN, META_MIN, MODE_MIN, MOVED_MIN, NPC_WILLING_MIN, PRESENT_MIN, TALK_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
+  BOOK_MIN, COMPLEX_MIN, MECHANIC_MIN, MEMORY_MIN, META_MIN, MODE_MIN, MOVED_MIN, NPC_WILLING_MIN, PRESENT_MIN, TALK_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
 } from "../src/lib/decisions";
 import { pool } from "../src/lib/db";
 
@@ -213,6 +213,31 @@ const importanceCases: [string, number | null][] = [
     const probs = t.type === "choice" ? JSON.stringify(Object.fromEntries(Object.entries(t.probabilities || {}).map(([k, v]) => [k, +v.toFixed(2)]))) : "";
     const got = gateTurn(a).talk;
     check(`${action} → ${got ?? "nenhum"} ${probs}`, exp === undefined ? null : got === exp, t.type === "choice" ? t.probabilities?.[exp ?? t.choice] ?? NaN : NaN, `esperado ${exp === undefined ? "? (ambíguo)" : exp ?? "nenhum"}`);
+  }
+
+  console.log(`\n== 12. a ação precisa dos livros de referência (2 trechos no contexto se P >= ${BOOK_MIN})`);
+  // títulos reais dos livros da campanha; as duas primeiras falas são reais (churrasco com o Genma)
+  const books = ["01-pais-das-ondas", "02-exame-chunin", "03-invasao-de-konoha", "04-busca-por-tsunade", "05-fuga-de-sasuke"];
+  const churrasco = { npcsInScene: { "Genma Shiranui": "jounin calmo e pragmático, sempre com uma agulha na boca" }, scene: { mode: "downtime", location: "Churrascaria no centro de Konoha", title: null, summary: null }, lastGmNarration: '**Genma Shiranui:** "O Quarto Hokage era outra coisa. Eu fiz parte da guarda dele." Ele vira a carne na grelha.' };
+  const bookCases: [string, Partial<TurnInput>, boolean | null][] = [
+    ["Minato Namikaze... ele era rápido? Tipo, o quão rápido?", churrasco, true],
+    ["e como ele aprendeu isso então? o segundo deixou alguma anotação? ele já sabia fazer o hiraishin antes de se tornar hokage?", churrasco, true],
+    ["Pergunto ao Kakashi como foi o teste dos guizos que ele aplicou no Time 7.", {}, true],
+    ["Pergunto ao Kakashi o que aconteceu na luta do Terceiro Hokage contra o Orochimaru.", {}, true],
+    ["Não precisa consultar nada: me diz como o Zabuza morreu no cânone.", {}, true],
+    ["*pego um pouco de carne da grelha* E quanto à invocação? você tem algum tipo de invocação?", churrasco, null],
+    ["Uso o Katon: Gōkakyū no Jutsu no Zabuza.", battle, null],
+    ["Ando pela vila olhando as barracas de lámen.", {}, false],
+    ["Pegá-lo com cuidado, apoiando o corpo", { npcsInScene: { Moradora: "dona do gato, aflita" }, lastGmNarration: "O gato está ao alcance das suas mãos, comendo junto aos seus pés." }, false],
+    ["*observar a água*", { scene: { mode: "exploration", location: "Canal de irrigação, arredores de Konoha", title: null, summary: null } }, false],
+    ["Treinar de novo outra rodada de Arremesso de shuriken e kunai", { scene: { mode: "training", location: "Campo de treino", title: null, summary: null } }, false],
+    ["Vou dormir até amanhã.", {}, false],
+    ["Pergunto ao Kakashi se ele usa o Sharingan e o Chidori.", {}, false],
+    ["Seguir com Genma até o depósito", churrasco, false],
+  ];
+  for (const [action, input, exp] of bookCases) {
+    const a = await ask(action, buildTurnRequest({ ...base, ...input, playerAction: action, books, askComplexity: false, askWeb: false }));
+    check(action, exp === null ? null : gateTurn(a).book === exp, p(a.needs_book), `esperado ${exp}`);
   }
 
   console.log(`\n== 3. NPC topa conversar (recusa se P < ${NPC_WILLING_MIN})`);

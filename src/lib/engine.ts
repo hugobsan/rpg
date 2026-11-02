@@ -6,15 +6,19 @@ import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummar
 import {
   activeDirectives,
   addMemory,
+  ChunkHit,
+  excerpt,
   formatHistory,
   HistoryHit,
   historyLine,
   indexHistory,
   MemoryHit,
   recentMemories,
+  searchBookChunks,
   searchHistory,
   searchMemories,
 } from "./retrieval";
+import { listBooks } from "./books";
 import { decideCast, decideElapsed, decideMoved, decideTurn, scoreImportance } from "./decisions";
 import { attributeCap, attributePoints, controlLabel, costMultOf, powerLevel, progressionPromptLines } from "./progression";
 import { formatClock, getClock, period } from "./clock";
@@ -156,7 +160,8 @@ async function buildGmSystem(
   memories: MemoryHit[],
   past: string, // trechos antigos do chat aprovados pelo Jev (formatHistory)
   basePrompt: string,
-  resolved: string[] = [] // o que o Árbitro resolveu antes do Mestre (ferramenta args → resultado)
+  resolved: string[] = [], // o que o Árbitro resolveu antes do Mestre (ferramenta args → resultado)
+  books = "" // trechos dos livros de referência aprovados pelo Jev
 ): Promise<[fixed: string, turn: string]> {
   const player = chars.find((c) => c.kind === "player");
   const activeNpcs = chars.filter((c) => c.kind === "npc" && c.active);
@@ -247,6 +252,7 @@ async function buildGmSystem(
           .join("\n")}`
       : "",
     past ? `\n--- TRECHOS ANTIGOS DO CHAT (lembrados para esta ação) ---\n${past}` : "",
+    books ? `\n--- TRECHOS DOS LIVROS DE REFERÊNCIA (buscados para esta ação; a página inteira com read_pages) ---\n${books}` : "",
     lastNotes.length
       ? `\n--- O ESCRIVÃO REGISTROU DEPOIS DA SUA ÚLTIMA NARRAÇÃO (já está nas fichas; reconheça na história se for marcante, como um marco de domínio ou nível novo) ---\n${lastNotes.map((n) => `- ${n}`).join("\n")}`
       : "",
@@ -418,6 +424,10 @@ export async function runTurn(
   const pastP = playerInput && adv.history.autoTopK
     ? searchHistory(campaignId, playerInput, { limit: adv.history.autoTopK, auto: true }).catch((): HistoryHit[] => [])
     : Promise.resolve([]);
+  // com livros indexados, os 2 trechos mais próximos da ação já vêm buscados; só entram se o Jev disser que a ação precisa
+  const acting = !!playerInput && playerInput !== CONTINUE_INPUT;
+  const booksP = acting ? listBooks(campaignId).catch(() => []) : Promise.resolve([]);
+  const bookHitsP = booksP.then((b) => (b.length ? searchBookChunks(campaignId, playerInput, 2) : [])).catch((): ChunkHit[] => []);
   const [campaign, firstScene, chars, gm] = await Promise.all([
     getCampaign(campaignId),
     getCurrentScene(campaignId),
@@ -428,10 +438,11 @@ export async function runTurn(
   const params = gm.params as { historyBudgetTokens?: number; maxToolRounds?: number; complexModel?: string };
   const complexModel = params.complexModel?.trim();
 
-  const [history, candidates, pastHits] = await Promise.all([
+  const [history, candidates, pastHits, books] = await Promise.all([
     historyWindow(campaignId, params.historyBudgetTokens ?? 9000),
     candidatesP,
     pastP,
+    booksP,
   ]);
 
   // Jev, numa chamada só: modelo do turno (1), busca web (2), filtro de memórias (4), Árbitro (6) e fora do jogo
@@ -461,6 +472,7 @@ export async function runTurn(
       askWeb: gm.web_search,
       askMeta: askMeta && playerInput !== CONTINUE_INPUT,
       askTalk: askMeta && playerInput !== CONTINUE_INPUT && scene.mode !== "battle",
+      books: books.map((b) => b.title),
     },
     campaignId
   );
@@ -499,6 +511,10 @@ export async function runTurn(
   const useWeb = gm.web_search && decision.web !== false;
   const memories = candidates.filter((m) => decision.keepMemory(m.id, m.importance));
   const past = pastHits.filter((h) => decision.keepHistory(h.id));
+  // trechos curtos (~700 caracteres, a janela com mais termos da ação), com título e página para o read_pages
+  const bookText = decision.book
+    ? (await bookHitsP).map((h) => `[${h.title} | bookId=${h.book_id} | pág. ${h.page}]\n${excerpt(h.content, playerInput, 700)}`).join("\n---\n")
+    : "";
 
   const toolCtx: ToolContext = { campaign, scene, emit };
   // Árbitro: técnica da ficha ou treino resolvidos antes do Mestre, que narra numa chamada só. Jev falhou = não roda
@@ -518,7 +534,8 @@ export async function runTurn(
     memories,
     past.length ? formatHistory(past, playerInput, adv.history.excerptChars) : "",
     gm.system_prompt,
-    settled.map(settledLine)
+    settled.map(settledLine),
+    bookText
   );
   // a janela foi lida antes de salvar a ação: ela vem depois do contexto do turno
   if (history.length) history[history.length - 1] = { ...history[history.length - 1], cache: true };
