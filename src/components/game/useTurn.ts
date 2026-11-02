@@ -152,8 +152,44 @@ export function useTurn(
     });
   }, [reload]);
 
-  // Rola até o fim quando chega mensagem nova; ao prepender anteriores, só compensa a altura
-  // acrescentada (scroll instantâneo: o .feed tem scroll-behavior: smooth).
+  // Segue o fim só enquanto o jogador está lá: subir (roda, toque, teclado, barra) para de seguir e
+  // voltar perto do fim retoma. Scroll do código só desce, então não conta como "subiu"; conteúdo que
+  // encolhe sobe o scrollTop, mas termina colado no fim (gap ~0) e também não conta.
+  const stick = useRef(true);
+  useEffect(() => {
+    const el = feedRef.current;
+    if (!el) return;
+    let last = el.scrollTop;
+    let touchY = 0;
+    const up = () => (stick.current = false);
+    const onScroll = () => {
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (el.scrollTop < last && gap > 2) up();
+      else if (gap < 80) stick.current = true;
+      last = el.scrollTop;
+    };
+    // roda/toque/teclado chegam antes do scroll: param de seguir já, sem disputar com o streaming
+    const onWheel = (e: WheelEvent) => e.deltaY < 0 && up();
+    const onTouchStart = (e: TouchEvent) => (touchY = e.touches[0].clientY);
+    const onTouchMove = (e: TouchEvent) => e.touches[0].clientY > touchY && up();
+    const onKey = (e: KeyboardEvent) => ["ArrowUp", "PageUp", "Home"].includes(e.key) && up();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("keydown", onKey);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  // Conteúdo novo (mensagem, narração em streaming, opções, fase): rola ao fim só se o jogador seguia;
+  // ao prepender anteriores, só compensa a altura acrescentada. Sempre instantâneo (o .feed tem
+  // scroll-behavior: smooth, e a animação perderia a corrida com o texto crescendo).
   useLayoutEffect(() => {
     const el = feedRef.current;
     if (!el) return;
@@ -162,17 +198,9 @@ export function useTurn(
       anchor.current = null;
       return;
     }
-    // na primeira carga vai direto ao fim (rolar suave desde o topo dispararia o carregamento das anteriores)
-    el.scrollTo({ top: el.scrollHeight, behavior: firstScroll.current ? "instant" : "smooth" });
+    if (firstScroll.current || stick.current) el.scrollTo({ top: el.scrollHeight, behavior: "instant" });
     if (feed.length) firstScroll.current = false;
-  }, [feed, status]);
-
-  // narração em streaming: acompanha o fim só se o jogador já está lá (não puxa quem subiu para reler)
-  useLayoutEffect(() => {
-    const el = feedRef.current;
-    if (el && draft && el.scrollHeight - el.scrollTop - el.clientHeight < 160)
-      el.scrollTo({ top: el.scrollHeight, behavior: "instant" });
-  }, [draft]);
+  }, [feed, status, draft, choices]);
 
   const loadOlder = async () => {
     const el = feedRef.current;
@@ -246,6 +274,7 @@ export function useTurn(
   // com edit, a ação do jogador também é trocada por text
   const run = async (text: string, regen?: { feedback: string; edit?: boolean }, noTalk?: boolean) => {
     const before = choices; // a ação pode virar fala fora do jogo: aí as opções de antes voltam
+    stick.current = true; // o jogador agiu: volta a seguir o fim
     busyRef.current = true;
     setBusy(true);
     setCanStop(true);
