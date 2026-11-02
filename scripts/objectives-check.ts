@@ -203,7 +203,52 @@ async function main() {
       assert.equal(getObjectives(await state()).some((o) => o.title === "Duplicada por engano"), false);
       assert.ok(GM_TOOLS.some((t) => t.function.name === "fix_objective") && !SCRIBE_TOOLS.has("fix_objective"), "fix_objective é do Mestre, não do Escrivão");
     }
-    console.log("ok: prazos relativo/absoluto, vencer ao avançar, concluir, contexto e gerar novamente; XP por tamanho, oferecida, sem XP em dobro; registro errado e fix_objective");
+    // ---- aceitar e recusar pelo painel (rota, sem IA), o aviso no contexto do Mestre e quando ele some ----
+    {
+      const { POST } = await import("../src/app/api/campaigns/[id]/objectives/route");
+      const { clearPanelDecisions } = await import("../src/lib/tools");
+      const decide = async (objective: string, accept: boolean) => {
+        const req = new Request("http://x", { method: "POST", body: JSON.stringify({ objective, accept }) });
+        const res = await POST(req as never, { params: Promise.resolve({ id }) });
+        return { status: res.status, body: await res.json() };
+      };
+      ctx.campaign = { ...ctx.campaign, state: await state() };
+      await run("add_objective", { title: "Achar o Akamaru", kind: "missao", description: "o cão sumiu", giver: "Kiba", status: "oferecida", xpSize: "pequena", inDays: 1 });
+      await run("add_objective", { title: "Vigiar o portão", kind: "missao", description: "turno da noite", giver: "Genma", status: "oferecida" });
+      await run("add_objective", { title: "Recado vencido", kind: "outro", description: "x", status: "oferecida", inMinutes: 10 });
+      await run("advance_time", { minutes: 11, reason: "espera" });
+      const [aka, gate, late] = [await byTitle("Achar o Akamaru"), await byTitle("Vigiar o portão"), await byTitle("Recado vencido")];
+      assert.equal(aka.giver, "Kiba");
+      const before = Date.now();
+      assert.deepEqual(await decide(aka.id, true), { status: 200, body: { ok: true } });
+      assert.equal((await decide(gate.id, false)).status, 200);
+      assert.equal((await byTitle("Achar o Akamaru")).status, "aberto", "aceitar = aberto");
+      assert.equal((await byTitle("Achar o Akamaru")).deadlineMinutes, aka.deadlineMinutes, "o prazo fica");
+      assert.equal((await byTitle("Vigiar o portão")).status, "cancelado", "recusar = cancelado");
+      assert.ok((await byTitle("Vigiar o portão")).closedAt !== undefined);
+      assert.match((await decide(aka.id, false)).body.error, /já foi decidida/, "decidida não volta");
+      assert.match((await decide(late.id, true)).body.error, /prazo já passou/, "oferecida vencida não se aceita");
+      assert.equal((await byTitle("Recado vencido")).status, "oferecida");
+      assert.equal((await decide("o999", true)).status, 409);
+      assert.equal((await state()).hiddenSheetImageId, 7, "resto do state intacto");
+
+      const now = getClockMin(await state());
+      let b = objectivesPromptBlock(getObjectives(await state()), now);
+      assert.match(b, /Achar o Akamaru .*quem ofereceu: Kiba \(o jogador aceitou pelo painel: reconheça na cena se ainda não reconheceu\)/);
+      assert.match(b, /RECUSADA pelo jogador no painel: \[o\d+\] Vigiar o portão/);
+      // gerar novamente o turno seguinte: a foto (antes dele) traz a marca de volta; o turno que termina tira
+      await takeSnapshot(id, "próximo turno");
+      await clearPanelDecisions(id, before - 1); // decisão depois do início desse turno: fica para o próximo
+      assert.ok((await byTitle("Achar o Akamaru")).decidedAt);
+      await clearPanelDecisions(id, Date.now());
+      b = objectivesPromptBlock(getObjectives(await state()), now);
+      assert.doesNotMatch(b, /pelo painel/);
+      assert.equal((await byTitle("Achar o Akamaru")).status, "aberto", "a missão segue aceita");
+      await restoreSnapshot(id);
+      assert.ok((await byTitle("Achar o Akamaru")).decidedAt, "gerar novamente devolve a marca");
+      assert.equal((await byTitle("Vigiar o portão")).status, "cancelado", "e a decisão");
+    }
+    console.log("ok: prazos relativo/absoluto, vencer ao avançar, concluir, contexto e gerar novamente; XP por tamanho, oferecida, sem XP em dobro; registro errado e fix_objective; aceitar e recusar pelo painel");
   } finally {
     await q(`DELETE FROM campaigns WHERE id = $1`, [id]);
     await pool().end();

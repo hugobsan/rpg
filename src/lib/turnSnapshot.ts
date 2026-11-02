@@ -6,7 +6,8 @@ import { db, q } from "./db";
  * NPCs criados, cena, memórias). Só o último turno pode ser refeito.
  *
  * ponytail: volta o estado inteiro da campanha; uma conversa particular com NPC
- * feita depois do turno também é desfeita (falas, memórias novas e mudanças nas fichas).
+ * feita depois do turno também é desfeita (falas, memórias novas e mudanças nas fichas), e a missão aceita ou recusada
+ * no painel depois dele volta a oferecida (ou some, se o turno a criou).
  * Diretrizes da conversa fora do jogo, regras da mesa e tema ficam (não são estado da história).
  */
 // fichas no formato gravado (abilities = { ref, progress }): salvar e restaurar copiam a linha crua, sem hidratar

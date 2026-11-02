@@ -42,7 +42,8 @@ export function stateToasts(prev: CampaignView, next: CampaignView): StateToast[
     else if (old && old.status !== o.status) {
       if (o.status === "concluido") out.push({ kind: "sucesso", title: `${kind} concluída`, text: o.title });
       else if (o.status === "perdido") out.push({ kind: "dano", title: "Prazo perdido", text: o.title });
-      else if (o.status === "cancelado") out.push({ kind: "info", title: `${kind} cancelada`, text: o.title });
+      else if (o.status === "cancelado") out.push({ kind: "info", title: `${kind} ${old.status === "oferecida" ? "recusada" : "cancelada"}`, text: o.title });
+      else if (o.status === "aberto" && old.status === "oferecida") out.push({ kind: "sucesso", title: `${kind} aceita`, text: o.title });
     }
   }
 

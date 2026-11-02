@@ -15,7 +15,8 @@ import Gallery from "./Gallery";
 import InventoryView from "./InventoryView";
 import AbilitiesView from "./AbilitiesView";
 import LibraryView from "./LibraryView";
-import ObjectivesView from "./ObjectivesView";
+import ObjectivesView, { OfferModal } from "./ObjectivesView";
+import { getObjectives, type Objective } from "@/lib/objectives";
 import SheetView from "./SheetView";
 import NpcList from "./NpcList";
 import MemoriesView from "./MemoriesView";
@@ -143,6 +144,21 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   const [regenReason, setRegenReason] = useState("");
   const [editing, setEditing] = useState(false);
   const [oocOpen, setOocOpen] = useState(false);
+  // missão oferecida: abre na tela; fechada sem decidir, fica só na aba Missões (até recarregar a página)
+  const [offerLater, setOfferLater] = useState<Set<string>>(new Set());
+  const [deciding, setDeciding] = useState(false);
+  const decide = async (o: Objective, accept: boolean) => {
+    setDeciding(true);
+    const res = await fetch(`/api/campaigns/${campaignId}/objectives`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ objective: o.id, accept }),
+    }).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    if (!res?.ok) toast(data?.error || "Tente de novo.", { kind: "alerta", title: o.title });
+    await reloadState(); // o aviso de aceita/recusada vem pela diferença de estado
+    setDeciding(false);
+  };
 
   const characters = state?.characters;
   const npcs = useMemo(() => characters?.filter((c) => c.kind === "npc") ?? [], [characters]);
@@ -248,6 +264,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   const unread = state.inbox?.reduce((n, i) => n + i.unread, 0) ?? 0;
   const difficulty = getTable(campaign.state).difficulty;
   const lastGm = feed.findLast((i) => i.kind === "gm")?.content;
+  const offer = idle && !recap ? getObjectives(campaign.state).find((o) => o.status === "oferecida" && !offerLater.has(o.id)) : undefined;
   const placeholder =
     choices.length && campaign.style !== "open"
       ? "Escolha uma opção acima ou escreva a sua ação..."
@@ -312,7 +329,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
       case "library":
         return <LibraryView campaignId={campaignId} ruleset={campaign.ruleset} jobs={jobs} onChange={reloadState} />;
       case "objectives":
-        return <ObjectivesView state={campaign.state} ruleset={campaign.ruleset} playerXp={player?.sheet.xp ?? 0} />;
+        return <ObjectivesView state={campaign.state} ruleset={campaign.ruleset} playerXp={player?.sheet.xp ?? 0} onDecide={decide} disabled={!idle || deciding} />;
       case "npcs":
         return <NpcList npcs={npcs} onOpen={setOpenNpc} inbox={state.inbox} onSetActive={setNpcActive} />;
       case "map":
@@ -458,6 +475,11 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
       )}
 
       {rolling && <DiceRoller result={rolling} force={state.ui.diceForce} onDone={releaseDice} />}
+
+      {offer && !oocOpen && !openNpc && (
+        <OfferModal o={offer} state={campaign.state} ruleset={campaign.ruleset} playerXp={player?.sheet.xp ?? 0}
+          onDecide={decide} disabled={deciding} onClose={() => setOfferLater((s) => new Set(s).add(offer.id))} />
+      )}
 
       {oocOpen && <OocModal campaignId={campaignId} onClose={() => setOocOpen(false)} onChanged={reloadState} />}
 
