@@ -164,7 +164,12 @@ async function buildGmSystem(
     .filter((c) => c.kind === "npc" && !c.active)
     .map((c) => c.name);
 
-  const activeArc = campaign.script?.arcs.find((a) => a.status === "active");
+  // roteiro: arco ativo, ponto atual (última nota), próximos eventos e o arco seguinte, para não gastar uma rodada no get_script
+  const arcs = campaign.script?.arcs ?? [];
+  const arcIdx = arcs.findIndex((a) => a.status === "active");
+  const activeArc = arcs[arcIdx];
+  const ahead = arcs.slice(arcIdx + 1).filter((a) => a.status !== "done");
+  const nextEvents = ahead.flatMap((a) => a.canonEvents).slice(0, 2);
   const clock = getClock(campaign.state);
   const directives = await activeDirectives(campaign.id);
   // o que o Escrivão gravou depois da narração anterior (meta.notes da última mensagem do Mestre)
@@ -223,7 +228,18 @@ async function buildGmSystem(
       ? `NPCs conhecidos fora de cena (não interagem; reative com set_npc_active): ${inactiveNames.join(", ")}`
       : "",
     activeArc
-      ? `\n--- ROTEIRO: ARCO ATIVO ---\n${activeArc.title}: ${activeArc.summary}\nEventos canônicos deste arco: ${activeArc.canonEvents.join(" | ") || "-"}\nGanchos: ${activeArc.hooks.join(" | ") || "-"}\nNotas: ${activeArc.notes.slice(-5).join(" | ") || "-"}\n(roteiro completo via get_script)`
+      ? [
+          `\n--- ROTEIRO: ARCO ATIVO (${arcIdx + 1}º de ${arcs.length}) ---\n${activeArc.title}: ${activeArc.summary}`,
+          `Eventos canônicos deste arco: ${activeArc.canonEvents.join(" | ") || "-"}`,
+          `Ganchos: ${activeArc.hooks.join(" | ") || "-"}`,
+          `Ponto atual: ${activeArc.notes.at(-1) ?? "começo do arco (nenhuma nota de progresso ainda)"}`,
+          activeArc.notes.length > 1 ? `Notas anteriores: ${activeArc.notes.slice(-5, -1).join(" | ")}` : "",
+          nextEvents.length ? `Próximos eventos canônicos (depois deste arco): ${nextEvents.join(" | ")}` : "",
+          ahead[0] ? `Arco seguinte: ${ahead[0].title}: ${ahead[0].summary.length > 220 ? `${ahead[0].summary.slice(0, 220).trimEnd()}…` : ahead[0].summary}` : "Arco seguinte: nenhum (é o último)",
+          "(premissa e ganchos do arco seguinte: get_script; roteiro inteiro: get_script com full=true)",
+        ]
+          .filter(Boolean)
+          .join("\n")
       : "",
     memories.length
       ? `\n--- MEMÓRIAS RELEVANTES ---\n${memories

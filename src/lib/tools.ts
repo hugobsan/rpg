@@ -578,8 +578,8 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "get_script",
       description:
-        "Lê o roteiro interno da campanha (premissa, arcos, eventos canônicos, progresso). Use para se situar na linha do tempo.",
-      parameters: S({}, []),
+        "Lê o roteiro interno da campanha: premissa, arco ativo e o seguinte por inteiro (eventos canônicos, ganchos, notas) e o título dos outros. O contexto do turno já traz o ponto atual e o que vem a seguir.",
+      parameters: S({ full: { type: "boolean", description: "true = todos os arcos por inteiro" } }, []),
     },
   },
   {
@@ -1503,9 +1503,23 @@ export async function executeGmTool(
       );
     }
     case "get_script": {
-      return ctx.campaign.script
-        ? JSON.stringify(ctx.campaign.script, null, 1)
-        : "Esta campanha não tem roteiro gerado.";
+      const s = ctx.campaign.script;
+      if (!s) return "Esta campanha não tem roteiro gerado.";
+      if (String(args.full) === "true") return JSON.stringify(s, null, 1);
+      // por padrão só o arco ativo (ou o 1º não concluído) e o seguinte: o roteiro inteiro passava de 10 mil caracteres
+      const i = s.arcs.findIndex((a) => a.status === "active");
+      const from = i >= 0 ? i : Math.max(s.arcs.findIndex((a) => a.status !== "done"), 0);
+      const shown = s.arcs.slice(from, from + 2);
+      return JSON.stringify(
+        {
+          premise: s.premise,
+          arcs: shown,
+          otherArcs: s.arcs.filter((a) => !shown.includes(a)).map((a) => `${a.title} (${a.status})`),
+          note: "roteiro inteiro: get_script com full=true",
+        },
+        null,
+        1
+      );
     }
     case "update_script": {
       const script = ctx.campaign.script;

@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { DEFAULT_AGENTS } from "../src/lib/agents";
 import { runTurn } from "../src/lib/engine";
+import { executeGmTool } from "../src/lib/tools";
 import { blankSheet, normalizeRuleset } from "../src/lib/ruleset";
 import type { TurnEvent } from "../src/lib/types";
 
@@ -93,12 +94,17 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
 
 const rs = normalizeRuleset(JSON.parse(fs.readFileSync("naruto-ruleset.json", "utf-8")));
 const BLOCK = "JÁ RESOLVIDO NESTE TURNO";
+const arc = (title: string, status: string, canonEvents: string[], notes: string[] = []) => ({ title, summary: `resumo de ${title}`, canonEvents, hooks: [`gancho de ${title}`], status, notes });
+const script = {
+  premise: "premissa do teste",
+  arcs: [arc("Academia", "done", ["formatura"]), arc("Ondas", "active", ["ponte"], ["nota 1", "nota 2"]), arc("Exame", "pending", ["prova escrita"]), arc("Invasão", "pending", ["ataque", "funeral"])],
+};
 
 async function main() {
   const world = `test-${randomUUID()}`;
   const { rows: [c] } = await real.query(
-    `INSERT INTO campaigns (name, style, ruleset, state) VALUES ('[teste-árbitro]', 'open', $1, '{"clock":{"minutes":480}}') RETURNING id`,
-    [JSON.stringify({ ...rs, world })]
+    `INSERT INTO campaigns (name, style, ruleset, state, script) VALUES ('[teste-árbitro]', 'open', $1, '{"clock":{"minutes":480}}', $2) RETURNING id`,
+    [JSON.stringify({ ...rs, world }), JSON.stringify(script)]
   );
   const id: string = c.id;
   const db = async <T>(sql: string) => (await real.query(sql, [id])).rows as T[];
@@ -139,6 +145,13 @@ async function main() {
     const ctx = ctxOf(0);
     assert.match(ctx, new RegExp(`${BLOCK}[^\\n]*\\n- use_ability \\{"character":"Hugo".*Custo pago: 6 chakra`), "resultado no contexto, para o jogador");
     assert.match(ctx, /\n- roll_dice .*dano de Katon Teste.*TOTAL/, "dano rolado depois da técnica");
+    // roteiro no contexto: ponto atual, próximos eventos e arco seguinte, sem precisar do get_script
+    assert.match(ctx, /ROTEIRO: ARCO ATIVO \(2º de 4\) ---\nOndas: resumo de Ondas\nEventos canônicos deste arco: ponte\nGanchos: gancho de Ondas\nPonto atual: nota 2\nNotas anteriores: nota 1\nPróximos eventos canônicos \(depois deste arco\): prova escrita \| ataque\nArco seguinte: Exame: resumo de Exame\n/);
+    const toolCtx = { campaign: { id, script } as never, scene: {} as never, emit: () => {} };
+    const short = JSON.parse(await executeGmTool("get_script", {}, toolCtx));
+    assert.deepEqual(short.arcs.map((a: { title: string }) => a.title), ["Ondas", "Exame"], "get_script: arco ativo e o seguinte");
+    assert.deepEqual(short.otherArcs, ["Academia (done)", "Invasão (pending)"]);
+    assert.equal(JSON.parse(await executeGmTool("get_script", { full: true }, toolCtx)).arcs.length, 4, "full=true: o roteiro inteiro");
     assert.equal(await chakra(), c0 - 6, "custo cobrado uma vez, do jogador");
     assert.ok(events.findIndex((e) => e.type === "dice") < events.findIndex((e) => e.type === "status" && e.text === "[mestre]"), "dados antes do Mestre");
     assert.match(scribeReqs[0].messages[1].content, /JÁ FEITO PELO MESTRE NESTE TURNO \(não repita\) ---\nuse_ability .*Katon Teste/, "o Escrivão sabe do que o Árbitro fez");
