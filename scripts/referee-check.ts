@@ -5,7 +5,8 @@
  * Confere: com mechanic sim, o Árbitro resolve antes e o Mestre narra numa chamada só, com o resultado no contexto; o
  * dano só rola se a técnica passou; o treino anda o relógio; a guarda não deixa o Mestre repetir; com mechanic não ou
  * o Jev falhando, o Árbitro não é chamado. De carona: o bloco do roteiro no contexto e o get_script curto; com livro na
- * campanha, o Jev vê os títulos e, se disser que a ação precisa, um trecho curto entra no contexto.
+ * campanha, o Jev vê os títulos e, se disser que a ação precisa, um trecho curto entra no contexto; a ficha do jogador
+ * no contexto do Mestre traz completas só as técnicas citadas (o Árbitro vê todas).
  * Rodar: npx tsx scripts/referee-check.ts
  */
 import assert from "node:assert/strict";
@@ -119,10 +120,14 @@ async function main() {
       `INSERT INTO library (world, campaign_id, kind, name, data) VALUES ($1, $2, 'ability', 'Katon Teste', $3) RETURNING id`,
       [world, id, JSON.stringify({ name: "Katon Teste", type: "ninjutsu", rank: "C", effect: "bola de fogo", damage: "2d6" })]
     );
+    const { rows: [lib2] } = await real.query(
+      `INSERT INTO library (world, campaign_id, kind, name, data) VALUES ($1, $2, 'ability', 'Suiton: Jato Teste', $3) RETURNING id`,
+      [world, id, JSON.stringify({ name: "Suiton: Jato Teste", type: "ninjutsu", rank: "D", effect: "jato de água", damage: "1d6" })]
+    );
     await real.query(`INSERT INTO scenes (campaign_id, seq, mode, location) VALUES ($1, 1, 'battle', 'Campo de treino')`, [id]);
     await real.query(
       `INSERT INTO characters (campaign_id, kind, name, sheet) VALUES ($1, 'player', 'Hugo', $2), ($1, 'npc', 'Iruka', $3)`,
-      [id, JSON.stringify({ ...blankSheet(rs), abilities: [{ ref: Number(lib.id), progress: 30 }] }), JSON.stringify(blankSheet(rs))]
+      [id, JSON.stringify({ ...blankSheet(rs), abilities: [{ ref: Number(lib.id), progress: 30 }, { ref: Number(lib2.id), progress: 10 }] }), JSON.stringify(blankSheet(rs))]
     );
     // livro de referência: sem embeddings (a rede falsa recusa), a busca cai no full-text pela ação do jogador
     const { rows: [book] } = await real.query(`INSERT INTO books (campaign_id, title, pages) VALUES ($1, 'Livro Teste', 9) RETURNING id`, [id]);
@@ -151,6 +156,7 @@ async function main() {
     assert.match(ask, /REGRAS DA MESA[\s\S]*Escala de CD/);
     assert.match(ask, /Treino simultâneo/);
     assert.match(ask, /NPCs em cena: Iruka/);
+    assert.match(ask, /efeito: bola de fogo[\s\S]*efeito: jato de água/, "o Árbitro vê todas as técnicas completas");
     assert.match(ask, /AÇÃO DO JOGADOR ---\nuso o Katon Teste no Iruka/);
     assert.equal(gmReqs.length, 1, "o Mestre narra numa chamada só");
     const ctx = ctxOf(0);
@@ -164,6 +170,10 @@ async function main() {
     assert.deepEqual(short.otherArcs, ["Academia (done)", "Invasão (pending)"]);
     assert.equal(JSON.parse(await executeGmTool("get_script", { full: true }, toolCtx)).arcs.length, 4, "full=true: o roteiro inteiro");
     assert.equal(await chakra(), c0 - 6, "custo cobrado uma vez, do jogador");
+    // ficha por relevância: a técnica da ação vai completa, a outra numa linha (nome, rank, domínio, custo)
+    assert.match(ctx, /- Katon Teste \[ninjutsu, rank C.*efeito: bola de fogo/);
+    assert.match(ctx, /- Suiton: Jato Teste \[rank D, domínio 10%, custo \d+ chakra\]/);
+    assert.ok(!ctx.includes("jato de água"), "técnica fora da ação sem efeito");
     assert.ok(events.findIndex((e) => e.type === "dice") < events.findIndex((e) => e.type === "status" && e.text === "[mestre]"), "dados antes do Mestre");
     assert.deepEqual(jevReqs[0].state.livros_de_referencia, ["Livro Teste"], "com livros, o Jev vê os títulos");
     assert.ok(jevReqs[0].questions.needs_book, "e pergunta se a ação precisa deles");
@@ -199,16 +209,18 @@ async function main() {
     // 4. mechanic não e 5. Jev falhando: o Árbitro não roda e o contexto não tem o bloco
     for (const p of [0.1, "falha"] as const) {
       jevMechanic = p;
-      gmScript.push({ text: "Você olha em volta.", calls: [] });
+      gmScript.push({ text: "Você olha em volta, a água do jato teste ainda pinga.", calls: [] });
       const before: { ref: number; gm: number } = { ref: refReqs.length, gm: gmReqs.length };
       await runTurn(id, "olho em volta", (e) => events.push(e));
       assert.equal(refReqs.length, before.ref, `Árbitro não chamado (${p})`);
       assert.equal(gmReqs.length, before.gm + 1);
       assert.ok(!ctxOf(gmReqs.length - 1).includes(BLOCK));
+      // a técnica citada pela parte depois de ":", sem acento nem caixa, na última narração vai completa
+      if (p === "falha") assert.match(ctxOf(gmReqs.length - 1), /- Suiton: Jato Teste \[ninjutsu.*efeito: jato de água/);
     }
     assert.equal(refScript.length + gmScript.length, 0);
 
-    console.log("referee-check: ok (Árbitro resolve antes e o Mestre narra numa chamada, dano só se a técnica passou, treino anda o relógio, guarda contra repetição, mechanic não e Jev falhando não chamam o Árbitro, roteiro no contexto e get_script curto, trecho curto do livro só com o Jev dizendo sim)");
+    console.log("referee-check: ok (Árbitro resolve antes e o Mestre narra numa chamada, dano só se a técnica passou, treino anda o relógio, guarda contra repetição, mechanic não e Jev falhando não chamam o Árbitro, roteiro no contexto e get_script curto, trecho curto do livro só com o Jev dizendo sim, ficha do jogador por relevância e completa para o Árbitro)");
   } finally {
     await new Promise((r) => setTimeout(r, 300)); // o índice do histórico roda depois do done
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);

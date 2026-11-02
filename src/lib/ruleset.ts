@@ -132,21 +132,24 @@ export function startingKit(r: Ruleset, rankKey?: string): Ability[] {
 
 /**
  * Linha compacta de uma habilidade para o prompt: tipo, rank, consumo, domínio (bônus), custo final de quem usa
- * (sheet: o multiplicador geral da ficha), dano, efeito, requisitos.
+ * (sheet: o multiplicador geral da ficha), dano, efeito, requisitos. brief: só nome, rank, domínio e custo.
  */
-export function abilityPromptLine(r: Ruleset, a: Ability, textMax = Infinity, sheet?: Pick<Sheet, "costMult">): string {
+export function abilityPromptLine(r: Ruleset, a: Ability, textMax = Infinity, sheet?: Pick<Sheet, "costMult">, brief = false): string {
   const cut = (t: string) => (t.length > textMax ? `${t.slice(0, textMax).trimEnd()}…` : t);
   const cost = effectiveCost(r, a, { sheet });
+  const costText =
+    cost &&
+    (cost.amount || cost.base
+      ? `custo ${cost.perUnit} ${cost.resource}${cost.unit ? ` por ${cost.unit}${brief ? "" : " (use_ability com units)"}` : ""}${!brief && cost.perUnit !== cost.base ? ` (${costBreakdown(r, a, cost)})` : ""}`
+      : "sem custo");
+  if (brief) return `${a.name} [${[a.rank && `rank ${a.rank}`, `domínio ${mastery(a)}%`, costText].filter(Boolean).join(", ")}]`;
   const band = consumptionOf(r, a);
   const bits = [
     a.type,
     a.rank && `rank ${a.rank}`,
     band && `consumo ${band.label.toLowerCase()}`,
     `domínio ${mastery(a)}% (+${masteryBonus(r, a)} no teste)`,
-    cost &&
-      (cost.amount || cost.base
-        ? `custo ${cost.perUnit} ${cost.resource}${cost.unit ? ` por ${cost.unit} (use_ability com units)` : ""}${cost.perUnit !== cost.base ? ` (${costBreakdown(r, a, cost)})` : ""}`
-        : "sem custo"),
+    costText,
     a.damage && `dano ${a.damage}`,
   ].filter(Boolean);
   let line = `${a.name} [${bits.join(", ")}]`;

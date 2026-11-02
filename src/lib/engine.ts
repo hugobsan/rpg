@@ -83,8 +83,10 @@ export async function getCharacters(campaignId: string): Promise<Character[]> {
 /**
  * Ficha em texto. compact (contexto do turno do Mestre, que vai a cada chamada): efeito e requisito de cada técnica
  * e o passado do jogador encurtados; ficam marco atual e próximo (guiam a cena ao roteiro). O completo sai no get_character.
+ * focus (texto da ação, da última narração e o que o Árbitro resolveu): só as técnicas citadas nele (nome inteiro ou a
+ * parte depois de ":", sem acento nem caixa) vão completas; as outras numa linha com nome, rank, domínio e custo.
  */
-export function sheetSummary(c: Character, full: boolean, rs: Ruleset, compact = false): string {
+export function sheetSummary(c: Character, full: boolean, rs: Ruleset, compact = false, focus?: string): string {
   const s = c.sheet;
   const res = Object.entries(s.resources)
     .map(([k, v]) => `${k} ${v.current}/${v.max}`)
@@ -111,14 +113,17 @@ export function sheetSummary(c: Character, full: boolean, rs: Ruleset, compact =
     .join("; ");
   if (extra) lines.push(`  ${extra}`);
   if (costMultOf(s.costMult) !== 1) lines.push(`  ${controlLabel(rs).toLowerCase()}: custo das técnicas ×${String(costMultOf(s.costMult)).replace(".", ",")} (já no custo abaixo)`);
+  const said = focus === undefined ? null : ` ${normName(focus)} `;
+  const related = (name: string) => !said || [name, name.split(":").pop()!].some((n) => normName(n) && said.includes(` ${normName(n)} `));
   if (s.abilities.length)
     lines.push(
-      `  habilidades:\n` +
+      `  habilidades${said ? " (completas as citadas na ação, na última narração ou resolvidas neste turno; as outras resumidas, inteiras no get_character)" : ""}:\n` +
         s.abilities
           .map((a) => {
-            let line = `    - ${abilityPromptLine(rs, a, compact ? 160 : Infinity, s)}`;
-            const cur = currentMilestone(a);
-            const next = nextMilestone(a);
+            const brief = !related(a.name);
+            let line = `    - ${abilityPromptLine(rs, a, compact ? 160 : Infinity, s, brief)}`;
+            const cur = brief ? null : currentMilestone(a);
+            const next = brief ? null : nextMilestone(a);
             if (cur) line += ` — atual: ${cur.description}`;
             if (next) line += ` | próximo marco aos ${next.threshold}%: ${next.description}`;
             if (a.incomplete && !a.removed) line += ` [INCOMPLETA na biblioteca: complete com edit_ability]`;
@@ -161,7 +166,8 @@ async function buildGmSystem(
   past: string, // trechos antigos do chat aprovados pelo Jev (formatHistory)
   basePrompt: string,
   resolved: string[] = [], // o que o Árbitro resolveu antes do Mestre (ferramenta args → resultado)
-  books = "" // trechos dos livros de referência aprovados pelo Jev
+  books = "", // trechos dos livros de referência aprovados pelo Jev
+  focus?: string // ação, última narração e técnicas resolvidas: escolhe as técnicas do jogador que vão completas
 ): Promise<[fixed: string, turn: string]> {
   const player = chars.find((c) => c.kind === "player");
   const activeNpcs = chars.filter((c) => c.kind === "npc" && c.active);
@@ -224,7 +230,7 @@ async function buildGmSystem(
     // só local, rotas e palco: o resto do mapa (mapas 3D, locais distantes, regras) vai ao Topógrafo pelo map_brief
     mapPromptBlock(await loadMap(campaign.id, campaign.state), getStage(scene.state), scene.mode),
     player
-      ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset, true)}`
+      ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset, true, focus)}`
       : "",
     activeNpcs.length
       ? `\n--- NPCs EM CENA ---\n${activeNpcs.map((n) => sheetSummary(n, true, campaign.ruleset, true)).join("\n")}`
@@ -535,7 +541,8 @@ export async function runTurn(
     past.length ? formatHistory(past, playerInput, adv.history.excerptChars) : "",
     gm.system_prompt,
     settled.map(settledLine),
-    bookText
+    bookText,
+    [playerInput, lastGmText, ...settled.map((r) => String(r.args.ability ?? r.args.target ?? ""))].join("\n")
   );
   // a janela foi lida antes de salvar a ação: ela vem depois do contexto do turno
   if (history.length) history[history.length - 1] = { ...history[history.length - 1], cache: true };
