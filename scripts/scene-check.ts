@@ -124,13 +124,13 @@ async function main() {
     assert.equal((await scenes()).length, 2);
 
     // 3. ficou e a narração mostra outro modo: troca na cena atual
-    place = { moved: 0.1, mode: "training", p: 0.7 };
+    place = { moved: 0.1, mode: "training", p: 0.8 };
     await turn("Treino selos de mão no quintal.", "Você repete os selos até as mãos doerem.");
     s = await scenes();
     assert.deepEqual([s.length, s[1].mode, s[1].location], [2, "training", "Casa do Hugo, Konoha"]);
 
-    // 4. abaixo do limiar (0,6): fica
-    place = { moved: 0.1, mode: "battle", p: 0.55 };
+    // 4. abaixo do limiar (0,7): fica
+    place = { moved: 0.1, mode: "battle", p: 0.65 };
     await turn("Chuto o boneco.", "O boneco balança.");
     assert.equal((await scenes())[1].mode, "training");
 

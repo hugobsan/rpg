@@ -5,10 +5,20 @@ export const DEFAULT_RANGE = "30d";
 const RANGES: Record<string, string> = { "24h": "24 hours", "7d": "7 days", "30d": "30 days" };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// cache de prompt: tokens de entrada lidos do cache (OpenRouter, Responses e Anthropic gravam com os nomes do OpenRouter);
+// a base só conta chamadas que informam o cache (o Jev e as chamadas antigas da Responses não informam)
+const CACHED = "(response->'usage'->'prompt_tokens_details'->>'cached_tokens')";
+export const CACHE = `COALESCE(SUM(${CACHED}::float), 0) AS cached,
+  COALESCE(SUM(prompt_tokens) FILTER (WHERE ${CACHED} IS NOT NULL), 0)::float AS cache_base`;
+// custo da assinatura (fontes do Login com ChatGPT, em $SUB): gasta a cota, não é cobrado, só estimado pelo catálogo
+export const SUB_COST = "COALESCE(SUM(cost) FILTER (WHERE provider = ANY($SUB)), 0)::float AS sub_cost";
+
 // métricas somadas, reaproveitadas no total, por agente e por modelo
 export const AGG = `COUNT(*)::int AS calls,
   COUNT(*) FILTER (WHERE error IS NOT NULL)::int AS errors,
   COALESCE(SUM(cost), 0)::float AS cost,
+  ${SUB_COST},
+  ${CACHE},
   COALESCE(SUM(prompt_tokens), 0)::float AS prompt_tokens,
   COALESCE(SUM(completion_tokens), 0)::float AS completion_tokens,
   AVG(duration_ms) FILTER (WHERE error IS NULL)::float AS avg_ms,
