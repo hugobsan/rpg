@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { q } from "./db";
 import { AgentConfig } from "./types";
 
@@ -655,6 +656,16 @@ export const LIBRARY_PROMPT_FIXES: [string, string, string][] = [
   ["gm", "Em todo turno em que o tempo passa, chame advance_time UMA vez, junto da narração, com uma estimativa realista do que a interação levou (uma troca de falas: poucos minutos; um combate: poucos minutos; uma refeição ou treino curto: ~1 h; uma viagem: horas). O tempo andando", "Depois de cada turno o sistema avança o relógio pelo tempo que a narração mostra: deixe claro no texto quanto passou (\"meia hora depois\", \"o sol já baixou\"). advance_time é opcional, para fixar a duração exata quando você souber (uma troca de falas: poucos minutos; um combate: poucos minutos; uma refeição ou treino curto: ~1 h; uma viagem: horas). O tempo andando"],
 ];
 
+// cadeia antiga sobre um prompt do banco, na ordem em que rodava no boot (replace do Postgres = replaceAll)
+export function legacyPrompt(id: string, text: string): string {
+  if (id === "gm") for (const [from, to] of GM_PROMPT_FIXES) text = text.replaceAll(from, to);
+  // o ritmo de XP virou regra da mesa (Mesa > Ganho de XP): o Escrivão lê a regra no estado de cada turno
+  if (id === "scribe")
+    text = text.replaceAll("De 5 a 10% do que falta para o próximo nível num feito comum, até 25% num grande.", "Quanto: pela REGRA DE XP DA MESA, no estado.");
+  for (const [aid, from, to] of LIBRARY_PROMPT_FIXES) if (aid === id) text = text.replaceAll(from, to);
+  return text;
+}
+
 // uma vez por processo (antes era um INSERT por agente a cada getAgent, várias vezes por turno);
 // variável do módulo, não global: no dev, editar este arquivo roda de novo e cria agente novo
 let defaultsReady: Promise<void> | null = null;
@@ -666,46 +677,66 @@ export function ensureDefaultAgents(): Promise<void> {
   }));
 }
 
-async function insertDefaultAgents(): Promise<void> {
+// versão de um prompt padrão: hash do próprio texto (mudou o texto em DEFAULT_AGENTS, mudou a versão)
+export const promptHash = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
+
+// prompt_base = hash do padrão de onde o prompt do banco veio. Prompt com esse mesmo hash não foi editado à mão:
+// se o padrão mudou, troca pelo novo. Editado à mão fica como está (a tela /agents oferece o padrão novo)
+export async function insertDefaultAgents(): Promise<void> {
   // Pixel artista aposentado: o retrato agora é sempre do Ilustrador
   await q(`DELETE FROM agents WHERE id = 'pixel'`);
+  const rows = await q<{ id: string; system_prompt: string; prompt_base: string | null }>(`SELECT id, system_prompt, prompt_base FROM agents`);
   for (const a of DEFAULT_AGENTS) {
-    await q(
-      `INSERT INTO agents (id, name, description, model, temperature, max_tokens, web_search, system_prompt, params)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT (id) DO NOTHING`,
-      [
-        a.id,
-        a.name,
-        a.description,
-        a.model,
-        a.temperature,
-        a.max_tokens,
-        a.web_search,
-        a.system_prompt,
-        JSON.stringify(a.params),
-      ]
-    );
+    const base = promptHash(a.system_prompt);
+    const row = rows.find((r) => r.id === a.id);
+    if (!row) {
+      await q(
+        `INSERT INTO agents (id, name, description, model, temperature, max_tokens, web_search, system_prompt, params, prompt_base)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (id) DO NOTHING`,
+        [a.id, a.name, a.description, a.model, a.temperature, a.max_tokens, a.web_search, a.system_prompt, JSON.stringify(a.params), base]
+      );
+      continue;
+    }
+    let prompt = row.system_prompt;
+    let from = row.prompt_base;
+    // migração: sem prompt_base, a cadeia antiga uma última vez; bateu com o padrão = intocado, senão fica NULL (editado)
+    if (from === null) {
+      prompt = legacyPrompt(a.id, prompt);
+      if (prompt === a.system_prompt) from = base;
+    } else if (from !== base && promptHash(prompt) === from) {
+      prompt = a.system_prompt;
+      from = base;
+    }
+    if (prompt !== row.system_prompt || from !== row.prompt_base)
+      // só se ninguém salvou o prompt no meio tempo
+      await q(`UPDATE agents SET system_prompt = $2, prompt_base = $3 WHERE id = $1 AND system_prompt = $4`, [a.id, prompt, from, row.system_prompt]);
   }
-  for (const [from, to] of GM_PROMPT_FIXES)
-    await q(`UPDATE agents SET system_prompt = replace(system_prompt, $1, $2) WHERE id = 'gm' AND strpos(system_prompt, $1) > 0`, [from, to]);
-  // o ritmo de XP virou regra da mesa (Mesa > Ganho de XP): o Escrivão lê a regra no estado de cada turno
-  await q(`UPDATE agents SET system_prompt = replace(system_prompt, $1, $2) WHERE id = 'scribe' AND strpos(system_prompt, $1) > 0`, [
-    "De 5 a 10% do que falta para o próximo nível num feito comum, até 25% num grande.",
-    "Quanto: pela REGRA DE XP DA MESA, no estado.",
-  ]);
-  for (const [id, from, to] of LIBRARY_PROMPT_FIXES)
-    await q(`UPDATE agents SET system_prompt = replace(system_prompt, $2, $3) WHERE id = $1 AND strpos(system_prompt, $2) > 0`, [id, from, to]);
+}
+
+// o padrão atual vai junto (default_prompt) só quando o prompt foi editado à mão e o padrão mudou depois
+function withDefault(a: AgentConfig): AgentConfig {
+  const def = DEFAULT_AGENTS.find((x) => x.id === a.id)?.system_prompt;
+  if (def === undefined || a.system_prompt === def || a.prompt_base === promptHash(def)) return a;
+  return { ...a, default_prompt: def };
+}
+
+/** Restaurar padrão (tela /agents): troca o prompt pelo padrão atual e grava de onde veio. */
+export async function restoreDefaultPrompt(id: string): Promise<AgentConfig> {
+  const a = DEFAULT_AGENTS.find((x) => x.id === id);
+  if (!a) throw new Error(`Agente sem padrão: ${id}`);
+  await q(`UPDATE agents SET system_prompt = $2, prompt_base = $3, updated_at = now() WHERE id = $1`, [id, a.system_prompt, promptHash(a.system_prompt)]);
+  return getAgent(id);
 }
 
 export async function getAgent(id: string): Promise<AgentConfig> {
   await ensureDefaultAgents();
   const rows = await q<AgentConfig>(`SELECT * FROM agents WHERE id = $1`, [id]);
   if (!rows.length) throw new Error(`Agente não encontrado: ${id}`);
-  return rows[0];
+  return withDefault(rows[0]);
 }
 
 export async function listAgents(): Promise<AgentConfig[]> {
   await ensureDefaultAgents();
-  return q<AgentConfig>(`SELECT * FROM agents ORDER BY id`);
+  return (await q<AgentConfig>(`SELECT * FROM agents ORDER BY id`)).map(withDefault);
 }

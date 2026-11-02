@@ -452,6 +452,10 @@ export interface AgentConfig {
   params: Record<string, unknown>;
   // fonte de modelos: "openrouter" ou o id de uma fonte OpenAI-compatível cadastrada em /agents
   source: string;
+  // hash do prompt padrão de onde o system_prompt veio (lib/agents.ts)
+  prompt_base?: string | null;
+  // padrão atual, só quando o prompt foi editado à mão e o padrão mudou depois (para Ver diferença e Restaurar)
+  default_prompt?: string;
   // preço do modelo (USD/M tokens) salvo no último Salvar (só no OpenRouter, que tem catálogo com preço)
   pricing?: {
     input: number | null;

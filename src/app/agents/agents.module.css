@@ -96,3 +96,13 @@
 .presetActions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
 .presetNew { display: flex; gap: var(--s-2); flex-wrap: wrap; }
 .presetNew input { flex: 1; min-width: 220px; }
+
+/* prompt editado à mão com padrão novo: diferença por linhas (seu × padrão) */
+.diff {
+  margin: var(--s-3) 0 0; max-height: 420px; overflow: auto; padding: 8px 10px; border-radius: var(--r-md);
+  background: var(--bg-sunken); font-family: var(--font-mono); font-size: 12px;
+  line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.diff span { display: block; color: var(--text-faint); }
+.diff .del { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.diff .add { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }

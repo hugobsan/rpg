@@ -39,6 +39,9 @@ ALTER TABLE api_logs ADD COLUMN IF NOT EXISTS cost NUMERIC;
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS pricing JSONB;
 -- fonte de modelos do agente: 'openrouter' (embutida) ou o id de uma fonte OpenAI-compatível (settings.sources)
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'openrouter';
+-- hash do prompt padrão (DEFAULT_AGENTS) de onde o system_prompt veio; igual ao hash do prompt = não editado à mão.
+-- NULL: anterior a este controle ou editado na migração (conta como editado)
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS prompt_base TEXT;
 -- fonte que atendeu a chamada (as antigas foram todas no OpenRouter)
 ALTER TABLE api_logs ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'openrouter';
 

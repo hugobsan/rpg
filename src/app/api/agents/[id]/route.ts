@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
-import { getAgent } from "@/lib/agents";
+import { getAgent, restoreDefaultPrompt } from "@/lib/agents";
 import { getModelPricing, getSources, isClaude, OPENROUTER, type Source } from "@/lib/openrouter";
 import { modelVoices } from "@/lib/tts";
 
@@ -11,8 +11,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const current = await getAgent(id);
   const body = await req.json();
+  // Restaurar padrão: só o prompt (e de onde veio); salvar o prompt pelo formulário não mexe em prompt_base
+  if (body.restorePrompt) return NextResponse.json(await restoreDefaultPrompt(id));
+  const current = await getAgent(id);
   const model = String(body.model ?? current.model).trim();
   const source = String(body.source ?? current.source);
   const or = source === OPENROUTER;

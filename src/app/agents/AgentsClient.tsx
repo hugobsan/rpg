@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { AgentConfig, SourceView } from "@/lib/types";
 import { PRESET_FIXED, presetActive, snapshot, type AgentPreset } from "@/lib/agentPresets";
+import { lineDiff } from "@/lib/lineDiff";
 import Loader from "@/components/ui/Loader";
 import { toast } from "@/components/ui/Toast";
 import AgentsDiagram from "./AgentsDiagram";
@@ -310,6 +311,7 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose
         </div>
       </div>
       <p className={s.desc}>{agent.description}</p>
+      {agent.default_prompt !== undefined && <NewDefault agent={agent} onRestored={(updated) => { onSaved(updated); setForm(updated); }} />}
 
       <div className={s.model}>
         <span className={s.modelId}>{agent.model}</span>
@@ -465,5 +467,46 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose
         <Link href={`/usage?agent=${agent.id}`}>Custos e uso deste agente →</Link>
       </div>
     </article>
+  );
+}
+
+/** Prompt editado à mão e o padrão mudou depois: o boot não sobrescreve; aqui dá para ver a diferença e restaurar. */
+function NewDefault({ agent, onRestored }: { agent: AgentConfig; onRestored: (a: AgentConfig) => void }) {
+  const [diff, setDiff] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const restore = async () => {
+    setBusy(true);
+    const res = await fetch(`/api/agents/${agent.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ restorePrompt: true }),
+    }).catch(() => null);
+    setBusy(false);
+    setConfirming(false);
+    if (!res?.ok) return toast((await res?.json().catch(() => null))?.error || "Não foi possível restaurar o padrão.", { kind: "alerta" });
+    onRestored(await res.json());
+    toast(`${agent.name}: prompt padrão restaurado.`, { kind: "sucesso" });
+  };
+
+  return (
+    <div className={s.warnBox} role="note">
+      Há um prompt padrão novo para este agente. O seu foi editado à mão e ficou como está.
+      <div className={s.actions} style={{ marginTop: 8 }}>
+        <button className="btn small ghost" onClick={() => setDiff(!diff)} aria-expanded={diff}>{diff ? "Fechar diferença" : "Ver diferença"}</button>
+        {confirming ? <>
+          <button className="btn small danger" disabled={busy} onClick={restore}>{busy && <Loader size={14} label="Restaurando" />} Trocar o meu pelo padrão</button>
+          <button className="btn small ghost" disabled={busy} onClick={() => setConfirming(false)}>Cancelar</button>
+        </> : <button className="btn small" onClick={() => setConfirming(true)}>Restaurar padrão</button>}
+      </div>
+      {diff && (
+        <pre className={s.diff} aria-label="Diferença: linhas com - só no seu prompt, com + só no padrão">
+          {lineDiff(agent.system_prompt, agent.default_prompt ?? "").map(([k, line], i) => (
+            <span key={i} className={k === "-" ? s.del : k === "+" ? s.add : undefined}>{k} {line}</span>
+          ))}
+        </pre>
+      )}
+    </div>
   );
 }
