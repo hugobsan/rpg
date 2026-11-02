@@ -75,6 +75,7 @@ const TOOL_ICON: [RegExp, IconName][] = [
   [/item|inventory/, "bag"],
   [/abilit|train|mastery/, "spark"],
   [/npc_message/, "mail"],
+  [/npc_talk/, "chat"],
   [/npc/, "people"],
   [/map/, "map"],
   [/scene|stage/, "pin"],

@@ -173,6 +173,7 @@ async function buildGmSystem(
     [campaign.id]
   );
   const lastNotes = Array.isArray(last?.notes) ? last.notes : [];
+  const talked = await talkHandoff(campaign.id);
   // cena nova ainda sem resumo: o fim do último resumo de cena, para o Mestre não perder o fio
   const [before] = scene.summary
     ? []
@@ -234,6 +235,7 @@ async function buildGmSystem(
       ? `\n--- O ESCRIVÃO REGISTROU DEPOIS DA SUA ÚLTIMA NARRAÇÃO (já está nas fichas; reconheça na história se for marcante, como um marco de domínio ou nível novo) ---\n${lastNotes.map((n) => `- ${n}`).join("\n")}`
       : "",
     playerFixesLine(campaign.state),
+    talked,
     directives.length
       ? `\n--- DIRETRIZES DO JOGADOR (fora do jogo) — siga ---\n${directives
           .map((d) => `- ${d.content}${d.subject === "proxima_cena" ? " (vale nesta cena e na próxima)" : ""}`)
@@ -246,6 +248,25 @@ async function buildGmSystem(
     "\n(Narração: calibre pelo momento, como em NARRAÇÃO. Cheia em chegada, descoberta, viagem e resultado; curta e interativa em fala e batalha.)",
   ];
   return [fixed.filter(Boolean).join("\n"), parts.filter(Boolean).join("\n")];
+}
+
+/**
+ * Conversas particulares encerradas depois da última narração (linhas 'talk' que lib/npc grava ao fechar): o fim delas
+ * e o que o Escrivão registrou vão ao Mestre uma vez só, no turno seguinte (depois dele há narração mais nova).
+ */
+async function talkHandoff(campaignId: string): Promise<string> {
+  const talks = await q<{ tail: string | null; notes: string[] | null }>(
+    `SELECT meta->>'tail' AS tail, meta->'notes' AS notes FROM messages
+     WHERE campaign_id = $1 AND role = 'talk' AND id > COALESCE((SELECT MAX(id) FROM messages WHERE campaign_id = $1 AND role = 'gm'), 0)
+     ORDER BY id`,
+    [campaignId]
+  );
+  if (!talks.length) return "";
+  const notes = talks.flatMap((t) => (Array.isArray(t.notes) ? t.notes : []));
+  return `\n--- CONVERSA PARTICULAR QUE ACABOU DE ACONTECER (o jogador falou direto com o NPC, fora da sua narração; continue a cena de onde ela parou, sem repetir as falas) ---\n${talks
+    .map((t) => t.tail || "")
+    .join("\n\n")
+    .slice(-1500)}${notes.length ? `\nO Escrivão já registrou:\n${notes.map((n) => `- ${n}`).join("\n")}` : ""}`;
 }
 
 /** Candidatas a memória do turno: top-k por similaridade + as mais importantes/recentes (Configurações avançadas). */
@@ -423,6 +444,7 @@ export async function runTurn(
       askComplexity: !!complexModel && complexModel !== gm.model,
       askWeb: gm.web_search,
       askMeta: askMeta && playerInput !== CONTINUE_INPUT,
+      askTalk: askMeta && playerInput !== CONTINUE_INPUT && scene.mode !== "battle",
     },
     campaignId
   );
@@ -434,6 +456,19 @@ export async function runTurn(
     const answered = await (await import("./ooc")).oocTalk(campaignId, playerInput).catch((e) => console.warn("[fora do jogo]", e));
     if (answered) {
       emit({ type: "ooc" });
+      emit({ type: "done" });
+      return;
+    }
+  }
+  // fala só com um NPC em cena: vai ao chat dele (agente NPC, ~3 mil tokens, com o perfil inteiro) em vez do turno do
+  // Mestre (~20 mil); a fala é a 1ª mensagem e a tela abre a conversa. Como no meta, nada em messages nem na foto.
+  // O registro (Escrivão) e o relógio ficam para quando a conversa fechar (lib/npc endNpcChat). Recusa ou falha = turno normal
+  const talkNpc = decision.talk ? chars.find((c) => c.kind === "npc" && c.active && c.name === decision.talk) : undefined;
+  if (talkNpc) {
+    emit({ type: "status", text: `Conversa particular: ${talkNpc.name} está respondendo...` });
+    const r = await (await import("./npc")).npcTalk(campaignId, talkNpc.id, null, playerInput, true).catch((e) => console.warn("[conversa com NPC]", e));
+    if (r && !r.refused) {
+      emit({ type: "npc_talk", npcId: talkNpc.id, sessionId: r.sessionId, messages: [{ role: "player", content: playerInput }, { role: "npc", content: r.reply }] });
       emit({ type: "done" });
       return;
     }
@@ -775,6 +810,15 @@ async function fallbackClock(
   emit({ type: "time", minutes: clock.minutes + delta });
   // prazo vencido aqui (depois da narração) aparece como PERDIDO no contexto do próximo turno
   await saveClock(campaignId, clock.minutes + delta, emit);
+}
+
+/** Conversa particular encerrada (lib/npc): relógio pelo tempo dela e o Escrivão com as falas no lugar da narração. */
+export async function scribeConversation(campaignId: string, label: string, transcript: string): Promise<string[]> {
+  const [campaign, scene] = await Promise.all([getCampaign(campaignId), getCurrentScene(campaignId)]);
+  const emit = () => {};
+  await fallbackClock(campaignId, campaign, scene, label, transcript, emit).catch(() => {});
+  // ponytail: sem desfazer pela etiqueta (messageId 0); o desfazer vale só para a última narração do Mestre
+  return (await runScribe(campaignId, { campaign, scene, emit }, label, transcript, [], [], 0)).map((e) => e.note);
 }
 
 type Settled = { name: string; args: Record<string, unknown>; output: string };

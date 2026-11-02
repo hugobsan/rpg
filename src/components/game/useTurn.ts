@@ -56,6 +56,8 @@ import { diceText } from "../DiceRoller";
  *
  * ooc: a ação era pergunta ou reclamação sobre o registro e foi respondida na conversa fora do jogo (gm_notes),
  * sem turno. O hook tira a ação do chat e devolve as opções de antes; a tela abre a conversa no onEvent.
+ * npc_talk: idem, a ação era fala só com um NPC em cena e virou a 1ª mensagem da conversa particular com ele (a tela abre
+ * o modal). talked(nome): a linha discreta da conversa encerrada (mensagem 'talk', um chip no feed).
  */
 
 export interface FeedItem {
@@ -76,7 +78,9 @@ const IMMEDIATE = new Set(["status", "scene", "state", "error", "done"]);
 const toFeed = (messages: ChatLine[], scribe = false): FeedItem[] => {
   const last = scribe ? messages.findLast((m) => m.role === "gm") : undefined;
   return messages.flatMap((m): FeedItem[] => [
-    { key: `m${m.id}`, kind: m.role === "player" ? "player" : "gm", content: m.content },
+    m.role === "talk"
+      ? { key: `m${m.id}`, kind: "chip", name: "npc_talk", content: m.content } // conversa particular encerrada
+      : { key: `m${m.id}`, kind: m.role === "player" ? "player" : "gm", content: m.content },
     ...(m === last ? m.meta.scribe ?? [] : [])
       .map((e, index) => ({ e, index }))
       .filter(({ e }) => e.undo || e.summary !== e.tool)
@@ -283,12 +287,12 @@ export function useTurn(
           const line = part.split("\n").find((l) => l.startsWith("data: "));
           if (!line) continue;
           const ev = JSON.parse(line.slice(6)) as TurnEvent;
-          if (ev.type === "narration" || ev.type === "ooc") {
+          if (ev.type === "narration" || ev.type === "ooc" || ev.type === "npc_talk") {
             narrated = true; // salva no servidor (mesmo se ainda retida pela rolagem): não dá mais para parar
             setCanStop(false);
           }
-          if (ev.type === "ooc") {
-            // não houve turno: a ação sai do chat (ficou na conversa fora do jogo, com a resposta)
+          if (ev.type === "ooc" || ev.type === "npc_talk") {
+            // não houve turno: a ação sai do chat (ficou na conversa fora do jogo ou na particular com o NPC, com a resposta)
             setFeed((f) => {
               const i = f.map((x) => x.kind).lastIndexOf("player");
               return i >= 0 ? f.slice(0, i) : f;
@@ -393,8 +397,10 @@ export function useTurn(
     return true;
   };
 
+  const talked = (name: string) => setFeed((f) => [...f, { key: nextKey(), kind: "chip", name: "npc_talk", content: `Conversa particular com ${name}` }]);
+
   return {
-    state, setState, reload, error, setError,
+    state, setState, reload, error, setError, talked,
     feed, draft, choices, setChoices, busy, status, send, regenerate, edit, canStop, stop, undo,
     pendingDice, rolling, roll, releaseDice,
     feedRef, hasMore, loadingOlder, loadOlder,

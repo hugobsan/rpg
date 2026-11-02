@@ -60,7 +60,7 @@ async function main() {
   assert.deepEqual([D.history.excerptChars, D.history.toolTopK, D.history.autoTopK, D.history.autoMaxDistance, D.history.batch], [700, 4, 2, 0.45, 16]);
   assert.deepEqual([D.books.chunkChars, D.books.overlapChars, D.books.topK, D.books.maxPages], [2400, 0, 5, 8]);
   assert.deepEqual([D.embeddings.dimensions, D.embeddings.batch], [0, 64]);
-  assert.deepEqual(D.jev, { complexMin: 0.5, webMin: 0.7, npcWillingMin: 0.4, presentMin: 0.4, movedMin: 0.5, modeMin: 0.7, mechanicMin: 0.45, metaMin: 0.6, genderMin: 0.7 });
+  assert.deepEqual(D.jev, { complexMin: 0.5, webMin: 0.7, npcWillingMin: 0.4, presentMin: 0.4, movedMin: 0.5, modeMin: 0.7, mechanicMin: 0.45, metaMin: 0.6, genderMin: 0.7, talkMin: 0.75 });
   assert.deepEqual([MEMORY_MIN, HISTORY_MIN], [0.55, 0.8]);
 
   assert.deepEqual(normalizeAdvanced(undefined), D);

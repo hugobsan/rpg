@@ -196,8 +196,8 @@ const NODES: (FlowNode | LaneNode)[] = [
     quando: "No início do turno, antes de a ação ser salva (o Jev ainda decide se é turno).",
     custo: "Dois embeddings da ação (baratos) e consultas SQL.",
   }),
-  n("t_jev", X[2], 60, "jev", "Jev: decide o turno", "modelo, web, memórias, Árbitro, fora do jogo", {
-    oque: "Uma única chamada devolve probabilidades, não texto: (1) turno complexo? Escolhe entre o modelo do Mestre e o caro de turnos complexos (se configurado). (2) Precisa de busca web (:online)? Só quando o turno depende de um fato do cânone que não está no contexto. (3) Cada memória candidata é relevante? As de importância 5 entram sem perguntar. (4) A ação usa uma técnica da ficha do jogador ou é treino? Se sim, o Árbitro resolve antes do Mestre. (5) É o jogador perguntando ou reclamando do registro (ficha, itens, missões, XP, relógio, regras), não uma ação do personagem? Se sim, não há turno: a fala vai ao Mestre fora do jogo, que responde (e corrige) na conversa fora do jogo, e nada entra no chat da história. Os limiares ficam nas Configurações avançadas.",
+  n("t_jev", X[2], 60, "jev", "Jev: decide o turno", "modelo, web, memórias, Árbitro, fora do jogo, NPC", {
+    oque: "Uma única chamada devolve probabilidades, não texto: (1) turno complexo? Escolhe entre o modelo do Mestre e o caro de turnos complexos (se configurado). (2) Precisa de busca web (:online)? Só quando o turno depende de um fato do cânone que não está no contexto. (3) Cada memória candidata é relevante? As de importância 5 entram sem perguntar. (4) A ação usa uma técnica da ficha do jogador ou é treino? Se sim, o Árbitro resolve antes do Mestre. (5) É o jogador perguntando ou reclamando do registro (ficha, itens, missões, XP, relógio, regras), não uma ação do personagem? Se sim, não há turno: a fala vai ao Mestre fora do jogo, que responde (e corrige) na conversa fora do jogo, e nada entra no chat da história. (6) É só o personagem falando com um NPC em cena (não em batalha)? Se sim, também não há turno: a fala vira a 1ª mensagem da conversa particular com ele e a tela abre o modal do NPC. Os limiares ficam nas Configurações avançadas.",
     quando: "No início de cada turno, depois das candidatas. No Continuar sem nada a perguntar (sem modelo caro, sem web, sem memórias), nem é chamado.",
     freq: "No máximo 1 request por turno para esta decisão (depois da narração há outras: relógio, local e elenco).",
     custo: "Mínimo: cerca de US$ 0,00005 e ≈0,4 s por chamada; saída só em probabilidades.",
@@ -260,12 +260,12 @@ const NODES: (FlowNode | LaneNode)[] = [
 
   // --- NPC ---
   n("n_player", X[0], 600, "player", "Jogador fala com o NPC", "conversa particular", {
-    oque: "Conversa fora da narração do Mestre. O histórico fica guardado por sessão de conversa. A sessão também pode ser aberta pelo NPC: o Mestre manda npc_message (mensagem curta e um motivo oculto), que chega na caixa de entrada; se o jogador responde, a conversa segue com o agente do NPC, que sabe por que chamou.",
+    oque: "Conversa fora da narração do Mestre, aberta pelo jogador na lista de NPCs ou sozinha, quando o Jev vê no chat da campanha uma fala só para um NPC em cena (≈3 mil tokens por fala, contra ≈20 mil de um turno do Mestre). O histórico fica guardado por sessão de conversa. A sessão também pode ser aberta pelo NPC: o Mestre manda npc_message (mensagem curta e um motivo oculto), que chega na caixa de entrada; se o jogador responde, a conversa segue com o agente do NPC, que sabe por que chamou.",
     quando: "A cada mensagem do jogador ao NPC.",
   }),
   n("n_jev", X[1], 600, "jev", "Jev: o NPC topa?", "só no início da conversa", {
     oque: "Decide se o NPC toparia conversar agora, olhando persona, objetivos, relação com o jogador, cena e se o NPC está presente.",
-    quando: "Antes da 1ª chamada do NPC da sessão (histórico vazio). Uma troca recusada não é gravada: se o jogador insistir, a checagem roda de novo. No meio de uma conversa aceita não há checagem: o NPC pode cortar sozinho, em personagem. Sessão aberta pelo NPC (npc_message) não passa pela checagem.",
+    quando: "Antes da 1ª chamada do NPC da sessão (histórico vazio). Uma troca recusada não é gravada: se o jogador insistir, a checagem roda de novo. No meio de uma conversa aceita não há checagem: o NPC pode cortar sozinho, em personagem. Sessão aberta pelo NPC (npc_message) não passa pela checagem. Na conversa que veio do chat da campanha, a recusa não gera fala: segue o turno do Mestre.",
     freq: "1 request no início de cada conversa.",
     custo: "Mínimo: cerca de US$ 0,00005 e ≈0,4 s por chamada; saída só em probabilidades.",
     fallback: "Se falhar, o NPC conversa normalmente.",
@@ -282,7 +282,7 @@ const NODES: (FlowNode | LaneNode)[] = [
     custo: "O mesmo de uma resposta normal do NPC.",
   }),
   n("n_end", X[3], 600, "player", "Encerrar a conversa", "botão de encerrar", {
-    oque: "Ao encerrar, a conversa vira memória da campanha: o Mestre passa a saber o essencial, e o NPC continua lembrando de tudo.",
+    oque: "Ao encerrar, antes de o modal fechar: o Jev estima o tempo da conversa e o relógio anda, e o Escrivão registra numa chamada, com a conversa inteira no lugar da narração, o que ela estabeleceu (item comprado ou recebido, missão oferecida ou aceita). Uma linha discreta entra no chat da campanha, e o fim da conversa (até 1.500 caracteres) e o que o Escrivão gravou vão uma vez ao contexto do próximo turno do Mestre, que retoma a cena dali. Depois, em segundo plano, a conversa vira memória da campanha: o Mestre passa a saber o essencial, e o NPC continua lembrando de tudo.",
   }),
   n("n_chron", X[4], 600, "chron", "Cronista: extrai memórias", "1 vez por conversa", {
     oque: "Lê a conversa inteira e guarda só o que o Mestre precisa saber (revelações, acordos, mudanças de relação) como memórias de tipo npc ou relationship. Só roda se houve ao menos uma troca.",
@@ -461,6 +461,8 @@ e("t_jev", "st", "o_gm", "tb", "pergunta sobre o registro", { dashed: true }),
   e("n_npc", "sr", "n_end", "tl", "até encerrar"),
   e("n_end", "sr", "n_chron", "tl"),
   e("n_chron", "sr", "n_imp", "tl", "memórias"),
+  e("t_jev", "sb", "n_player", "tt", "fala só com um NPC em cena", { dashed: true }),
+  e("n_end", "st", "t_scribe", "tb", "registra a conversa", { dashed: true }),
   e("n_imp", "st", "pg", "tb", "grava memórias"),
   // sob demanda
   e("s_btn1", "sr", "s_writer", "tl"),

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { endNpcChat } from "@/lib/npc";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
-/** POST { sessionId } → dispara em segundo plano o Cronista, que salva os pontos importantes da conversa. */
+/** POST { sessionId } → relógio e Escrivão pela conversa, linha dela no chat da campanha e, em segundo plano, o Cronista com os pontos importantes. */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; npcId: string }> }

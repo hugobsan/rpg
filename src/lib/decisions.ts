@@ -37,6 +37,10 @@ export const MECHANIC_MIN = D.jev.mechanicMin;
 // Conversa fora do jogo (sem turno) se P(fala ao Mestre sobre o registro) >= limiar. Sem probe ainda; alto porque
 // desviar uma ação de verdade é pior que gastar um turno com a reclamação.
 export const META_MIN = D.jev.metaMin;
+// Conversa 1:1 no chat do NPC (sem turno) se P(fala só com aquele NPC em cena) >= limiar. Probe (2026-11-02): só fala com ele
+// 0.85-1.00; ação no mundo com ou sem fala, dois NPCs, NPC fora de cena 0.00-0.05; "sorrio e pergunto ao Teuchi..." 0.65.
+// Alto pelo mesmo motivo do meta: desviar uma ação de verdade é pior que gastar um turno.
+export const TALK_MIN = D.jev.talkMin;
 
 // ---------- tipos da API ----------
 
@@ -136,6 +140,7 @@ export interface TurnInput {
   askComplexity: boolean;
   askWeb: boolean;
   askMeta?: boolean; // pergunta se a ação é fala fora do jogo sobre o registro (não no Continuar nem no gerar novamente)
+  askTalk?: boolean; // pergunta se a ação é conversa direta com um dos npcsInScene (idem; o chamador pula batalha)
 }
 
 export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest {
@@ -186,6 +191,18 @@ export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest
           "Não: o personagem age, fala ou pergunta algo dentro da história, inclusive a um NPC (\"você sabe se ele comeu?\") ou sobre o que vê; ou a fala mistura uma ação do personagem com um comentário fora do jogo.",
       },
     };
+  const npcs = Object.keys(t.npcsInScene).filter((n) => n !== "nenhum");
+  if (t.askTalk && npcs.length)
+    questions.talk = {
+      type: "choice",
+      instructions:
+        "A `acao_do_jogador` é só o personagem do jogador falando diretamente com UM dos `npcs_em_cena` (perguntando, respondendo ou puxando conversa com ele, como na `ultima_narracao_do_mestre`), sem fazer outra coisa no mundo? Com qual?",
+      criteria: {
+        ...Object.fromEntries(npcs.map((n) => [n, `Só fala com ${n}: pergunta, resposta ou comentário dirigido a ${n}, sem outra ação.`])),
+        nenhum:
+          "Não é conversa só com um NPC em cena: ação no mundo (entrar, ir, pegar, entregar, oferecer, treinar, atacar, usar técnica), fala junto de uma ação (\"entro e pergunto...\", \"entrego a ficha e digo...\"), fala para vários personagens ao mesmo tempo, fala com quem não está em `npcs_em_cena`, ou fala fora do jogo ao Mestre.",
+      },
+    };
   for (const m of candidates)
     questions[`mem_${m.id}`] = {
       type: "noul",
@@ -232,6 +249,7 @@ export interface TurnDecision {
   web: boolean | null;
   mechanic: boolean; // falha do Jev = não (o Árbitro não roda)
   meta: boolean; // fala fora do jogo sobre o registro; falha do Jev = não (turno normal)
+  talk: string | null; // nome do NPC com quem a ação é conversa direta; falha do Jev = null (turno normal)
   keepMemory: (id: number, importance: number) => boolean;
   keepHistory: (id: number) => boolean; // falha do Jev = nenhum trecho (não infla o contexto)
 }
@@ -239,11 +257,13 @@ export interface TurnDecision {
 export function gateTurn(answers: Record<string, Answer> | null, a: Advanced = D): TurnDecision {
   const c = answers?.complexity;
   const web = answers ? noulOf(answers, "needs_web") : undefined;
+  const t = answers?.talk;
   return {
     complex: c?.type === "choice" ? (c.probabilities?.complexa ?? (c.choice === "complexa" ? 1 : 0)) >= a.jev.complexMin : null,
     web: web === undefined ? null : web >= a.jev.webMin,
     mechanic: (answers ? (noulOf(answers, "mechanic") ?? 0) : 0) >= a.jev.mechanicMin,
     meta: (answers ? (noulOf(answers, "meta") ?? 0) : 0) >= a.jev.metaMin,
+    talk: t?.type === "choice" && t.choice !== "nenhum" && (t.probabilities?.[t.choice] ?? 1) >= a.jev.talkMin ? t.choice : null,
     keepMemory: (id, importance) => {
       if (importance >= a.memory.alwaysKeep || !answers) return true;
       const p = noulOf(answers, `mem_${id}`);

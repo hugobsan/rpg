@@ -4,7 +4,7 @@ import { getAdvanced } from "./advanced";
 import { getAgent } from "./agents";
 import { chat, ChatMessage } from "./openrouter";
 import { addMemory, indexHistory, searchMemories } from "./retrieval";
-import { getCampaign, getCurrentScene } from "./engine";
+import { getCampaign, getCurrentScene, saveMessage, scribeConversation } from "./engine";
 import { Character, InboxItem } from "./types";
 import { decideNpcWilling, scoreImportance } from "./decisions";
 import { startJob } from "./jobs";
@@ -48,12 +48,14 @@ function npcContext(npc: Character): string {
  * O NPC recebe persona + memórias de relação + contexto da cena. No início da
  * sessão o Jev decide se ele topa conversar; na recusa o próprio NPC recusa em
  * personagem e a troca não é gravada (se o jogador insistir, decide de novo).
+ * divert (a fala veio do chat da campanha, engine.runTurn): na recusa não há fala do NPC, e o turno do Mestre segue.
  */
 export async function npcTalk(
   campaignId: string,
   npcId: string,
   sessionId: string | null,
-  playerText: string
+  playerText: string,
+  divert = false
 ): Promise<{ sessionId: string; reply: string; refused: boolean }> {
   const npc = await getNpc(campaignId, npcId);
   const campaign = await getCampaign(campaignId);
@@ -61,7 +63,7 @@ export async function npcTalk(
   const agent = await getAgent("npc");
   const sid = sessionId || randomUUID();
 
-  const [relationMemories, playerRows] = await Promise.all([
+  const [relationMemories, playerRows, [lastGm]] = await Promise.all([
     searchMemories(campaignId, `${npc.name} ${playerText}`, {
       subject: npc.name,
       limit: (await getAdvanced()).memory.npcTopK,
@@ -70,6 +72,7 @@ export async function npcTalk(
       `SELECT * FROM characters WHERE campaign_id = $1 AND kind = 'player' LIMIT 1`,
       [campaignId]
     ),
+    q<{ content: string }>(`SELECT content FROM messages WHERE campaign_id = $1 AND role = 'gm' ORDER BY id DESC LIMIT 1`, [campaignId]),
   ]);
   const player = playerRows[0];
 
@@ -93,6 +96,8 @@ export async function npcTalk(
     `\n--- CENÁRIO ---\n${campaign.ruleset.name}. ${campaign.ruleset.loreNotes.slice(0, 1200)}`,
     `\n--- ${npcContext(npc)}`,
     `\n--- CENA ATUAL (para julgar se a conversa é plausível agora) ---\nModo: ${scene.mode} | Local: ${scene.location || "?"}\n${scene.summary ? `Contexto: ${scene.summary.slice(-800)}` : ""}${npc.active || initiated ? "" : "\nATENÇÃO: você NÃO está presente na cena atual — a conversa só é plausível se houver como o jogador te alcançar."}`,
+    // em cena, ele viu o que acabou de acontecer (a conversa costuma retomar a última fala dele na narração)
+    npc.active && lastGm ? `\n--- O QUE ACABOU DE ACONTECER NA CENA (última narração do Mestre) ---\n${lastGm.content.slice(-1500)}` : "",
     initiated
       ? `\n--- POR QUE VOCÊ PROCUROU O JOGADOR (só você sabe; não recite, conduza a conversa para isso) ---\n${first.intent || "(motivo não registrado: siga pela sua mensagem)"}\nFoi você quem chamou o jogador; se foi à distância (recado, mensageiro...), a conversa segue por esse meio.`
       : "",
@@ -124,6 +129,8 @@ export async function npcTalk(
       },
       campaignId
     ));
+
+  if (!willing && divert) return { sessionId: sid, reply: "", refused: true };
 
   const messages: ChatMessage[] = [
     {
@@ -170,8 +177,12 @@ export async function npcTalk(
 }
 
 /**
- * Encerra a conversa: o Cronista extrai só os pontos importantes e grava como
- * memórias da campanha (o Mestre passa a "saber" o essencial; o NPC guarda tudo).
+ * Encerra a conversa. Antes de responder: o relógio anda pelo tempo dela e o Escrivão registra o que ela estabeleceu
+ * (missão oferecida ou aceita, item comprado ou recebido...), uma chamada com a conversa inteira no lugar da narração;
+ * depois uma linha 'talk' entra no chat da campanha com o fim da conversa, que vai uma vez ao próximo turno do Mestre.
+ * Ao fechar e não a cada fala: uma chamada só, que vê a conversa inteira (oferecida e aceita viram um registro), e o
+ * modal aberto segura o próximo turno até tudo estar gravado. Em segundo plano, o Cronista extrai só os pontos
+ * importantes e grava como memórias da campanha (o Mestre passa a "saber" o essencial; o NPC guarda tudo).
  */
 export async function endNpcChat(
   campaignId: string,
@@ -185,20 +196,29 @@ export async function endNpcChat(
     [npcId, sessionId]
   );
   if (rows.length < 2) return { saved: 0 };
+  const [[player], scene] = await Promise.all([
+    q<{ name: string }>(`SELECT name FROM characters WHERE campaign_id = $1 AND kind = 'player' LIMIT 1`, [campaignId]),
+    getCurrentScene(campaignId),
+  ]);
+  const you = player?.name || "Jogador";
+  const transcript = rows.map((r) => `${r.role === "player" ? you : npc.name}: ${r.content}`).join("\n");
+  const notes = await scribeConversation(
+    campaignId,
+    `(Conversa particular de ${you} com ${npc.name}: as falas abaixo fazem as vezes da narração)`,
+    transcript
+  ).catch((e): string[] => (console.warn("[escrivão da conversa]", e), []));
+  await saveMessage(campaignId, scene.id, "talk", `Conversa particular com ${npc.name}`, { npcId, sessionId, tail: transcript.slice(-1500), notes }, npc.name);
 
-  // em segundo plano: o modal fecha na hora e o cabeçalho mostra a tarefa até as memórias entrarem
+  // em segundo plano: o modal não espera as memórias, e o cabeçalho mostra a tarefa até elas entrarem
   return startJob(campaignId, "npc-memory", sessionId, `Memórias da conversa: ${npc.name}`, async () => {
     const chronicler = await getAgent("chronicler");
-    const transcript = rows
-      .map((r) => `${r.role === "player" ? "JOGADOR" : npc.name}: ${r.content}`)
-      .join("\n");
     const result = await chat({
       model: chronicler.model,
       messages: [
         { role: "system", content: chronicler.system_prompt },
         {
           role: "user",
-          content: `Conversa particular entre o jogador e o NPC ${npc.name}. Extraia APENAS os pontos que o Mestre da campanha precisa saber (revelações, acordos, mudanças de relação, informações novas). Use kind "npc" ou "relationship" e subject "${npc.name}".\n\n${transcript}`,
+          content: `Conversa particular entre o jogador (${you}) e o NPC ${npc.name}. Extraia APENAS os pontos que o Mestre da campanha precisa saber (revelações, acordos, mudanças de relação, informações novas). Use kind "npc" ou "relationship" e subject "${npc.name}".\n\n${transcript}`,
         },
       ],
       temperature: chronicler.temperature,
