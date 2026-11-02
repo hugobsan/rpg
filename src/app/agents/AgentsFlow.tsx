@@ -134,7 +134,7 @@ const NODES: (FlowNode | LaneNode)[] = [
   }),
   n("o_gm", X[4], -370, "gm", "Mestre fora do jogo", "diretrizes, regras da mesa, correções", {
     oque: "O mesmo modelo do Mestre, com outro prompt: responde curto, sem narrar nem dar spoiler (não vê roteiro nem segredos de NPC). Vê a cena, missões, regras e modos de cena da mesa, a ficha completa, os últimos trechos da história e as diretrizes ativas. Orientação de como conduzir vira diretriz (save_directive), que entra no contexto de todo turno; dificuldade, críticos, ritmo de XP e o texto de cada modo de cena vão em set_table_rules; corrige fichas, relógio e missões com as ferramentas do turno (menos roteiro, get_character, npc_message e map_brief), corrige a técnica na biblioteca do mundo com edit_ability (vale para todas as campanhas do mundo), tira técnica de uma ficha com remove_ability (a entrada fica na biblioteca), mexe direto no mapa e pede lotes da biblioteca.",
-    quando: "A cada mensagem na conversa fora do jogo.",
+    quando: "A cada mensagem na conversa fora do jogo, e quando o Jev vê no chat do jogo uma pergunta ou reclamação sobre o registro (a tela abre a conversa com a resposta).",
     freq: "1 a 4 chamadas por mensagem (outra rodada só para ler uma busca ou escrever a resposta).",
     custo: "O modelo principal do Mestre, sem Jev e sem busca web; contexto menor que o do turno.",
   }),
@@ -193,15 +193,15 @@ const NODES: (FlowNode | LaneNode)[] = [
   }),
   n("t_mem", X[1], 60, "code", "Memórias candidatas", "6 parecidas + 8 importantes", {
     oque: "Sem IA: busca no Postgres as 6 memórias mais parecidas com a ação (vetorial no pgvector, ou por texto se não houver embeddings) e junta as 8 de maior importância e mais recentes, sem repetir. Com embeddings, junta também até 2 trechos antigos do chat (fora da janela recente) muito parecidos com a ação, que só entram se o Jev aprovar com folga. Também lê o histórico recente não compactado (janela de ≈9 mil tokens, cujo começo anda em saltos de 1/4 dela, para o cache valer de um turno para o outro).",
-    quando: "Logo depois que a ação é salva.",
+    quando: "No início do turno, antes de a ação ser salva (o Jev ainda decide se é turno).",
     custo: "Dois embeddings da ação (baratos) e consultas SQL.",
   }),
-  n("t_jev", X[2], 60, "jev", "Jev: decide o turno", "modelo, web, memórias, Árbitro", {
-    oque: "Uma única chamada devolve probabilidades, não texto: (1) turno complexo? Escolhe entre o modelo do Mestre e o caro de turnos complexos (se configurado). (2) Precisa de busca web (:online)? Só quando o turno depende de um fato do cânone que não está no contexto. (3) Cada memória candidata é relevante? As de importância 5 entram sem perguntar. (4) A ação usa uma técnica da ficha do jogador ou é treino? Se sim, o Árbitro resolve antes do Mestre. Os limiares ficam nas Configurações avançadas.",
+  n("t_jev", X[2], 60, "jev", "Jev: decide o turno", "modelo, web, memórias, Árbitro, fora do jogo", {
+    oque: "Uma única chamada devolve probabilidades, não texto: (1) turno complexo? Escolhe entre o modelo do Mestre e o caro de turnos complexos (se configurado). (2) Precisa de busca web (:online)? Só quando o turno depende de um fato do cânone que não está no contexto. (3) Cada memória candidata é relevante? As de importância 5 entram sem perguntar. (4) A ação usa uma técnica da ficha do jogador ou é treino? Se sim, o Árbitro resolve antes do Mestre. (5) É o jogador perguntando ou reclamando do registro (ficha, itens, missões, XP, relógio, regras), não uma ação do personagem? Se sim, não há turno: a fala vai ao Mestre fora do jogo, que responde (e corrige) na conversa fora do jogo, e nada entra no chat da história. Os limiares ficam nas Configurações avançadas.",
     quando: "No início de cada turno, depois das candidatas. No Continuar sem nada a perguntar (sem modelo caro, sem web, sem memórias), nem é chamado.",
     freq: "No máximo 1 request por turno para esta decisão (depois da narração há outras: relógio, local e elenco).",
     custo: "Mínimo: cerca de US$ 0,00005 e ≈0,4 s por chamada; saída só em probabilidades.",
-    fallback: "Timeout de 7 s. Qualquer falha: modelo padrão do Mestre, web conforme a configuração dele e todas as memórias entram.",
+    fallback: "Timeout de 7 s. Qualquer falha: modelo padrão do Mestre, web conforme a configuração dele, todas as memórias entram e o turno segue normal.",
   }),
   n("t_referee", X[2], 230, "referee", "Árbitro", "técnica da ficha ou treino", {
     oque: "Quando o Jev diz que a ação é usar uma técnica da ficha ou treinar, resolve antes do Mestre, sempre para o personagem do jogador: use_ability com a CD escolhida pela ficção, train com horas realistas e roll_dice para o dano de técnica que passou no teste. Vê a ficha do jogador, os NPCs em cena, as regras da mesa (escala de CD), as regras de treino, a hora, a última narração e a ação. As ferramentas rodam no mesmo contexto do turno: dados, chips e domínio saem iguais aos do Mestre. O resultado entra no contexto do turno (JÁ RESOLVIDO NESTE TURNO) e o Mestre narra numa chamada só; se ele chamar de novo a mesma técnica ou treino, recebe o resultado pronto sem executar. Técnica fora da ficha, ação ambígua ou que depende de decisão do Mestre: não chama nada.",
@@ -439,6 +439,7 @@ const EDGES: Edge[] = [
   e("t_mem", "sr", "t_jev", "tl", "candidatas"),
   e("t_jev", "sr", "t_ctx", "tl", "aprovadas"),
   e("t_jev", "sb", "t_referee", "tt", "técnica ou treino"),
+e("t_jev", "st", "o_gm", "tb", "pergunta sobre o registro", { dashed: true }),
   e("t_referee", "sr", "t_ctx", "tb", "já resolvido"),
   e("t_ctx", "sr", "t_gm", "tl"),
   e("t_gm", "sr", "t_tools", "tl", "ferramentas ⇄", { both: true }),

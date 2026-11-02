@@ -67,6 +67,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   const onEvent = (ev: TurnEvent) => {
     const p = phaseOf(ev);
     if (p) setPhases((ps) => (ps[ps.length - 1] === p ? ps : [...ps.filter((x) => x !== p), p]));
+    if (ev.type === "ooc") setOocOpen(true); // a pergunta e a resposta já estão na conversa fora do jogo
     if (ev.type === "npc_message")
       toast(ev.preview ? `“${ev.preview}”` : "Abra a conversa para ler.", {
         title: `${ev.name} quer falar com você`,

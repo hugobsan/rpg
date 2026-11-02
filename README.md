@@ -73,7 +73,7 @@ O seletor de modelos busca a lista viva de `openrouter.ai/api/v1/models` com pre
 
 ### Jev: o modelo de decisão
 
-O Jev (TypeSafe, via [Decisions API do OpenRouter](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request)) não escreve texto: recebe um estado e perguntas tipadas e devolve probabilidades. O código decide com limiares fixos em `src/lib/decisions.ts`. Ele entra em cinco pontos:
+O Jev (TypeSafe, via [Decisions API do OpenRouter](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request)) não escreve texto: recebe um estado e perguntas tipadas e devolve probabilidades. O código decide com limiares fixos em `src/lib/decisions.ts`. Ele entra nestes pontos:
 
 1. **Modelo do Mestre por turno**: classifica a ação como simples ou complexa (batalha, regras, vários efeitos, consequência séria). Turno complexo usa o "modelo para turnos complexos" do Mestre (`params.complexModel`, editável em /agents). Se esse campo estiver vazio, o roteamento fica desligado. O modelo é escolhido uma vez e vale para todas as rodadas de ferramentas do turno.
 2. **Busca web só quando precisa**: `:online` só liga se o Mestre tiver busca web ativa e o turno depender de um fato da obra que falta no contexto, e só na 1ª rodada do turno (as fontes seguem como texto para as rodadas seguintes).
@@ -81,8 +81,9 @@ O Jev (TypeSafe, via [Decisions API do OpenRouter](https://openrouter.ai/docs/ap
 4. **Filtro de memórias**: das candidatas recuperadas no código (top-k + mais importantes), só entram as relevantes para a ação. Importância 5 entra sempre. Até 2 trechos antigos do chat (a 4ª camada da memória, abaixo) passam pela mesma pergunta com limiar mais alto; se o Jev falhar, nenhum entra.
 5. **Importância das memórias** novas (compactação e fim de conversa com NPC): uma nota de 1 a 5 por memória, num lote só.
 6. **Árbitro**: a ação usa uma técnica que está na ficha do jogador (os nomes vão no estado) ou é um bloco de treino? Se sim (`jev.mechanicMin`, ainda sem probe), o Árbitro resolve antes do Mestre.
+7. **Fala fora do jogo no chat do jogo**: a ação é o jogador perguntando, reclamando ou corrigindo o registro (ficha, inventário, missões, XP, relógio, regras), e não ação ou fala do personagem? Se sim (`jev.metaMin`, 0,75, alto de propósito, ainda sem probe), vai à conversa fora do jogo (abaixo). Não pergunta no Continuar, no gerar novamente nem ao editar a ação.
 
-As decisões 1, 2, 4 e 6 vão numa única chamada antes do turno. Se o Jev falhar (sem chave, erro ou timeout de 7 s), tudo segue o comportamento padrão. Cada chamada aparece em /usage, filtrando pelo agente **Jev**. Ao trocar o modelo do Jev, rode `npx tsx scripts/jev-check.ts` de novo: ele imprime as probabilidades dos casos de probe e confere os casos claros contra os limiares.
+As decisões 1, 2, 4, 6 e 7 vão numa única chamada antes do turno, antes da foto do turno e de a ação ser salva. Se o Jev falhar (sem chave, erro ou timeout de 7 s), tudo segue o comportamento padrão. Cada chamada aparece em /usage, filtrando pelo agente **Jev**. Ao trocar o modelo do Jev, rode `npx tsx scripts/jev-check.ts` de novo: ele imprime as probabilidades dos casos de probe e confere os casos claros contra os limiares.
 
 ### Sistema de memória (o antídoto contra perda de contexto)
 
@@ -102,7 +103,7 @@ As decisões 1, 2, 4 e 6 vão numa única chamada antes do turno. Se o Jev falha
 
 **Abaixo da última resposta do Mestre**: o ícone ↻ gera a resposta de novo (desfaz o turno pela foto em `turn_snapshots`, com motivo opcional); **Continuar** manda a ação interna `(continuar a cena)` (`src/lib/continueScene.ts`, salva mas não exibida no chat; depois dela não há o que editar) e o Mestre segue a cena sem o seu personagem agir, ou, se a narração anterior esperava algo de você, responde só uma linha curta ("Ele ainda espera sua resposta."); o lápis embaixo da sua última mensagem a edita no lugar: o turno é desfeito e o Mestre responde ao texto novo (`POST /turn` com `regenerate` e `input`).
 
-**Conversa fora do jogo**: o botão "💬 Falar com o Mestre (fora do jogo)" abre uma conversa sua, como jogador, com o Mestre (`gm_notes`, fora da história, do histórico do turno e do "gerar novamente"); ele responde sem spoilers e sem mexer no jogo, e orientações viram diretrizes (memória `directive`, permanentes ou só nesta cena e na próxima) que entram em todo turno em "DIRETRIZES DO JOGADOR" até você desativá-las no ✕.
+**Conversa fora do jogo**: o botão "💬 Falar com o Mestre (fora do jogo)" abre uma conversa sua, como jogador, com o Mestre (`gm_notes`, fora da história, do histórico do turno e do "gerar novamente"); ele responde sem spoilers e sem mexer no jogo, e orientações viram diretrizes (memória `directive`, permanentes ou só nesta cena e na próxima) que entram em todo turno em "DIRETRIZES DO JOGADOR" até você desativá-las no ✕. Reclamação do registro escrita no chat do jogo ("por que você me deu uma tigela?", "você cancelou 3 missões") também vem para cá quando o Jev reconhece (decisão 7): não há turno do Mestre (~20 mil tokens) nem Escrivão, a mensagem não fica no chat da história nem apaga a foto do turno anterior, e a tela abre esta conversa já com a pergunta e a resposta; as opções do turno anterior voltam. Se a conversa fora do jogo falhar, o turno segue normal. Verificação: `npx tsx scripts/meta-check.ts`.
 
 ### Anotações depois da narração e Escrivão
 

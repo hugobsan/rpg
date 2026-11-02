@@ -365,7 +365,9 @@ export async function runTurn(
   regen?: { feedback: string },
   // "parar" do jogador: vale só até a narração ser salva. Abortado, lança signal.reason (sempre depois da foto e da
   // ação salvas: quem chama volta a foto); depois da narração é ignorado e o pós-narração (Escrivão etc.) segue
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  // pergunta ao Jev se a ação é fala fora do jogo sobre o registro (não no gerar novamente nem ao editar a ação)
+  askMeta = !regen
 ): Promise<void> {
   // status por fase: a tela acende "consultando", "dados" e "escrevendo" por estas palavras
   emit({ type: "status", text: "Lendo a cena..." });
@@ -377,8 +379,6 @@ export async function runTurn(
   const pastP = playerInput && adv.history.autoTopK
     ? searchHistory(campaignId, playerInput, { limit: adv.history.autoTopK, auto: true }).catch((): HistoryHit[] => [])
     : Promise.resolve([]);
-  // foto do estado antes do turno, para poder gerar a resposta de novo depois
-  await takeSnapshot(campaignId, playerInput);
   const [campaign, firstScene, chars, gm] = await Promise.all([
     getCampaign(campaignId),
     getCurrentScene(campaignId),
@@ -389,15 +389,13 @@ export async function runTurn(
   const params = gm.params as { historyBudgetTokens?: number; maxToolRounds?: number; complexModel?: string };
   const complexModel = params.complexModel?.trim();
 
-  await saveMessage(campaignId, scene.id, "player", playerInput);
-
   const [history, candidates, pastHits] = await Promise.all([
     historyWindow(campaignId, params.historyBudgetTokens ?? 9000),
     candidatesP,
     pastP,
   ]);
 
-  // Jev, numa chamada só: modelo do turno (1), busca web (2), filtro de memórias (4) e Árbitro (6)
+  // Jev, numa chamada só: modelo do turno (1), busca web (2), filtro de memórias (4), Árbitro (6) e fora do jogo
   const activeArc = campaign.script?.arcs.find((a) => a.status === "active");
   const lastGm = [...history].reverse().find((m) => m.role === "assistant");
   const lastGmText = typeof lastGm?.content === "string" ? lastGm.content : "";
@@ -422,9 +420,26 @@ export async function runTurn(
       history: pastHits.map((h) => ({ id: h.id, text: historyLine(h, playerInput, adv.history.excerptChars) })),
       askComplexity: !!complexModel,
       askWeb: gm.web_search,
+      askMeta: askMeta && playerInput !== CONTINUE_INPUT,
     },
     campaignId
   );
+  // pergunta ou reclamação sobre o registro (ficha, missões, XP...): vai à conversa fora do jogo, que tem as ferramentas
+  // de correção, sem turno do Mestre (~20 mil tokens) nem Escrivão; nada fica em messages nem na foto do turno anterior.
+  // Fora do jogo falhou = turno normal. import dinâmico: ooc.ts importa este arquivo
+  if (decision.meta) {
+    emit({ type: "status", text: "Fora do jogo: o Mestre está respondendo..." });
+    const answered = await (await import("./ooc")).oocTalk(campaignId, playerInput).catch((e) => console.warn("[fora do jogo]", e));
+    if (answered) {
+      emit({ type: "ooc" });
+      emit({ type: "done" });
+      return;
+    }
+  }
+  // foto do estado antes do turno, para poder gerar a resposta de novo depois (depois do Jev: a fala fora do jogo
+  // não apaga a foto do turno anterior); a ação entra no chat depois dela
+  await takeSnapshot(campaignId, playerInput);
+  await saveMessage(campaignId, scene.id, "player", playerInput);
   // modelo decidido uma vez e mantido em todas as rodadas; falha do Jev = modelo principal
   const turnModel = complexModel && decision.complex ? complexModel : gm.model;
   // falha do Jev = web conforme o agente
@@ -452,9 +467,7 @@ export async function runTurn(
     gm.system_prompt,
     settled.map(settledLine)
   );
-  // a janela foi lida depois de salvar a ação: ela sai do fim e volta depois do contexto do turno
-  const tail = history[history.length - 1];
-  if (tail?.role === "user" && tail.content === playerInput) history.pop();
+  // a janela foi lida antes de salvar a ação: ela vem depois do contexto do turno
   if (history.length) history[history.length - 1] = { ...history[history.length - 1], cache: true };
   // ordem para o cache (Claude e OpenAI reaproveitam o começo igual ao da chamada anterior): o que não muda na
   // campanha, o histórico (só cresce no fim; o ponto de cache dele é lido no próximo turno) e, por último, o

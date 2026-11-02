@@ -49,6 +49,9 @@ import { diceText } from "../DiceRoller";
  * (tool, dice, narration, narration_delta, choices, time e qualquer tipo novo,
  * como npc_message) chegam depois de liberados pela rolagem; status, scene, state, error e done
  * chegam na hora. Serve para a tela reagir (toast, som, mapa) sem mexer no hook.
+ *
+ * ooc: a ação era pergunta ou reclamação sobre o registro e foi respondida na conversa fora do jogo (gm_notes),
+ * sem turno. O hook tira a ação do chat e devolve as opções de antes; a tela abre a conversa no onEvent.
  */
 
 export interface FeedItem {
@@ -221,6 +224,7 @@ export function useTurn(
   // regen: gera de novo a resposta do último turno (o servidor volta o estado de antes dele);
   // com edit, a ação do jogador também é trocada por text
   const run = async (text: string, regen?: { feedback: string; edit?: boolean }) => {
+    const before = choices; // a ação pode virar fala fora do jogo: aí as opções de antes voltam
     busyRef.current = true;
     setBusy(true);
     setCanStop(true);
@@ -262,9 +266,17 @@ export function useTurn(
           const line = part.split("\n").find((l) => l.startsWith("data: "));
           if (!line) continue;
           const ev = JSON.parse(line.slice(6)) as TurnEvent;
-          if (ev.type === "narration") {
+          if (ev.type === "narration" || ev.type === "ooc") {
             narrated = true; // salva no servidor (mesmo se ainda retida pela rolagem): não dá mais para parar
             setCanStop(false);
+          }
+          if (ev.type === "ooc") {
+            // não houve turno: a ação sai do chat (ficou na conversa fora do jogo, com a resposta)
+            setFeed((f) => {
+              const i = f.map((x) => x.kind).lastIndexOf("player");
+              return i >= 0 ? f.slice(0, i) : f;
+            });
+            setChoices(before);
           }
           if (IMMEDIATE.has(ev.type)) {
             if (ev.type === "status") setStatus(ev.text);

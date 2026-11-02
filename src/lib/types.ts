@@ -494,5 +494,6 @@ export type TurnEvent =
   | { type: "state" } // fichas mudaram; cliente deve recarregar
   | { type: "time"; minutes: number } // relógio da história mudou (minutos desde o Dia 1, 00:00)
   | { type: "npc_message"; npcId: string; name: string; preview: string } // NPC chamou o jogador em particular
+  | { type: "ooc" } // a ação era fala fora do jogo sobre o registro: foi respondida na conversa fora do jogo (gm_notes), sem turno
   | { type: "done" }
   | { type: "error"; message: string };

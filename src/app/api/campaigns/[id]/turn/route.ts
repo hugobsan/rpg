@@ -14,7 +14,7 @@ const turns = new Map<string, { stop: AbortController; done: Promise<void> }>();
 
 /**
  * POST { input } | { regenerate, feedback? } | { regenerate, input } (editar a última ação) → SSE de eventos do turno
- * (status, tools, dados, narração, opções).
+ * (status, tools, dados, narração, opções). Pergunta ou reclamação sobre o registro vai à conversa fora do jogo: evento ooc, sem turno.
  * POST { stop } → para o Mestre enquanto a narração não foi salva: o turno volta à foto, a ação do jogador fica (dá para
  * gerar novamente ou editar) e o SSE do turno termina sem narração. Depois da narração não faz nada (o pós-narração segue).
  * Responde quando o turno acabou. Fechar a aba não para: o turno termina e fica salvo, como antes.
@@ -63,13 +63,13 @@ export async function POST(
             // (com input: a ação editada pelo jogador, que entra no lugar da antiga)
             const lastInput = await restoreSnapshot(id);
             const edited = String(input || "").trim();
-            if (edited) await runTurn(id, edited, emit, undefined, signal);
+            if (edited) await runTurn(id, edited, emit, undefined, signal, false);
             else await runTurn(id, lastInput, emit, { feedback: String(feedback || "").slice(0, 1000) }, signal);
           } else {
             await runTurn(id, String(input || "").trim() || "(o jogador hesita)", emit, undefined, signal);
           }
-          // missão aceita ou recusada pelo painel antes deste turno: o Mestre já reconheceu na cena
-          await clearPanelDecisions(id, started);
+          // missão aceita ou recusada pelo painel antes deste turno: o Mestre já reconheceu na cena (fala fora do jogo não narra)
+          if (narrated) await clearPanelDecisions(id, started);
         } catch (e) {
           // parado: o runTurn só lança signal.reason depois da foto deste turno e da ação salvas
           if (e === signal.reason && !narrated) await restoreSnapshot(id, true).catch((err) => emit({ type: "error", message: String(err) }));

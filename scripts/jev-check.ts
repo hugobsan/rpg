@@ -7,7 +7,7 @@
  */
 import {
   buildCastRequest, buildElapsedRequest, buildPlaceRequest, buildImportanceRequest, buildNpcRequest, ELAPSED_MINUTES, buildTurnRequest, decide, gateTurn, importanceLevel,
-  COMPLEX_MIN, MEMORY_MIN, MODE_MIN, MOVED_MIN, NPC_WILLING_MIN, PRESENT_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
+  COMPLEX_MIN, MEMORY_MIN, META_MIN, MODE_MIN, MOVED_MIN, NPC_WILLING_MIN, PRESENT_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
 } from "../src/lib/decisions";
 import { pool } from "../src/lib/db";
 
@@ -121,6 +121,21 @@ const importanceCases: [string, number | null][] = [
       const ans = a[`mem_${m.id}`];
       check(`m${m.id} ${m.content}`, exp === null ? null : g.keepMemory(m.id, m.importance) === exp, ans ? p(ans) : 1, ans ? `esperado ${exp}` : "importância 5, sem pergunta");
     }
+  }
+
+  console.log(`\n== 10. fala fora do jogo sobre o registro (conversa fora do jogo se P >= ${META_MIN}; sem probe ainda)`);
+  const metaCases: [string, boolean | null][] = [
+    ["Porque você me deu uma tigela?", true],
+    ["Porque você cancelou 3 missões?", true],
+    ["Obs para o mestre: você registrou a missão do Tazuna como perdida, mas eu cumpri.", true],
+    ["Quanto XP eu tenho?", null],
+    ["Pergunto ao Kakashi: você sabe se ele comeu?", false],
+    ["Você sabe se ele comeu?", false],
+    ["Vou até a loja de armas. (obs: você esqueceu de registrar minha kunai)", false],
+  ];
+  for (const [action, exp] of metaCases) {
+    const a = await ask(action, buildTurnRequest({ ...base, playerAction: action, askComplexity: false, askWeb: false, askMeta: true }));
+    check(action, exp === null ? null : gateTurn(a).meta === exp, p(a.meta), `esperado ${exp}`);
   }
 
   console.log(`\n== 3. NPC topa conversar (recusa se P < ${NPC_WILLING_MIN})`);

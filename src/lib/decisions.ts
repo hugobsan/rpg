@@ -34,6 +34,9 @@ export const NPC_WILLING_MIN = D.jev.npcWillingMin;
 export const HISTORY_MIN = D.history.jevMin;
 // Árbitro (use_ability/train antes do Mestre) se P(técnica da ficha ou treino) >= limiar. Sem probe ainda.
 export const MECHANIC_MIN = D.jev.mechanicMin;
+// Conversa fora do jogo (sem turno) se P(fala ao Mestre sobre o registro) >= limiar. Sem probe ainda; alto porque
+// desviar uma ação de verdade é pior que gastar um turno com a reclamação.
+export const META_MIN = D.jev.metaMin;
 
 // ---------- tipos da API ----------
 
@@ -132,6 +135,7 @@ export interface TurnInput {
   playerAbilities?: string[]; // técnicas da ficha do jogador: presente = pergunta se a ação é do Árbitro
   askComplexity: boolean;
   askWeb: boolean;
+  askMeta?: boolean; // pergunta se a ação é fala fora do jogo sobre o registro (não no Continuar nem no gerar novamente)
 }
 
 export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest {
@@ -169,6 +173,17 @@ export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest
         true: "Sim: ele executa agora uma técnica dessa lista (pelo nome ou por uma descrição inequívoca dela) ou treina.",
         false:
           "Não: outra ação (andar, falar, observar, atacar sem técnica), técnica fora da lista, ou só fala de técnica ou treino sem fazer agora (pergunta, plano, intenção).",
+      },
+    };
+  if (t.askMeta)
+    questions.meta = {
+      type: "noul",
+      instructions:
+        "A `acao_do_jogador` é o jogador, a pessoa real, falando com o Mestre sobre o registro do jogo (uma pergunta, reclamação ou correção sobre ficha, inventário, missões, XP, relógio ou regras), e não uma ação ou fala do personagem dentro da história?",
+      criteria: {
+        true: "Sim: fala fora do jogo ao Mestre sobre o que foi registrado ou sobre as regras, sem ação do personagem (\"por que você me deu uma tigela?\", \"você cancelou 3 missões\", \"obs para o mestre: registrou a missão X como perdida, mas eu cumpri\", \"quanto XP eu tenho?\").",
+        false:
+          "Não: o personagem age, fala ou pergunta algo dentro da história, inclusive a um NPC (\"você sabe se ele comeu?\") ou sobre o que vê; ou a fala mistura uma ação do personagem com um comentário fora do jogo.",
       },
     };
   for (const m of candidates)
@@ -216,6 +231,7 @@ export interface TurnDecision {
   complex: boolean | null; // null = não perguntou ou falhou
   web: boolean | null;
   mechanic: boolean; // falha do Jev = não (o Árbitro não roda)
+  meta: boolean; // fala fora do jogo sobre o registro; falha do Jev = não (turno normal)
   keepMemory: (id: number, importance: number) => boolean;
   keepHistory: (id: number) => boolean; // falha do Jev = nenhum trecho (não infla o contexto)
 }
@@ -227,6 +243,7 @@ export function gateTurn(answers: Record<string, Answer> | null, a: Advanced = D
     complex: c?.type === "choice" ? (c.probabilities?.complexa ?? (c.choice === "complexa" ? 1 : 0)) >= a.jev.complexMin : null,
     web: web === undefined ? null : web >= a.jev.webMin,
     mechanic: (answers ? (noulOf(answers, "mechanic") ?? 0) : 0) >= a.jev.mechanicMin,
+    meta: (answers ? (noulOf(answers, "meta") ?? 0) : 0) >= a.jev.metaMin,
     keepMemory: (id, importance) => {
       if (importance >= a.memory.alwaysKeep || !answers) return true;
       const p = noulOf(answers, `mem_${id}`);
