@@ -166,7 +166,8 @@ export function tableDc(
 export function dcResultText(r: DiceResult, note: string): string {
   if (r.dc === undefined) return note;
   const crit = r.crit === "success" ? " (20 natural: passa sempre)" : r.crit === "failure" ? " (1 natural: falha sempre)" : "";
-  return ` contra CD ${r.dc}${note}: ${r.success ? "SUCESSO" : "FALHA"}${crit}`;
+  const sure = r.sure ? (r.success ? " (garantido: passaria com qualquer resultado do dado)" : " (garantido: nenhum resultado do dado alcançaria)") : "";
+  return ` contra CD ${r.dc}${note}: ${r.success ? "SUCESSO" : "FALHA"}${crit}${sure}`;
 }
 
 /** Resumo curto para confirmações: "Difícil (CD +2) · Combate +3 · críticos ligados". */

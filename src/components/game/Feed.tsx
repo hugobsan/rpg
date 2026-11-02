@@ -107,7 +107,7 @@ function DiceLine({ item }: { item: FeedItem }) {
   if (!d) return <div className={`${s.chip} ${s.solo} ${item.outcome ? s[item.outcome] : ""}`}><Icon name="d20" size={14} />{chipText(item.content)}</div>;
   const outcome = d.dc === undefined ? null : d.success ? "ok" : "fail";
   const d20 = /^1?d20\b/i.test(d.notation);
-  const verdict = d.crit === "success" ? "Sucesso crítico" : d.crit === "failure" ? "Falha crítica" : outcome === "ok" ? "Passou" : "Falhou";
+  const verdict = d.crit === "success" ? "Sucesso crítico" : d.crit === "failure" ? "Falha crítica" : d.sure ? (outcome === "ok" ? "Sucesso garantido" : "Falha garantida") : outcome === "ok" ? "Passou" : "Falhou";
   return (
     <div className={`${s.dice} ${outcome ? s[outcome] : ""} ${d.crit ? s.crit : ""}`}>
       <Icon name="d20" size={24} className={s.diceIcon} />

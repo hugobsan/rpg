@@ -84,6 +84,15 @@ async function main() {
   r = roll(20, "2d20", 99, true);
   assert.equal(r.crit, undefined, "só em 1d20");
   assert.equal(rollDice("1d20", "", undefined, true).crit, undefined, "sem CD não há crítico");
+  // garantido: o dado não muda o desfecho (sem animação no cliente)
+  assert.equal(rollDice("1d20+13", "", 14).sure, true, "o 1 já passa");
+  assert.equal(rollDice("1d20+13", "", 14).success, true);
+  assert.equal(rollDice("1d20+12", "", 14).sure, undefined, "o 1 falharia");
+  assert.equal(rollDice("1d20+2", "", 23).sure, true, "nem o 20 alcança");
+  assert.equal(rollDice("1d20+2", "", 23).success, false);
+  assert.equal(rollDice("1d20+13", "", 14, true).sure, undefined, "com críticos o 1 natural ainda falha");
+  assert.equal(rollDice("2d6+12", "", 14, true).sure, true, "crítico só vale no 1d20");
+  assert.equal(rollDice("1d20+30").sure, undefined, "sem CD não há garantido");
 
   // bloco do prompt
   const block = tablePromptBlock(t);

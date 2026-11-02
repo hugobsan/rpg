@@ -344,6 +344,7 @@ export interface DiceResult {
   baseDc?: number; // CD pedida pelo Mestre, antes das regras da mesa (só quando houve ajuste; dc = efetiva)
   dcAdjust?: { label: string; value: number }[]; // ajustes da mesa, ex: [{ "Difícil", 2 }, { "Combate", 3 }]
   crit?: "success" | "failure"; // 20 natural passa / 1 natural falha (regras da mesa com crits)
+  sure?: boolean; // o desfecho não dependia do dado (mínimo já passa ou máximo não alcança): sem animação
 }
 
 // ---------- Regras da mesa (campaign.state.table; helpers em lib/table.ts) ----------

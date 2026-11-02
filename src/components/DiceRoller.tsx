@@ -16,7 +16,7 @@ export function dcText(r: DiceResult): string {
 
 /** Texto do chip de rolagem no chat. */
 export function diceText(r: DiceResult): string {
-  return `🎲 ${r.notation}${r.reason ? ` (${r.reason})` : ""} → [${r.rolls.join(", ")}]${r.modifier ? ` ${r.modifier > 0 ? "+" : ""}${r.modifier}` : ""} = ${r.total}${r.dc !== undefined ? ` vs CD ${r.dc} · ${r.success ? "✓ passou" : "✗ não passou"}` : ""}${r.crit ? ` · ${r.crit === "success" ? "20 natural" : "1 natural"}` : ""}`;
+  return `🎲 ${r.notation}${r.reason ? ` (${r.reason})` : ""} → [${r.rolls.join(", ")}]${r.modifier ? ` ${r.modifier > 0 ? "+" : ""}${r.modifier}` : ""} = ${r.total}${r.dc !== undefined ? ` vs CD ${r.dc} · ${r.success ? "✓ passou" : "✗ não passou"}${r.sure ? " (garantido)" : ""}` : ""}${r.crit ? ` · ${r.crit === "success" ? "20 natural" : "1 natural"}` : ""}`;
 }
 
 /** Cores do tema atual resolvidas em rgb (o three.js não entende var() nem color-mix()). */

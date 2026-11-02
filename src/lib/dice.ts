@@ -18,9 +18,12 @@ export function rollDice(notation: string, reason?: string, dc?: number, crits =
   const hasDc = typeof dc === "number" && Number.isFinite(dc);
   const nat = count === 1 && sides === 20 ? rolls[0] : 0;
   const crit = crits && hasDc && (nat === 20 || nat === 1) ? (nat === 20 ? "success" : "failure") : undefined;
+  // garantido: nenhum resultado do dado muda o desfecho (o 1d20 com críticos sempre pode mudar)
+  const sure = hasDc && !(crits && count === 1 && sides === 20) && (count + modifier >= dc || count * sides + modifier < dc);
   return {
     notation, rolls, modifier, total, reason,
     ...(hasDc ? { dc, success: crit ? crit === "success" : total >= dc } : {}),
     ...(crit ? { crit } : {}),
+    ...(sure ? { sure } : {}),
   };
 }

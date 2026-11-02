@@ -198,7 +198,7 @@ export function useTurn(
   const drainHeld = (all = false) => {
     while (held.current.length) {
       const ev = held.current[0];
-      if (ev.type === "dice" && !all) return setPendingDice(ev.result);
+      if (ev.type === "dice" && !ev.result.sure && !all) return setPendingDice(ev.result);
       held.current.shift();
       showEvent(ev);
     }
@@ -273,7 +273,8 @@ export function useTurn(
               setError(ev.message);
             }
             onEvent.current?.(ev);
-          } else if (diceAnim.current && (ev.type === "dice" || held.current.length)) {
+          } else if (diceAnim.current && ((ev.type === "dice" && !ev.result.sure) || held.current.length)) {
+            // resultado garantido não abre a rolagem: entra direto no chat
             held.current.push(ev);
             if (ev.type === "dice" && held.current.length === 1) setPendingDice(ev.result);
           } else showEvent(ev);
