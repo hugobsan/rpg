@@ -121,7 +121,7 @@ export function objectivesPromptBlock(list: Objective[], now: number | null, xpO
         `PERDIDO desde ${formatClock(o.deadlineMinutes ?? o.closedAt ?? 0)}: [${o.id}] ${o.title}. Narre a consequência se ainda não narrou; não desfaça a perda.`
     ),
     done.length
-      ? `Missões que o jogador JÁ CUMPRIU (não ofereça de novo a mesma nem uma parecida; missão nova traz cliente, lugar e problema novos): ${done.map((o) => o.title).join("; ")}`
+      ? `Missões que o jogador JÁ CUMPRIU: ${done.map((o) => o.title).join("; ")}. Não ofereça uma delas de novo como se fosse inédita. Se uma voltar (cliente que retorna, problema que reapareceu, rotina da vila), que seja por um motivo da história e com o mundo lembrando que já aconteceu.`
       : "",
   ].filter(Boolean).join("\n");
 }
