@@ -127,7 +127,8 @@ function Presets({ agents, sources, initial, onApplied }: {
     const n = name.trim();
     if (!n) return;
     setBusy("new");
-    await persist([...presets, { id: crypto.randomUUID(), name: n, agents: snapshot(agents) }], `Preset "${n}" salvo com a configuração atual.`);
+    // crypto.randomUUID só existe em HTTPS ou localhost; aberto pelo IP da rede, quebrava
+    await persist([...presets, { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), name: n, agents: snapshot(agents) }], `Preset "${n}" salvo com a configuração atual.`);
     setName("");
     setBusy(null);
   };
