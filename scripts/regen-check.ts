@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { pool, q } from "../src/lib/db";
-import { restoreSnapshot, takeSnapshot } from "../src/lib/turnSnapshot";
+import { regenNotes, restoreSnapshot, takeSnapshot } from "../src/lib/turnSnapshot";
 
 async function main() {
   const [c] = await q<{ id: string }>(
@@ -24,7 +24,12 @@ async function main() {
     await q(`INSERT INTO messages (campaign_id, scene_id, role, content) VALUES ($1, $2, 'gm', 'abertura')`, [id, scene.id]);
     await q(`INSERT INTO memories (campaign_id, content) VALUES ($1, 'memória antiga')`, [id]);
 
+    // motivos dos "gerar novamente" somam na foto da mesma ação; ação nova zera
+    await takeSnapshot(id, "ataco o boneco de treino", ["com o Hokage"]);
+    await takeSnapshot(id, "ataco o boneco de treino", [...(await regenNotes(id)), "sem repetir missão"]);
+    assert.deepEqual(await regenNotes(id), ["com o Hokage", "sem repetir missão"], "motivos somam");
     await takeSnapshot(id, "ataco o boneco de treino");
+    assert.deepEqual(await regenNotes(id), [], "ação nova zera");
 
     // o que um turno faria
     await q(`INSERT INTO messages (campaign_id, scene_id, role, content) VALUES ($1, $2, 'player', 'ataco o boneco de treino'), ($1, $2, 'gm', 'resposta')`, [id, scene.id]);

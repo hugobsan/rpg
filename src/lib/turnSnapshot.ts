@@ -19,9 +19,16 @@ interface Snapshot {
   maxMemoryId: number;
   maxNpcChatId?: number; // ausente em fotos antigas: não apaga conversa nenhuma
   openMessageIds: number[]; // mensagens não compactadas (a compactação pós-turno as marca)
+  regenNotes?: string[]; // motivos dos "gerar novamente" desta ação, em ordem (somam a cada vez; ação nova zera)
 }
 
-export async function takeSnapshot(campaignId: string, playerInput: string): Promise<void> {
+/** Motivos dos "gerar novamente" já pedidos para a ação da foto atual. */
+export async function regenNotes(campaignId: string): Promise<string[]> {
+  const [row] = await q<{ notes: unknown }>(`SELECT data->'regenNotes' AS notes FROM turn_snapshots WHERE campaign_id = $1`, [campaignId]);
+  return Array.isArray(row?.notes) ? row.notes.map(String) : [];
+}
+
+export async function takeSnapshot(campaignId: string, playerInput: string, notes: string[] = []): Promise<void> {
   const [characters, scenes, [campaign], [ids], open] = await Promise.all([
     q(`SELECT * FROM characters WHERE campaign_id = $1`, [campaignId]),
     q(`SELECT * FROM scenes WHERE campaign_id = $1`, [campaignId]),
@@ -42,6 +49,7 @@ export async function takeSnapshot(campaignId: string, playerInput: string): Pro
     maxMemoryId: Number(ids.mem ?? 0),
     maxNpcChatId: Number(ids.npc ?? 0),
     openMessageIds: open.map((m) => Number(m.id)),
+    ...(notes.length && { regenNotes: notes }),
   };
   await q(
     `INSERT INTO turn_snapshots (campaign_id, player_input, data) VALUES ($1, $2, $3)

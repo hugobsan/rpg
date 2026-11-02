@@ -97,7 +97,9 @@ export function objectivesPromptBlock(list: Objective[], now: number | null, xpO
   const open = list.filter((o) => o.status === "aberto");
   const lost = list.filter((o) => o.status === "perdido" && now !== null && (o.closedAt ?? 0) >= now - 3 * 1440);
   const refused = list.filter((o) => o.status === "cancelado" && o.decidedAt !== undefined);
-  if (!offered.length && !open.length && !lost.length && !refused.length) return "";
+  // ponytail: as 30 últimas bastam para não repetir; título curto, sem descrição
+  const done = list.filter((o) => o.status === "concluido" && o.kind === "missao").slice(-30);
+  if (!offered.length && !open.length && !lost.length && !refused.length && !done.length) return "";
   const reward = (o: Objective) => {
     const xp = xpOf?.(o);
     const r = [o.reward, xp != null && `≈ ${xp} XP`].filter(Boolean).join(" + ");
@@ -118,5 +120,8 @@ export function objectivesPromptBlock(list: Objective[], now: number | null, xpO
       (o) =>
         `PERDIDO desde ${formatClock(o.deadlineMinutes ?? o.closedAt ?? 0)}: [${o.id}] ${o.title}. Narre a consequência se ainda não narrou; não desfaça a perda.`
     ),
-  ].join("\n");
+    done.length
+      ? `Missões que o jogador JÁ CUMPRIU (não ofereça de novo a mesma nem uma parecida; missão nova traz cliente, lugar e problema novos): ${done.map((o) => o.title).join("; ")}`
+      : "",
+  ].filter(Boolean).join("\n");
 }

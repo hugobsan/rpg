@@ -85,6 +85,11 @@ async function main() {
     assert.equal((await byTitle("Exame")).status, "aberto", "o que não venceu segue aberto");
     assert.equal((await state()).hiddenSheetImageId, 7, "resto do state intacto");
     assert.match(objectivesPromptBlock(getObjectives(await state()), toMinutes(2, 8, 0)), /PERDIDO desde Dia 2 · 07:00: \[o4\] Encontro/);
+    // missões cumpridas vão ao Mestre só pelo título, para ele não oferecer a mesma de novo
+    assert.match(
+      objectivesPromptBlock([{ id: "x", kind: "missao", title: "Limpar canal de irrigação", status: "concluido" } as Objective], 0),
+      /JÁ CUMPRIU.*Limpar canal de irrigação/
+    );
     await run("advance_time", { minutes: 1, reason: "um instante" });
     assert.match(await run("update_objective", { objective: "Encontro", status: "concluido" }), /não volta/, "perdido antes do instante atual não volta");
 

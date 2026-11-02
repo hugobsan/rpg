@@ -27,7 +27,7 @@ import { hydrateSheets } from "./library";
 import { getObjectives, objectivesPromptBlock, objectiveXp } from "./objectives";
 import { getStage, loadMap, mapPromptBlock, normName } from "./map";
 import { getTable, modeHint, restRuleText, tablePromptBlock, xpRuleText } from "./table";
-import { takeSnapshot } from "./turnSnapshot";
+import { regenNotes, takeSnapshot } from "./turnSnapshot";
 import { playerFixesLine, scribeState, scribeUndo, type ScribeEntry } from "./corrections";
 import { CONTINUE_INPUT } from "./continueScene";
 import {
@@ -275,7 +275,7 @@ async function buildGmSystem(
       ? `\n--- JÁ RESOLVIDO NESTE TURNO (resultado final: narre a partir dele e não chame essas ferramentas de novo) ---\n${resolved.map((r) => `- ${r}`).join("\n")}`
       : "",
     // por último, colado na ação: o estado acima é mecânico e puxava a narração para o tom de relatório
-    "\n(Narração: calibre pelo momento, como em NARRAÇÃO. Cheia em chegada, descoberta, viagem e resultado; curta e interativa em fala e batalha.)",
+    "\n(Narração: calibre pelo momento, como em NARRAÇÃO. Cheia, de 4 a 7 parágrafos, em chegada, descoberta, viagem, entrega e resultado de missão e começo ou fim de um trecho do dia, com os NPCs da cena agindo e falando; curta e interativa, de 1 a 3 parágrafos, em troca de falas e batalha.)",
   ];
   return [fixed.filter(Boolean).join("\n"), parts.filter(Boolean).join("\n")];
 }
@@ -447,7 +447,7 @@ export async function runTurn(
     getAgent("gm"),
   ]);
   let scene = firstScene;
-  const params = gm.params as { historyBudgetTokens?: number; maxToolRounds?: number; complexModel?: string };
+  const params = gm.params as { historyBudgetTokens?: number; maxToolRounds?: number; complexModel?: string; reasoning?: unknown };
   const complexModel = params.complexModel?.trim();
 
   const [history, candidates, pastHits, books] = await Promise.all([
@@ -516,7 +516,9 @@ export async function runTurn(
   }
   // foto do estado antes do turno, para poder gerar a resposta de novo depois (depois do Jev: a fala fora do jogo
   // não apaga a foto do turno anterior); a ação entra no chat depois dela
-  await takeSnapshot(campaignId, playerInput);
+  // gerar novamente: os motivos anteriores desta mesma ação continuam valendo (pedir uma coisa não desfaz a anterior)
+  const reasons = regen ? [...(await regenNotes(campaignId)), regen.feedback.trim()].filter(Boolean) : [];
+  await takeSnapshot(campaignId, playerInput, reasons);
   await saveMessage(campaignId, scene.id, "player", playerInput);
   // modelo decidido uma vez e mantido em todas as rodadas; falha do Jev = modelo principal
   const turnModel = complexModel && decision.complex ? complexModel : gm.model;
@@ -575,9 +577,11 @@ export async function runTurn(
     // nota fora do jogo só no prompt; a mensagem salva continua sendo a ação original
     const last = messages[messages.length - 1];
     last.content = `${last.content}\n\n(Nota do jogador ao Mestre, fora do jogo: ele pediu para você escrever de novo a resposta a esta ação. ${
-      regen.feedback.trim()
-        ? `Motivo, que tem prioridade: ${regen.feedback.trim()}`
-        : "Sem motivo específico: escreva uma versão diferente, com outro rumo ou outra abordagem."
+      reasons.length > 1
+        ? `Ele já pediu mais de uma vez, e TODOS os pedidos valem juntos (o último só manda onde contradiz um anterior): ${reasons.map((r, i) => `${i + 1}) ${r}`).join(" ")}`
+        : reasons.length
+          ? `Motivo, que tem prioridade: ${reasons[0]}`
+          : "Sem motivo específico: escreva uma versão diferente, com outro rumo ou outra abordagem."
     })`;
   }
 
@@ -607,6 +611,8 @@ export async function runTurn(
       messages,
       temperature: gm.temperature,
       max_tokens: gm.max_tokens,
+      // o GPT sem esforço definido narra sem raciocinar (0 tokens de raciocínio medidos); o Claude raciocina no padrão dele
+      reasoning: (params.reasoning as Record<string, unknown> | undefined) ?? (/^(openai\/)?gpt-/.test(turnModel) ? { effort: "medium" } : undefined),
       tools: GM_TURN_TOOLS,
       // última rodada só em texto: uma chamada pedida aqui seria descartada e a narração pararia no meio
       noTools: round === maxRounds,
