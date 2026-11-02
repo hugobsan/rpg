@@ -21,10 +21,13 @@ export interface Objective {
   deadlineMinutes?: number; // minutos absolutos do relógio
   status: ObjectiveStatus;
   reward?: string;
+  giver?: string; // quem ofereceu (NPC), se houver
   xpSize?: ObjectiveXpSize; // XP dada ao concluir, pela regra de XP da mesa
   xp?: number; // só com excepcional: valor livre
   createdAt: number; // minutos do relógio (0 se ainda não havia relógio)
   closedAt?: number;
+  // aceita ou recusada pelo painel (Date.now): o Mestre reconhece na cena; sai quando o turno seguinte termina
+  decidedAt?: number;
 }
 
 export const OBJECTIVE_KIND_LABEL: Record<ObjectiveKind, string> = { missao: "Missão", evento: "Evento", outro: "Outro" };
@@ -71,6 +74,20 @@ export function expireObjectives(list: Objective[], now: number): { list: Object
 }
 
 /**
+ * Aceitar (aberto) ou recusar (cancelado) pelo painel uma oferecida, sem IA. Devolve a lista nova ou o erro.
+ * Mesma regra do update_objective: aceitar com o prazo vencido viraria perdida no próximo avanço do relógio.
+ */
+export function decideOffer(list: Objective[], id: string, accept: boolean, now: number | undefined, at = Date.now()): Objective[] | string {
+  const o = list.find((x) => x.id === id);
+  if (!o) return "Missão não encontrada.";
+  if (o.status !== "oferecida") return "Essa missão já foi decidida.";
+  if (accept && o.deadlineMinutes !== undefined && now !== undefined && o.deadlineMinutes < now)
+    return `O prazo já passou (${formatClock(o.deadlineMinutes)}). Se ainda vale, fale com o Mestre.`;
+  const next: Objective = accept ? { ...o, status: "aberto", decidedAt: at } : { ...o, status: "cancelado", closedAt: now ?? 0, decidedAt: at };
+  return list.map((x) => (x === o ? next : x));
+}
+
+/**
  * Bloco do contexto do Mestre: oferecidas, abertos com o tempo restante e perdidos nos últimos 3 dias.
  * xpOf (objectiveXp com ruleset, mesa e XP do jogador) põe a XP estimada na recompensa.
  */
@@ -78,7 +95,8 @@ export function objectivesPromptBlock(list: Objective[], now: number | null, xpO
   const offered = list.filter((o) => o.status === "oferecida");
   const open = list.filter((o) => o.status === "aberto");
   const lost = list.filter((o) => o.status === "perdido" && now !== null && (o.closedAt ?? 0) >= now - 3 * 1440);
-  if (!offered.length && !open.length && !lost.length) return "";
+  const refused = list.filter((o) => o.status === "cancelado" && o.decidedAt !== undefined);
+  if (!offered.length && !open.length && !lost.length && !refused.length) return "";
   const reward = (o: Objective) => {
     const xp = xpOf?.(o);
     const r = [o.reward, xp != null && `≈ ${xp} XP`].filter(Boolean).join(" + ");
@@ -89,11 +107,12 @@ export function objectivesPromptBlock(list: Objective[], now: number | null, xpO
       o.deadlineMinutes !== undefined
         ? ` | prazo: ${formatClock(o.deadlineMinutes)}${now !== null ? ` (${formatRemaining(o.deadlineMinutes - now)})` : ""}`
         : " | sem prazo"
-    }${reward(o)}`;
+    }${reward(o)}${o.giver ? ` | quem ofereceu: ${o.giver}` : ""}`;
   return [
     "\n--- MISSÕES E PRAZOS (update_objective para concluir, cancelar ou mudar o prazo; oferecida: aberto quando o jogador aceitar, cancelado se recusar) ---",
     ...offered.map((o) => `OFERECIDA, o jogador ainda não aceitou: ${line(o)}`),
-    ...open.map(line),
+    ...open.map((o) => (o.decidedAt !== undefined ? `${line(o)} (o jogador aceitou pelo painel: reconheça na cena se ainda não reconheceu)` : line(o))),
+    ...refused.map((o) => `RECUSADA pelo jogador no painel: [${o.id}] ${o.title}. Reconheça na cena se ainda não reconheceu (quem ofereceu reage à recusa).`),
     ...lost.map(
       (o) =>
         `PERDIDO desde ${formatClock(o.deadlineMinutes ?? o.closedAt ?? 0)}: [${o.id}] ${o.title}. Narre a consequência se ainda não narrou; não desfaça a perda.`

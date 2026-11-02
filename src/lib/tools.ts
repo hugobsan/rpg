@@ -492,6 +492,7 @@ export const GM_TOOLS: ToolDef[] = [
           kind: { type: "string", enum: ["missao", "evento", "outro"] },
           description: { type: "string", description: "o que precisa ser feito ou o que vai acontecer, e onde" },
           reward: { type: "string", description: "recompensa ou o que está em jogo (opcional)" },
+          giver: { type: "string", description: "quem ofereceu ou pediu (nome do NPC), se houver" },
           status: { type: "string", enum: ["aberto", "oferecida"], description: "oferecida: o jogador ainda não aceitou (padrão aberto)" },
           xpSize: {
             type: "string",
@@ -741,17 +742,24 @@ export async function saveTable(campaignId: string, table: TableRules): Promise<
   await q(`UPDATE campaigns SET state = state || jsonb_build_object('table', $1::jsonb) WHERE id = $2`, [JSON.stringify(table), campaignId]);
 }
 
-async function loadObjectives(campaignId: string): Promise<Objective[]> {
+export async function loadObjectives(campaignId: string): Promise<Objective[]> {
   const [row] = await q<{ state: Record<string, unknown> }>(`SELECT state FROM campaigns WHERE id = $1`, [campaignId]);
   return getObjectives(row?.state);
 }
 
 /** Grava só state.objectives, sem tocar no resto de campaigns.state. */
-async function saveObjectives(campaignId: string, list: Objective[]): Promise<void> {
+export async function saveObjectives(campaignId: string, list: Objective[]): Promise<void> {
   await q(`UPDATE campaigns SET state = state || jsonb_build_object('objectives', $1::jsonb) WHERE id = $2`, [
     JSON.stringify(list),
     campaignId,
   ]);
+}
+
+/** O turno que começou em `since` terminou: a decisão pelo painel anterior a ele já foi narrada e a marca sai. */
+export async function clearPanelDecisions(campaignId: string, since: number): Promise<void> {
+  const list = await loadObjectives(campaignId);
+  const done = (o: Objective) => (o.decidedAt ?? Infinity) < since;
+  if (list.some(done)) await saveObjectives(campaignId, list.map((o) => (done(o) ? { ...o, decidedAt: undefined } : o)));
 }
 
 /** Prazo dos args de add/update_objective: undefined = sem prazo; string = erro para o Mestre. */
@@ -1379,6 +1387,7 @@ export async function executeGmTool(
           deadlineMinutes: deadline,
           status: args.status === "oferecida" ? "oferecida" : "aberto",
           reward: args.reward ? String(args.reward) : undefined,
+          giver: args.giver ? String(args.giver) : undefined,
           createdAt: now ?? 0,
         };
         const bad = setSize(o);

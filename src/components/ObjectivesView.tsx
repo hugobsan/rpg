@@ -22,8 +22,15 @@ const StarIcon = () => (
 /** Urgência pelo tempo que falta: menos de 6 h é perigo, menos de 24 h é alerta. */
 const urgency = (left: number | null) => (left === null ? "" : left < 6 * 60 ? "danger" : left < 24 * 60 ? "warn" : "");
 
-/** Aba "Missões": missões, eventos e prazos que o Mestre registra conforme a história. */
-export default function ObjectivesView({ state, ruleset, playerXp }: { state: Record<string, unknown>; ruleset: Ruleset; playerXp: number }) {
+type Decide = (o: Objective, accept: boolean) => void;
+
+/** Oferecida com o prazo já vencido: não dá para aceitar (o update_objective também recusa). */
+const isLate = (o: Objective, now: number | undefined) => o.deadlineMinutes !== undefined && now !== undefined && o.deadlineMinutes < now;
+
+/** Aba "Missões": missões, eventos e prazos que o Mestre registra conforme a história. Oferecidas com Aceitar e Recusar. */
+export default function ObjectivesView({ state, ruleset, playerXp, onDecide, disabled }: {
+  state: Record<string, unknown>; ruleset: Ruleset; playerXp: number; onDecide: Decide; disabled?: boolean;
+}) {
   const now = getClock(state)?.minutes;
   const all = getObjectives(state);
   const table = getTable(state);
@@ -60,10 +67,17 @@ export default function ObjectivesView({ state, ruleset, playerXp }: { state: Re
             <span className={`${s.chip} ${o.status === "concluido" ? s.ok : o.status === "perdido" ? s.bad : ""}`}>{STATUS_LABEL[o.status]}</span>
           )}
         </div>
+        {o.giver && <div className={s.sub}>Oferecida por {o.giver}</div>}
         {o.description && <div className={s.sub}>{o.description}</div>}
         {o.reward && <span className={s.reward}><StarIcon /> {o.reward}</span>}
         {isOffer && o.deadlineMinutes !== undefined && (
-          <div className={s.deadline}><span>prazo se aceitar: até {formatClock(o.deadlineMinutes)}</span></div>
+          <div className={s.deadline}><span>{isLate(o, now) ? "o prazo já passou" : `prazo se aceitar: até ${formatClock(o.deadlineMinutes)}`}</span></div>
+        )}
+        {isOffer && (
+          <div className={s.row} style={{ justifyContent: "flex-end", marginTop: 4 }}>
+            <button className="btn ghost small" disabled={disabled} onClick={() => onDecide(o, false)}>Recusar</button>
+            <button className="btn small" disabled={disabled || isLate(o, now)} onClick={() => onDecide(o, true)}>Aceitar</button>
+          </div>
         )}
         {isOpen && (
           <>
@@ -113,6 +127,44 @@ export default function ObjectivesView({ state, ruleset, playerXp }: { state: Re
           <div>{closed.map(item)}</div>
         </details>
       )}
+    </div>
+  );
+}
+
+/** Missão oferecida na tela, para aceitar ou recusar sem passar pelo chat. Fechar deixa a decisão para a aba Missões. */
+export function OfferModal({ o, state, ruleset, playerXp, onDecide, onClose, disabled }: {
+  o: Objective; state: Record<string, unknown>; ruleset: Ruleset; playerXp: number; onDecide: Decide; onClose: () => void; disabled?: boolean;
+}) {
+  const now = getClock(state)?.minutes;
+  const xp = objectiveXp(o, ruleset, getTable(state), playerXp);
+  const late = isLate(o, now);
+  return (
+    <div className="modal-backdrop" onClick={onClose} onKeyDown={(e) => e.key === "Escape" && onClose()}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="offer-title" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3 id="offer-title">{o.title}</h3>
+        </div>
+        <div className="modal-body" style={{ display: "grid", gap: "var(--s-3)" }}>
+          <p className="muted" style={{ margin: 0 }}>
+            {OBJECTIVE_KIND_LABEL[o.kind] || o.kind} oferecida{o.giver ? ` por ${o.giver}` : ""}
+          </p>
+          {o.description && <p style={{ margin: 0 }}>{o.description}</p>}
+          {o.reward && <span className={s.reward}><StarIcon /> {o.reward}</span>}
+          {xp !== null && (
+            <span className="muted num">
+              {o.xpSize === "excepcional" ? "" : "≈ "}{xp} XP ao concluir ({SIZE_LABEL[o.xpSize!]}, pela regra de XP da mesa)
+            </span>
+          )}
+          <span className="muted">
+            {o.deadlineMinutes === undefined ? "Sem prazo" : late ? "O prazo já passou: só o Mestre pode dar um prazo novo." : `Prazo se aceitar: até ${formatClock(o.deadlineMinutes)}`}
+          </span>
+        </div>
+        <div className="modal-foot">
+          <button className="btn ghost small" onClick={onClose}>Decidir depois</button>
+          <button className="btn small" disabled={disabled} onClick={() => onDecide(o, false)}>Recusar</button>
+          <button className="btn primary small" autoFocus disabled={disabled || late} onClick={() => onDecide(o, true)}>Aceitar</button>
+        </div>
+      </div>
     </div>
   );
 }

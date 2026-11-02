@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { runTurn } from "@/lib/engine";
 import { restoreSnapshot } from "@/lib/turnSnapshot";
+import { clearPanelDecisions } from "@/lib/tools";
 import { TurnEvent } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +57,7 @@ export async function POST(
       turn.done = (async () => {
         try {
           await prev;
+          const started = Date.now();
           if (regenerate) {
             // volta ao estado antes do último turno e roda a mesma ação de novo
             // (com input: a ação editada pelo jogador, que entra no lugar da antiga)
@@ -66,6 +68,8 @@ export async function POST(
           } else {
             await runTurn(id, String(input || "").trim() || "(o jogador hesita)", emit, undefined, signal);
           }
+          // missão aceita ou recusada pelo painel antes deste turno: o Mestre já reconheceu na cena
+          await clearPanelDecisions(id, started);
         } catch (e) {
           // parado: o runTurn só lança signal.reason depois da foto deste turno e da ação salvas
           if (e === signal.reason && !narrated) await restoreSnapshot(id, true).catch((err) => emit({ type: "error", message: String(err) }));
