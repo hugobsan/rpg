@@ -418,7 +418,7 @@ export async function runTurn(
       playerAbilities: player && playerInput !== CONTINUE_INPUT ? player.sheet.abilities.map((a) => a.name) : undefined,
       memories: candidates,
       history: pastHits.map((h) => ({ id: h.id, text: historyLine(h, playerInput, adv.history.excerptChars) })),
-      askComplexity: !!complexModel,
+      askComplexity: !!complexModel && complexModel !== gm.model,
       askWeb: gm.web_search,
       askMeta: askMeta && playerInput !== CONTINUE_INPUT,
     },
