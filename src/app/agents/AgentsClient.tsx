@@ -307,6 +307,7 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose
             {agent.source !== "openrouter" && <span className="pill">{srcName(agent.source)}</span>}
             {agent.web_search && <span className="pill on">busca web</span>}
             {!!agent.params.cache && <span className="pill on">cache</span>}
+            {!!(agent.params.reasoning as { effort?: string } | undefined)?.effort && <span className="pill">raciocínio {(agent.params.reasoning as { effort: string }).effort}</span>}
             {agent.id === "gm" && !!agent.params.complexModel && <span className="pill">2 modelos</span>}
           </div>
         </div>
@@ -383,6 +384,16 @@ function AgentCard({ agent, sources, models, loadModels, open, onToggle, onClose
                 <input type="number" step={100} value={form.max_tokens}
                   onChange={(e) => setForm({ ...form, max_tokens: Number(e.target.value) })} />
               </label>
+              {agent.id !== "image" && <label className="field">
+                <span>Raciocínio</span>
+                <select value={String((form.params.reasoning as { effort?: string } | undefined)?.effort ?? "")}
+                  onChange={(e) => setParam("reasoning", e.target.value ? { effort: e.target.value } : undefined)}>
+                  <option value="">Padrão (GPT: médio; outros: o do modelo)</option>
+                  <option value="low">Baixo</option>
+                  <option value="medium">Médio</option>
+                  <option value="high">Alto</option>
+                </select>
+              </label>}
               {/* :online só existe no OpenRouter */}
               {or && <label className={`${s.check} ${s.full}`}>
                 <input type="checkbox" checked={form.web_search} onChange={(e) => setForm({ ...form, web_search: e.target.checked })} />
