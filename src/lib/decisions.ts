@@ -557,7 +557,7 @@ export async function decideCast(t: CastInput, campaignId: string): Promise<stri
 
 // Mudou de lugar se P >= limiar. Probe (2026-10-30, jev-1.14): foi para casa / pegou a estrada 0.98-0.99, entrou
 // na loja ao lado 0.82-0.87, sem local registrado e a narração diz onde 0.68-0.69; ficou conversando, outro canto
-// da mesma sala, só planeja ir, narração vaga 0.02-0.04. Meio do vão: erro para cima põe lugar falso no mapa,
+// da mesma sala, só planeja ir, narração vaga 0.02-0.04. Meio do vão: erro para cima abre cena num lugar falso,
 // para baixo só deixa o local parado (como sem a checagem).
 export const MOVED_MIN = D.jev.movedMin;
 // Modo da cena pela narração (mesma chamada): troca se o Mestre não trocou e P(modo) >= limiar. Sem probe ainda.

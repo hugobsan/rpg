@@ -72,7 +72,7 @@
   color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line);
 }
 
-/* tarefas em segundo plano (retratos, mapas, biblioteca) */
+/* tarefas em segundo plano (retratos, biblioteca) */
 .jobs {
   display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 260px; flex-shrink: 1;
   height: 32px; padding: 0 10px; border-radius: var(--r-pill);
@@ -96,7 +96,7 @@
   .loc { font-size: 12px; }
   .clock { padding: 4px 8px; gap: 7px; }
   .when { display: none; }
-  .wide { display: none; } /* mapa e mesa ficam nas abas da gaveta */
+  .wide { display: none; } /* a mesa fica nas abas da gaveta */
   .actions { gap: 0; }
 }
 @container main (max-width: 380px) {

@@ -13,7 +13,6 @@ import fs from "node:fs";
 import { Pool } from "pg";
 import { DEFAULT_AGENTS } from "../src/lib/agents";
 import { runTurn } from "../src/lib/engine";
-import { loadMap } from "../src/lib/map";
 import { blankSheet, normalizeRuleset } from "../src/lib/ruleset";
 import { restoreSnapshot } from "../src/lib/turnSnapshot";
 import type { TurnEvent } from "../src/lib/types";
@@ -104,8 +103,6 @@ async function main() {
     assert.deepEqual({ ...s[0], summary: s[0].summary === OLD_SUMMARY }, { seq: 18, mode: "dialogue", title: "Conferência concluída na Academia", location: "Gabinete, Academia Ninja", summary: true, is_current: false });
     assert.deepEqual(s[1], { seq: 19, mode: "downtime", title: "", location: "Casa do Hugo, Konoha", summary: "", is_current: true });
     assert.ok(events.some((e) => e.type === "scene"), "chip e cabeçalho da cena");
-    const [camp] = (await real.query(`SELECT state FROM campaigns WHERE id = $1`, [id])).rows;
-    assert.ok((await loadMap(id, camp.state)).places.some((p) => p.name === "Casa do Hugo"), "o mapa registra o lugar novo");
 
     // gerar novamente: volta à cena anterior; refeito, abre de novo
     await restoreSnapshot(id);

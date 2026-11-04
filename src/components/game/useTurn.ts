@@ -48,7 +48,7 @@ import { diceText } from "../DiceRoller";
  * onEvent(ev): cada evento do turno no momento em que ele acontece na tela. Os de conteúdo
  * (tool, dice, narration, narration_delta, choices, time e qualquer tipo novo,
  * como npc_message) chegam depois de liberados pela rolagem; status, scene, state, error e done
- * chegam na hora. Serve para a tela reagir (toast, som, mapa) sem mexer no hook.
+ * chegam na hora. Serve para a tela reagir (toast, som) sem mexer no hook.
  *
  * Registros do Escrivão (chips com `scribe`): undo(item) desfaz no servidor e marca o chip (e os do mesmo registro)
  * como desfeito; devolve o erro ("" = ok). Só os do último turno: as etiquetas da última narração salva também voltam

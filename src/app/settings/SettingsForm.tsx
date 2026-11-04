@@ -26,7 +26,7 @@ export interface SettingsShape {
   embeddings: { enabled: boolean; model: string; source: string };
   sources: SourceView[]; // fontes cadastradas (chave mascarada)
   chatgpt: ChatgptStatus; // Login com ChatGPT (sem token)
-  ui: { diceAnimation: boolean; imageGeneration: boolean; autoMaps: boolean; diceForce: number };
+  ui: { diceAnimation: boolean; imageGeneration: boolean; diceForce: number };
 }
 type Result = { ok: boolean; text: string } | null;
 
@@ -48,7 +48,6 @@ export default function SettingsForm({ initial, advanced, usedBy, notice }: {
   const [diceAnimation, setDiceAnimation] = useState(initial.ui.diceAnimation);
   const [diceForce, setDiceForce] = useState(initial.ui.diceForce);
   const [imageGeneration, setImageGeneration] = useState(initial.ui.imageGeneration);
-  const [autoMaps, setAutoMaps] = useState(initial.ui.autoMaps);
   const [advSaved, setAdvSaved] = useState(advanced.values);
   const [adv, setAdv] = useState(advanced.values);
   const [advOpen, setAdvOpen] = useState(false);
@@ -58,12 +57,12 @@ export default function SettingsForm({ initial, advanced, usedBy, notice }: {
 
   const embDirty = emb.enabled !== data.embeddings.enabled || emb.model !== data.embeddings.model || emb.source !== data.embeddings.source;
   const advDirty = JSON.stringify(adv) !== JSON.stringify(advSaved);
-  const dirty = embDirty || advDirty || diceAnimation !== data.ui.diceAnimation || diceForce !== data.ui.diceForce || imageGeneration !== data.ui.imageGeneration || autoMaps !== data.ui.autoMaps;
+  const dirty = embDirty || advDirty || diceAnimation !== data.ui.diceAnimation || diceForce !== data.ui.diceForce || imageGeneration !== data.ui.imageGeneration;
 
   // otimista: a barra vira "Tudo salvo" na hora (o salvo passa a ser o que está na tela); se falhar, volta a acusar as alterações
   const save = async () => {
     setSaving(true);
-    const body = { embeddings: emb, ui: { diceAnimation, diceForce, imageGeneration, autoMaps } };
+    const body = { embeddings: emb, ui: { diceAnimation, diceForce, imageGeneration } };
     const sentAdv = adv;
     const before = { data, advSaved };
     setData((d) => ({ ...d, embeddings: emb, ui: { ...d.ui, ...body.ui } }));
@@ -218,11 +217,6 @@ export default function SettingsForm({ initial, advanced, usedBy, notice }: {
             <b>Imagens do ambiente e retratos</b>
             <span>O botão &quot;Ver ambiente&quot; gera uma imagem da cena e o &quot;Gerar retrato&quot; pinta o personagem, ambos com o Ilustrador; costumam ser as chamadas mais caras do jogo. Desligada, nada é gerado e o &quot;Ver ambiente&quot; some. As imagens e retratos que já existem continuam.</span>
             <input type="checkbox" role="switch" checked={imageGeneration} onChange={(e) => setImageGeneration(e.target.checked)} />
-          </label>
-          <label className={s.switch}>
-            <b>O Mestre gera mapas 3D sozinho</b>
-            <span>Quando você chega a um lugar importante, o Mestre pede ao Cartógrafo o mapa 3D dele, e o edita quando a história muda o lugar. Usa um modelo caro (Claude Opus). Desligado, só os botões da aba Mapa geram e editam.</span>
-            <input type="checkbox" role="switch" checked={autoMaps} onChange={(e) => setAutoMaps(e.target.checked)} />
           </label>
         </div>
       </section>

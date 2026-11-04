@@ -40,8 +40,6 @@ import {
   objectiveXp,
   ObjectiveXpSize,
 } from "./objectives";
-import { executeMapTool, recordScenePlace } from "./map";
-import { executeLocalMapTool, executeMapBrief, MAP_BRIEF_TOOL } from "./cartographer";
 import { dcResultText, getTable, tableDc } from "./table";
 import { queueProfile } from "./characters";
 import { formatMoney, toBase } from "./money";
@@ -664,8 +662,6 @@ export const GM_TOOLS: ToolDef[] = [
       parameters: S({}, []),
     },
   },
-  // mapa e palco: o Mestre só manda o brief; update_map, set_stage e local_map ficam com o Topógrafo (e no fora do jogo)
-  MAP_BRIEF_TOOL,
 ];
 
 // o Escrivão registra estas depois da narração, pelo que ela mostra: saem do turno do Mestre (o fora do jogo fica com todas)
@@ -675,7 +671,7 @@ export const SCRIBE_TOOLS = new Set([
 ]);
 
 // anotações cujo resultado o Mestre não precisa para narrar: rodam depois da narração, sem outra rodada do modelo
-export const DEFERRED_TOOLS = new Set(["advance_time", "set_scene", "set_npc_active", "set_rank", "update_script", "note_objective", "map_brief"]);
+export const DEFERRED_TOOLS = new Set(["advance_time", "set_scene", "set_npc_active", "set_rank", "update_script", "note_objective"]);
 
 /** Ferramentas do turno do Mestre: sem as do Escrivão (advance_time fica: o Mestre controla o ritmo; o Jev só cobre o esquecimento). */
 export const GM_TURN_TOOLS: ToolDef[] = [
@@ -1309,7 +1305,6 @@ export async function executeGmTool(
     }
     case "set_scene": {
       const moved = !!args.newScene || (args.location !== undefined && String(args.location) !== ctx.scene.location);
-      await recordScenePlace(ctx, args); // mapa: local novo e rota desde o anterior (antes de a cena mudar)
       if (args.newScene) {
         await q(`UPDATE scenes SET is_current = FALSE WHERE campaign_id = $1`, [cid]);
         const rows = await q<Scene>(
@@ -1633,13 +1628,6 @@ export async function executeGmTool(
       if (!books.length) return "Nenhum livro indexado nesta campanha.";
       return books.map((b) => `${b.title} — bookId=${b.id}, ${b.pages} páginas`).join("\n");
     }
-    case "update_map":
-    case "set_stage":
-      return executeMapTool(name, args, ctx);
-    case "local_map":
-      return executeLocalMapTool(args, ctx);
-    case "map_brief":
-      return executeMapBrief(args, ctx);
     default:
       return `Ferramenta desconhecida: ${name}`;
   }

@@ -8,19 +8,14 @@ import { getCampaign, getCharacters, getCurrentScene, sheetSummary } from "./eng
 import { executeGmTool, GM_TOOLS, saveTable } from "./tools";
 import { findAbility } from "./progression";
 import { dehydrateSheet, generateLibrary } from "./library";
-import { MAP_TOOLS } from "./map";
-import { LOCAL_MAP_TOOLS } from "./cartographer";
 import { DIFFICULTIES, getTable, mergeCategories, MODE_HINTS, modeHint, normalizeTable, REST_KINDS, restRuleText, tablePromptBlock, tableSummary } from "./table";
 import type { SceneMode } from "./types";
 
 // as ferramentas do turno, menos as que leem o roteiro e os segredos dos NPCs (spoiler) e a mensagem de NPC
-// (é jogada, não conversa fora do jogo), mais remover habilidade. Mapa: as ferramentas diretas no lugar do
-// map_brief, porque aqui o pedido é uma correção exata ("tira X do mapa", "junta esses dois") e é raro
-const HIDDEN = ["get_script", "update_script", "get_character", "npc_message", "map_brief"];
+// (é jogada, não conversa fora do jogo), mais remover habilidade
+const HIDDEN = ["get_script", "update_script", "get_character", "npc_message"];
 export const OOC_GAME_TOOLS: ToolDef[] = [
   ...GM_TOOLS.filter((t) => !HIDDEN.includes(t.function.name)),
-  ...MAP_TOOLS,
-  ...LOCAL_MAP_TOOLS,
   {
     type: "function",
     function: {

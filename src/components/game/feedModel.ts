@@ -77,8 +77,7 @@ const TOOL_ICON: [RegExp, IconName][] = [
   [/npc_message/, "mail"],
   [/npc_talk/, "chat"],
   [/npc/, "people"],
-  [/map/, "map"],
-  [/scene|stage/, "pin"],
+  [/scene/, "pin"],
   [/time|clock/, "clock"],
   [/objective/, "flag"],
   [/memor/, "bookmark"],
@@ -103,7 +102,7 @@ export const PHASES = [
 ] as const;
 export type Phase = (typeof PHASES)[number]["key"];
 
-const CONSULT_TOOLS = /search_memories|search_book|read_pages|get_script|get_npc|get_map/;
+const CONSULT_TOOLS = /search_memories|search_book|read_pages|get_script|get_npc/;
 
 /** Fase indicada por um evento do turno (null = não muda). */
 export function phaseOf(ev: { type: string; text?: string; name?: string }): Phase | null {

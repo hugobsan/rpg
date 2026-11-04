@@ -3,12 +3,9 @@ import { getCampaign, getCharacters, getCurrentScene } from "./engine";
 import { listBooks } from "./books";
 import { messagePage } from "./messages";
 import { listInbox } from "./npc";
-import { loadMap } from "./map";
 import { listJobs } from "./jobs";
-import { listLocalMaps } from "./cartographer";
-import type { LocalMapInfo } from "./mapSpec";
 import type { ScribeEntry } from "./corrections";
-import type { Campaign, Character, InboxItem, Job, Scene, WorldMap } from "./types";
+import type { Campaign, Character, InboxItem, Job, Scene } from "./types";
 
 export interface ChatLine {
   id: number;
@@ -30,13 +27,11 @@ export interface CampaignView {
   ui: { diceAnimation: boolean; imageGeneration: boolean; diceForce: number }; // Configurações, ligadas por padrão
   inbox: InboxItem[]; // mensagens particulares de NPC não lidas (npc_message)
   jobs: Job[]; // tarefas em segundo plano rodando ou recém-terminadas (lib/jobs.ts)
-  maps: LocalMapInfo[]; // mapas 3D dos locais (Cartógrafo), sem o spec (vem por /maps?map=id)
 }
 
 /** Lança "Campanha não encontrada" se o id não existe. */
 export async function campaignView(id: string): Promise<CampaignView> {
   const campaign = await getCampaign(id);
-  campaign.state.map ??= await loadMap(id, campaign.state); // campanha antiga: mapa montado das cenas, sem gravar
   const [scene, characters, books, page, memories, images, ui, inbox, jobs] = await Promise.all([
     getCurrentScene(id),
     getCharacters(id),
@@ -81,6 +76,5 @@ export async function campaignView(id: string): Promise<CampaignView> {
     ui: { diceAnimation: ui.diceAnimation !== false, imageGeneration: ui.imageGeneration !== false, diceForce: ui.diceForce ?? 1 },
     inbox,
     jobs,
-    maps: await listLocalMaps(id, campaign.state.map as WorldMap),
   };
 }

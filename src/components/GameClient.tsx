@@ -23,7 +23,6 @@ import MemoriesView from "./MemoriesView";
 import BooksView from "./BooksView";
 import ScriptView from "./ScriptView";
 import DiceRoller from "./DiceRoller";
-import MapPanel from "./map/MapPanel";
 import TableRulesPanel from "./TableRulesPanel";
 import Skeleton from "./ui/Skeleton";
 import { toast } from "./ui/Toast";
@@ -37,7 +36,7 @@ import { chipText, groupFeed, phaseOf, type Phase } from "./game/feedModel";
 import { stateToasts } from "./game/stateToasts";
 import s from "./GameClient.module.css";
 
-type Tab = "sheet" | "abilities" | "inventory" | "library" | "objectives" | "npcs" | "map" | "memories" | "books" | "script" | "gallery" | "table";
+type Tab = "sheet" | "abilities" | "inventory" | "library" | "objectives" | "npcs" | "memories" | "books" | "script" | "gallery" | "table";
 
 const MODE_PLACEHOLDER: Record<string, string> = {
   exploration: "O que você faz?",
@@ -100,7 +99,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   const undoRef = useRef(undo);
   undoRef.current = undo;
 
-  // retratos, mapas 3D, biblioteca, perfis de NPC: ao terminar, relê a campanha e avisa
+  // retratos, biblioteca, perfis de NPC: ao terminar, relê a campanha e avisa
   const jobs = useJobs(campaignId, state?.jobs, (ended) => {
     reloadState();
     for (const j of ended)
@@ -310,7 +309,6 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
     { key: "inventory", label: "Inventário", icon: "bag" },
     { key: "objectives", label: "Missões", icon: "flag", mobile: true },
     { key: "npcs", label: "NPCs", icon: "people", badge: unread, mobile: true },
-    { key: "map", label: "Mapa", icon: "map", mobile: true },
     // gestão da campanha: ficam juntas no grupo "Gestão" da lateral
     { key: "memories", label: "Marcos", icon: "bookmark", group: true },
     { key: "books", label: "Livros", icon: "book", group: true },
@@ -368,8 +366,6 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           onFix={(o, status) => fix({ fix: "objective", objective: o.id, status })} />;
       case "npcs":
         return <NpcList npcs={npcs} onOpen={setOpenNpc} inbox={state.inbox} onSetActive={setNpcActive} />;
-      case "map":
-        return <MapPanel campaign={campaign} scene={scene} characters={state.characters} maps={state.maps} jobs={jobs} onChanged={reloadState} />;
       case "memories":
         return <MemoriesView memories={state.memories} />;
       case "books":
@@ -391,7 +387,6 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           clock={clock}
           image={state.ui.imageGeneration ? { busy: imageBusy, onClick: generateImage } : undefined}
           onOoc={() => setOocOpen(true)}
-          onMap={() => show("map")}
           onTable={() => show("table")}
           tableHint={difficulty === "normal" ? undefined : DIFFICULTIES.find((d) => d.key === difficulty)?.label}
           jobs={jobs.filter((j) => j.status === "running")}

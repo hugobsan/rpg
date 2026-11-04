@@ -54,7 +54,7 @@ Cada agente é um registro editável (fonte + modelo + system prompt + parâmetr
 
 | Agente | Modelo default | Papel | Por quê |
 |---|---|---|---|
-| **Mestre** | `openai/gpt-6.1-terra` nos turnos simples, `anthropic/claude-sonnet-5.5` nos complexos (+`:online` quando o Jev pede) | Narra, arbitra, usa ~24 ferramentas (dados, técnicas, treino, NPCs, cena, livros, roteiro, mapas); as anotações rodam depois da narração e o registro das fichas fica com o Escrivão | Narrativa e tool use são o coração do jogo; o modelo caro só entra em batalha/arbitragem |
+| **Mestre** | `openai/gpt-6.1-terra` nos turnos simples, `anthropic/claude-sonnet-5.5` nos complexos (+`:online` quando o Jev pede) | Narra, arbitra, usa ~23 ferramentas (dados, técnicas, treino, NPCs, cena, livros, roteiro); as anotações rodam depois da narração e o registro das fichas fica com o Escrivão | Narrativa e tool use são o coração do jogo; o modelo caro só entra em batalha/arbitragem |
 | **NPC (base)** | `deepseek/deepseek-v4-pro` | Interpreta qualquer NPC em conversas particulares | Ótimo roleplay por uma fração do custo |
 | **Roteirista** | `deepseek/deepseek-v4-pro` (+`:online`) | Gera o roteiro interno (arcos, eventos canônicos, ganchos) | Roda raramente; longo e barato |
 | **Cronista** | `google/gemini-3.5-flash` | Compacta histórico e extrai memórias estruturadas | Roda com frequência; rápido e barato |
@@ -68,8 +68,6 @@ Cada agente é um registro editável (fonte + modelo + system prompt + parâmetr
 | **Criador de aventuras** | `nvidia/nemotron-3.5-super-vl:free` | Entrevista o jogador e monta o JSON de uma aventura nova (Criar com IA) | Grátis; raciocina antes de responder (rodada de 1 a 2 min) |
 | **Criador de habilidades** | `nvidia/nemotron-3.5-super-vl:free` | Cria técnicas (jutsus, feitiços...) para a biblioteca: na hora, quando o `add_ability` pede uma que não existe, e em lotes no segundo plano | Grátis; prazo de 90 s dentro do turno |
 | **Criador de itens** | `nvidia/nemotron-3.5-super-vl:free` | Cria ferramentas, armas e consumíveis para a biblioteca, em lotes | Grátis |
-| **Cartógrafo** | `anthropic/claude-opus-5.5` (raciocínio médio) | Compõe o mapa 3D de um lugar como descrição declarativa (relevo, contornos, caminhos, espalhamento, materiais, luz, pontos de interesse) | ~US$0,14 por mapa novo e US$0,18 por edição; só gera quando pedido |
-| **Topógrafo** | `google/gemini-3.5-flash` (raciocínio baixo) | Recebe do Mestre uma frase sobre o que mudou no espaço (`map_brief`) e chama as ferramentas do mapa: palco (`set_stage`), mapa do mundo (`update_map`) e mapa 3D (`local_map`, pelo Cartógrafo) | Tira os esquemas e as regras do mapa de toda chamada do Mestre (~1,6 mil tokens); ~US$0,002 e poucos segundos por brief |
 
 O seletor de modelos busca a lista viva de `openrouter.ai/api/v1/models` com preço e contexto — os defaults nunca ficam obrigatórios.
 
@@ -135,7 +133,7 @@ A cena atual tem um modo — `exploration`, `dialogue`, `battle`, `training`, `d
 
 Só os NPCs em cena entram inteiros no prompt do Mestre. Ao abrir cena nova ou mudar de local, o Mestre informa em `set_scene` a lista `present` (todos os NPCs que estão no novo lugar): quem fica de fora sai de cena e quem é listado volta. Se ele esquecer, depois da narração o Jev julga, para cada NPC em cena que não falou, se ele continua ali (foi embora, ficou para trás, morreu); quem não continua sai. Isso roda todo turno com NPC calado em cena (custa ~US$0,00005 e corre junto do relógio, depois da narração) e, se o Jev falhar, ninguém sai. NPC registrado fora de cena que fala na narração (`**Nome:**`) volta sozinho, sem IA.
 
-O local também tem rede de segurança: se o Mestre não abriu cena nem trocou o local no turno, o Jev julga se a narração levou o jogador a outro lugar; se levou, o Cronista dá o nome ("Casa do Ren, Konoha", reaproveitando os nomes do mapa) e o código abre **cena nova** ali pelo mesmo `set_scene` (`newScene`, já no modo que o Jev viu, título vazio: o cabeçalho mostra o local), então o mapa, o cabeçalho e o chip acompanham e o "gerar novamente" volta a cena. Assim o resumo compactado é o da cena atual, sem fatos velhos de outro lugar; enquanto a cena nova não tem resumo próprio, o contexto do Mestre traz o fim do último resumo (até 1200 caracteres, em "Antes desta cena"), e a janela de histórico recente não depende da cena. Isso roda antes do elenco, que já julga quem ficou para trás no lugar novo (inclusive quem falou antes de o jogador sair). Falha em qualquer passo = nada muda. Diretrizes "nesta cena e na próxima" contam cenas criadas, então agora duram até a segunda troca de lugar. Verificação: `npx tsx scripts/cast-check.ts` e `npx tsx scripts/scene-check.ts`.
+O local também tem rede de segurança: se o Mestre não abriu cena nem trocou o local no turno, o Jev julga se a narração levou o jogador a outro lugar; se levou, o Cronista dá o nome ("Casa do Ren, Konoha", reaproveitando os locais das cenas anteriores) e o código abre **cena nova** ali pelo mesmo `set_scene` (`newScene`, já no modo que o Jev viu, título vazio: o cabeçalho mostra o local), então o cabeçalho e o chip acompanham e o "gerar novamente" volta a cena. Assim o resumo compactado é o da cena atual, sem fatos velhos de outro lugar; enquanto a cena nova não tem resumo próprio, o contexto do Mestre traz o fim do último resumo (até 1200 caracteres, em "Antes desta cena"), e a janela de histórico recente não depende da cena. Isso roda antes do elenco, que já julga quem ficou para trás no lugar novo (inclusive quem falou antes de o jogador sair). Falha em qualquer passo = nada muda. Diretrizes "nesta cena e na próxima" contam cenas criadas, então agora duram até a segunda troca de lugar. Verificação: `npx tsx scripts/cast-check.ts` e `npx tsx scripts/scene-check.ts`.
 
 ### Relógio do jogo
 
@@ -145,23 +143,11 @@ A história tem dia e hora (`campaigns.state.clock`, minutos desde o "Dia 1, 00:
 
 **Missões e prazos** (`campaigns.state.objectives`, aba **Missões**): o Mestre anota numa frase com `note_objective` a missão, o evento marcado ou o compromisso que a história criou, cumpriu ou cancelou ("Hokage deu a missão de escoltar o Tazuna, prazo de 3 dias; recompensa 30 mil ryō") e o Escrivão registra com `add_objective` (prazo absoluto ou relativo, em tempo do jogo) ou `update_objective`; fora do jogo o Mestre usa as duas direto; toda mudança do relógio passa por `saveClock`, que marca como perdido o que venceu (treinar ou viajar demais faz perder a missão) e avisa o Mestre para narrar a consequência. As últimas 30 missões cumpridas vão ao Mestre só pelo título, para ele não oferecer a mesma como se fosse inédita (repetir pode, com motivo na história e o mundo lembrando). Verificação: `npx tsx scripts/objectives-check.ts`.
 
-### Mapa do mundo e palco da cena
-
-O mapa (`campaigns.state.map`, `src/lib/map.ts`) se monta sozinho: todo `set_scene` com local novo registra o lugar e a rota a partir do anterior. "Sala 3, Academia, Konoha" vira uma cadeia (a sala dentro da academia, dentro de Konoha), e variações de nome caem no mesmo lugar ("a Academia" = "Academia Ninja de Konoha"; "Konoha" não). O tipo sai do nome (floresta, torre, casa...) e vira o ícone. Campanhas antigas montam o mapa inicial com as cenas passadas. O Mestre não carrega as ferramentas do mapa: manda um `map_brief` (uma frase, ex.: "o jogador ouviu falar da Vila da Névoa, ao sul, dois dias de barco") e o **Topógrafo**, um agente barato, traduz em `update_map` (tipo, descrição, local que contém, outros nomes, direção e distância em relação a outro local, rotas com tempo de viagem). O resultado é só informativo para o Mestre, que narra sem esperar por ele. Fora do jogo o Mestre continua com `update_map`, `set_stage` e `local_map` diretos, para correções exatas pedidas pelo jogador. As posições são calculadas pelo código (a dica do Mestre ou o primeiro ponto livre em volta do vizinho) e os locais já posicionados não se mexem.
-
-O palco (`scenes.state.stage`, ferramenta `set_stage`) guarda as zonas do lugar e onde cada personagem está em relação ao jogador: distância (corpo a corpo, perto, médio, longe), postura (aliado, hostil, neutro), cobertura e elevação. É o que mantém a batalha coerente entre os turnos: o Mestre manda um `map_brief` no começo da luta e a cada movimento relevante ("Bandido 1 caiu; Zabuza recuou para a névoa, longe") e o Topógrafo monta e atualiza o palco; sem palco em batalha, o contexto pede o brief. Mudar de lugar dentro da mesma cena limpa o palco. O contexto do Mestre leva um bloco curto com o local atual, as rotas daqui e o palco; os locais distantes, os mapas 3D e as regras de zonas, rotas e distâncias vão só para o Topógrafo. O "gerar novamente" volta mapa e palco junto com o resto. Verificação (com o Topógrafo falso, sem rede): `npx tsx scripts/map-check.ts`.
-
-Na tela, `src/components/map/MapPanel.tsx` (props: `campaign`, `scene`, `characters`) mostra o mapa como um diorama 3D low-poly (three, carregado sob demanda): cada tipo de lugar vira uma miniatura, rotas são trilhas pontilhadas, o jogador e quem está com ele são peões (cor pela postura no palco), lugares conhecidos e não visitados aparecem translúcidos e a luz segue o período do dia. Arrastar gira, clicar num lugar abre o cartão dele, a câmera desliza até o lugar novo quando você se move, e "Ampliar" abre o mapa em tela cheia com zoom. Cores e fontes vêm dos tokens do tema da campanha. Só renderiza quando algo se mexe; sem WebGL, cai para uma visão 2D em SVG. O palco aparece em 2D no mesmo painel (anéis de distância, zonas, cobertura e elevação), primeiro em batalha.
-
-### Mapas 3D dos lugares (Cartógrafo)
-
-Além do diorama do mundo, cada lugar pode ter uma maquete 3D própria, composta pelo **Cartógrafo** a partir da obra, da narração e da cena (`src/lib/cartographer.ts`). O modelo devolve um spec declarativo, nunca código; `src/lib/mapSpec.ts` valida e limita tudo (quantidades, faixas, cores) e o mapa fica na tabela `maps`, ligado ao lugar do mapa do mundo. O Topógrafo usa a ferramenta `local_map` (gerar, editar, remover), a partir do brief do Mestre, quando o jogador chega a um lugar relevante sem mapa ou a história muda o lugar; os pontos de interesse do mapa viram as zonas do `set_stage`, e os peões aparecem nelas. Na aba **Mapa**: **Local** traz em destaque o mapa da cena atual (girar, zoom, pontos clicáveis, tela cheia), com os botões Gerar, Editar, Regerar e Remover e a galeria dos outros lugares; **Mundo** é o diorama. Como o Opus custa, a geração por iniciativa do jogo tem um interruptor nas Configurações ("O Mestre gera mapas 3D sozinho"); os botões funcionam sempre. Verificação sem IA: `npx tsx scripts/cartographer-check.ts`.
-
 ### Biblioteca, retratos e tarefas em segundo plano
 
 - **Biblioteca** (tabela `library`, `src/lib/library.ts`, aba Biblioteca): técnicas e itens do mundo da campanha. O `add_ability` do Mestre recebe só nome e brief: vem da biblioteca ou o **Criador de habilidades** cria na hora (e guarda); `add_item` completa a descrição pela biblioteca; `search_library` consulta antes de inventar. Na aba (ou pedindo ao Mestre fora do jogo, `generate_library`) o jogador manda gerar N técnicas ou itens com um foco, em lotes que recebem os nomes já existentes para não repetir. Verificação: `npx tsx scripts/library-check.ts`.
 - **Retratos** (tabela `portraits`, `src/lib/portrait.ts`, componente `Portrait`): um por personagem, gerado só quando o jogador clica em Gerar retrato (modal do NPC ou ficha). Quem pinta é o **Ilustrador**, só com a geração de imagens ligada nas Configurações (desligada, o botão avisa e nada é gerado). Verificação: `npx tsx scripts/portrait-check.ts`.
-- **Tarefas em segundo plano** (tabela `jobs`, `src/lib/jobs.ts`): perfis de NPC, memórias de conversa com NPC, retratos, lotes da biblioteca e mapas rodam fora do turno. O cabeçalho do jogo mostra o que está rodando (com progresso) e, quando termina, a tela recarrega e avisa. Duas tarefas iguais não rodam juntas; uma parada há 15 min sem sinal (servidor reiniciado) vira erro. Verificação: `npx tsx scripts/jobs-check.ts`.
+- **Tarefas em segundo plano** (tabela `jobs`, `src/lib/jobs.ts`): perfis de NPC, memórias de conversa com NPC, retratos e lotes da biblioteca rodam fora do turno. O cabeçalho do jogo mostra o que está rodando (com progresso) e, quando termina, a tela recarrega e avisa. Duas tarefas iguais não rodam juntas; uma parada há 15 min sem sinal (servidor reiniciado) vira erro. Verificação: `npx tsx scripts/jobs-check.ts`.
 
 ### Estilos de campanha
 
@@ -234,7 +220,6 @@ Clique em 🔊 numa fala de NPC (no chat do Mestre, linhas `**Nome:** "fala"`, o
 naruto-ruleset.json        # preset de mecânica de Naruto (importável)
 scripts/jev-check.ts       # probe do Jev (rodar ao trocar o modelo de decisão)
 scripts/progression-check.ts # checagem da progressão (domínio, nível, teto, treino) sem IA
-scripts/map-check.ts       # mapa e palco: nomes, layout, ferramentas e "gerar novamente", sem IA
 docker-compose.yml         # Postgres + pgvector (porta 5433)
 src/lib/
   schema.sql               # schema idempotente (aplicado no boot)
@@ -251,8 +236,6 @@ src/lib/
   characters.ts            # Criador de personagens: perfil e ficha do NPC em segundo plano, merge sem atropelar o Mestre
   library.ts               # biblioteca de técnicas e itens, Criador de habilidades e de itens, lotes
   portrait.ts              # retratos: Ilustrador
-  cartographer.ts          # Cartógrafo: mapas 3D por lugar (pedido, entrada, gravação); Topógrafo (map_brief do Mestre)
-  mapSpec.ts               # spec declarativo do mapa 3D: validação e limites
   jobs.ts                  # tarefas em segundo plano acompanhadas pela tela
   retrieval.ts             # busca vetorial com fallback FTS
   books.ts                 # ingestão/paginação/chunking de livros
@@ -260,6 +243,5 @@ src/lib/
   adventure.ts             # Criador de aventuras: parse da resposta, merge do rascunho, validação, progresso
   progression.ts           # domínio, nível de poder, pontos livres, teto e treino
   corrections.ts           # correções do jogador: edição manual da ficha, desfazer registro do Escrivão, linha ao Mestre, medição
-  map.ts                   # mapa do mundo (locais, rotas, layout) e palco da cena
 src/app/                   # telas + rotas de API (Next.js App Router)
 ```

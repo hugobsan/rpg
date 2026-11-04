@@ -22,7 +22,7 @@ export interface CampaignRow {
 
 /** Usada pela home (Server Component) e por GET /api/campaigns. */
 export async function listCampaigns(): Promise<CampaignRow[]> {
-  // só os campos que o tema usa (o state inteiro pode ser grande: mapa, missões...)
+  // só os campos que o tema usa (o state inteiro pode ser grande: missões...)
   const rows = await q<Omit<CampaignRow, "theme"> & Pick<Campaign, "state" | "ruleset">>(
     `SELECT c.id, c.name, c.style, c.created_at::text, c.updated_at::text,
             c.ruleset->>'name' AS ruleset_name,

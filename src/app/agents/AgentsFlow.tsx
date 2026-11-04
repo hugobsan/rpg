@@ -29,8 +29,6 @@ const COLOR = {
   char: "#fb7185",
   abil: "#ec5a55",
   items: "#f59e6b",
-  carto: "#38bdf8",
-  surv: "#2dd4bf",
   adv: "#e879f9",
   scribe: "#a3e635",
   referee: "#f97316",
@@ -53,8 +51,6 @@ const KIND_LABEL: Record<Who, string> = {
   char: "Criador de personagens",
   abil: "Criador de habilidades",
   items: "Criador de itens",
-  carto: "Cartógrafo",
-  surv: "Topógrafo",
   adv: "Criador de aventuras",
   scribe: "Escrivão",
   referee: "Árbitro",
@@ -116,7 +112,7 @@ const NODES: (FlowNode | LaneNode)[] = [
   lane("L3", -430, 390, 1300, "3. Sob demanda: Roteirista, Ilustrador, Criador de aventuras, Voz e fora do jogo"),
   lane("L1", 0, 505, 1570, "1. Turno do jogador"),
   lane("L2", 540, 290, 1570, "2. Conversa particular com um NPC"),
-  lane("L4", 870, 720, 1570, "4. Criação em segundo plano: personagens, retratos, biblioteca do mundo e mapas"),
+  lane("L4", 870, 480, 1570, "4. Criação em segundo plano: personagens, retratos e biblioteca do mundo"),
 
   // --- sob demanda ---
   n("v_btn", X[0], -370, "player", "Botão “Ouvir a fala”", "fala de NPC no chat ou na conversa", {
@@ -133,7 +129,7 @@ const NODES: (FlowNode | LaneNode)[] = [
     oque: "Conversa com o Mestre fora da história: dúvidas de regra, correções de ficha, pedidos de como conduzir a mesa. Não entra no histórico do turno nem na foto do “gerar novamente”.",
   }),
   n("o_gm", X[4], -370, "gm", "Mestre fora do jogo", "diretrizes, regras da mesa, correções", {
-    oque: "O mesmo modelo do Mestre, com outro prompt: responde curto, sem narrar nem dar spoiler (não vê roteiro nem segredos de NPC). Vê a cena, missões, regras e modos de cena da mesa, a ficha completa, os últimos trechos da história e as diretrizes ativas. Orientação de como conduzir vira diretriz (save_directive), que entra no contexto de todo turno; dificuldade, críticos, ritmo de XP e o texto de cada modo de cena vão em set_table_rules; corrige fichas, relógio e missões com as ferramentas do turno (menos roteiro, get_character, npc_message e map_brief), corrige a técnica na biblioteca do mundo com edit_ability (vale para todas as campanhas do mundo), tira técnica de uma ficha com remove_ability (a entrada fica na biblioteca), mexe direto no mapa e pede lotes da biblioteca.",
+    oque: "O mesmo modelo do Mestre, com outro prompt: responde curto, sem narrar nem dar spoiler (não vê roteiro nem segredos de NPC). Vê a cena, missões, regras e modos de cena da mesa, a ficha completa, os últimos trechos da história e as diretrizes ativas. Orientação de como conduzir vira diretriz (save_directive), que entra no contexto de todo turno; dificuldade, críticos, ritmo de XP e o texto de cada modo de cena vão em set_table_rules; corrige fichas, relógio e missões com as ferramentas do turno (menos roteiro, get_character e npc_message), corrige a técnica na biblioteca do mundo com edit_ability (vale para todas as campanhas do mundo), tira técnica de uma ficha com remove_ability (a entrada fica na biblioteca) e pede lotes da biblioteca.",
     quando: "A cada mensagem na conversa fora do jogo, e quando o Jev vê no chat do jogo uma pergunta ou reclamação sobre o registro (a tela abre a conversa com a resposta).",
     freq: "1 a 4 chamadas por mensagem (outra rodada só para ler uma busca ou escrever a resposta).",
     custo: "O modelo principal do Mestre, sem Jev e sem busca web; contexto menor que o do turno.",
@@ -211,22 +207,22 @@ const NODES: (FlowNode | LaneNode)[] = [
     fallback: "Jev falhou ou disse não: o Árbitro não roda e o Mestre resolve como antes. Ferramenta com erro fica para o Mestre.",
   }),
   n("t_ctx", X[3], 60, "code", "Montagem do contexto", "ficha, cena, NPCs, roteiro", {
-    oque: "Sem IA, em três partes, na ordem que aproveita o cache: (1) o fixo da campanha: prompt do Mestre, estilo e mecânica (com o padrão de nomes das técnicas do mundo); (2) o histórico recente; (3) o contexto do turno, numa mensagem logo antes da ação: regras da mesa, cena atual com hora e MODO DA CENA (o texto do modo, ajustável na Mesa), resumo compactado (na cena nova ainda sem resumo, o fim do da anterior), missões e prazos, local, rotas e palco do mapa, ficha do jogador e dos NPCs em cena (técnicas completadas pela biblioteca, com o custo calculado e a marca de INCOMPLETA ou de fora da biblioteca; efeito e requisito cortados em 160 caracteres e o passado em 300; o completo sai no get_character), arco ativo do roteiro, só as memórias e trechos antigos aprovados pelo Jev, o que o Escrivão registrou depois da narração anterior e as diretrizes do jogador.",
+    oque: "Sem IA, em três partes, na ordem que aproveita o cache: (1) o fixo da campanha: prompt do Mestre, estilo e mecânica (com o padrão de nomes das técnicas do mundo); (2) o histórico recente; (3) o contexto do turno, numa mensagem logo antes da ação: regras da mesa, cena atual com hora e MODO DA CENA (o texto do modo, ajustável na Mesa), resumo compactado (na cena nova ainda sem resumo, o fim do da anterior), missões e prazos, ficha do jogador e dos NPCs em cena (técnicas completadas pela biblioteca, com o custo calculado e a marca de INCOMPLETA ou de fora da biblioteca; efeito e requisito cortados em 160 caracteres e o passado em 300; o completo sai no get_character), arco ativo do roteiro, só as memórias e trechos antigos aprovados pelo Jev, o que o Escrivão registrou depois da narração anterior e as diretrizes do jogador.",
     quando: "Antes de cada turno do Mestre.",
   }),
   n("t_gm", X[4], 60, "gm", "Mestre", "narra e arbitra", {
     oque: "Narra o mundo, arbitra as regras, controla o relógio e altera o jogo por ferramentas. Usa o modelo escolhido pelo Jev, mantido em todas as rodadas do turno. A narração vai ao jogador em streaming. No Continuar, segue a cena sem o personagem agir (ou, se a narração anterior esperava algo dele, responde só com uma linha curta de que a cena aguarda).",
     quando: "Em cada turno do jogador, em loop com as ferramentas.",
-    freq: "1 a 9 chamadas por turno. Termina quando responde só com texto, ou com a narração e só anotações (relógio, cena, elenco, cargo, roteiro, missão, mapa), que rodam depois dela sem outra chamada.",
+    freq: "1 a 9 chamadas por turno. Termina quando responde só com texto, ou com a narração e só anotações (relógio, cena, elenco, cargo, roteiro, missão), que rodam depois dela sem outra chamada.",
     custo: "O mais caro: cada rodada reenvia prompt, ficha, memórias, histórico (até ≈9 mil tokens) e as definições das ferramentas. A busca web (:online) vale só na 1ª rodada e é cobrada por busca.",
   }),
   n("t_tools", X[5], 60, "code", "Ferramentas", "dados, ficha, cena, delegações", {
-    oque: "Executadas pelo código a pedido do Mestre: rolar dados, resolver (cobrando o custo calculado) e treinar técnicas, atributos, ligar técnica na ficha pela biblioteca (add_ability) e corrigir a técnica na biblioteca do mundo (edit_ability), criar NPC, mensagem de NPC ao jogador (npc_message), relógio (advance_time, set_time), buscar memórias, buscar no chat inteiro da campanha (search_history: trechos curtos com dia, hora e local), consultar livros, ficha, roteiro e biblioteca, mandar o brief do mapa (map_brief). Dano, itens, XP, memórias e missões não estão aqui: ficam com o Escrivão. As escritas vão direto ao Postgres; criar NPC, técnica nova e mapa são delegados (lane 4). As anotações (advance_time, set_scene, set_npc_active, set_rank, update_script, note_objective, map_brief) respondem \"Anotado\" na hora e só rodam depois da narração.",
+    oque: "Executadas pelo código a pedido do Mestre: rolar dados, resolver (cobrando o custo calculado) e treinar técnicas, atributos, ligar técnica na ficha pela biblioteca (add_ability) e corrigir a técnica na biblioteca do mundo (edit_ability), criar NPC, mensagem de NPC ao jogador (npc_message), relógio (advance_time, set_time), buscar memórias, buscar no chat inteiro da campanha (search_history: trechos curtos com dia, hora e local), consultar livros, ficha, roteiro e biblioteca. Dano, itens, XP, memórias e missões não estão aqui: ficam com o Escrivão. As escritas vão direto ao Postgres; criar NPC e técnica nova são delegados (lane 4). As anotações (advance_time, set_scene, set_npc_active, set_rank, update_script, note_objective) respondem \"Anotado\" na hora e só rodam depois da narração.",
     quando: "Sempre que o Mestre pedir, em qualquer rodada.",
     custo: "Sem IA: só SQL (e embeddings ao gravar ou buscar memórias e histórico).",
   }),
   n("t_fx", X[4], 230, "code", "Efeitos persistidos", "narração e opções salvas", {
-    oque: "A narração e o bloco de opções são salvos e enviados ao jogador. Depois, antes do fim do turno: primeiro as anotações do Mestre (só SQL); então, em paralelo, a compactação (Cronista, se estourou o limite), cada map_brief (Topógrafo), o relógio seguido do Escrivão e o local seguido do elenco. Relógio: só se o Mestre não chamou advance_time, set_time nem train, o Jev estima o tempo que passou. Local e modo: se o Mestre não abriu cena nem trocou o local, o Jev julga numa chamada se o jogador mudou de lugar e que modo a narração mostra; mudou, o Cronista dá o nome e abre cena nova ali, já no modo novo; ficou, só o modo muda (se o Mestre não o trocou). Elenco: o Jev diz quem dos NPCs calados ainda está na cena. Por fim, o turno entra no histórico vetorial (search_history).",
+    oque: "A narração e o bloco de opções são salvos e enviados ao jogador. Depois, antes do fim do turno: primeiro as anotações do Mestre (só SQL); então, em paralelo, a compactação (Cronista, se estourou o limite), o relógio seguido do Escrivão e o local seguido do elenco. Relógio: só se o Mestre não chamou advance_time, set_time nem train, o Jev estima o tempo que passou. Local e modo: se o Mestre não abriu cena nem trocou o local, o Jev julga numa chamada se o jogador mudou de lugar e que modo a narração mostra; mudou, o Cronista dá o nome e abre cena nova ali, já no modo novo; ficou, só o modo muda (se o Mestre não o trocou). Elenco: o Jev diz quem dos NPCs calados ainda está na cena. Por fim, o turno entra no histórico vetorial (search_history).",
     quando: "Quando o Mestre responde só com texto, ou com texto e só anotações (ou estoura as rodadas).",
   }),
   n("t_chron", X[3], 230, "chron", "Cronista: compacta", "só se estourar o limite", {
@@ -254,7 +250,7 @@ const NODES: (FlowNode | LaneNode)[] = [
     custo: "Local (Docker). Nenhuma chamada paga; só os embeddings das memórias passam pelo OpenRouter.",
   }),
   n("or", X[5], -250, "infra", "OpenRouter e outras fontes", "toda IA passa por aqui", {
-    oque: "Todas as chamadas de IA (Jev, Mestre, Escrivão, Ações rápidas, NPC, Cronista, Roteirista, Ilustrador, Voz, Topógrafo e os criadores) saem pela fonte de modelos do agente: o OpenRouter (padrão) ou outra fonte cadastrada em Fontes de modelos (OpenAI, Anthropic, Gemini, OpenCode, outra API compatível com a da OpenAI ou o Login com ChatGPT). Cada chamada vira uma linha no histórico do agente: fonte, tokens, duração, custo, request e resposta. O Jev usa a Decisions API (probabilidades), a Voz o endpoint de fala (audio/speech) e os demais, chat completions (modelo que só gera imagem vai pelo endpoint de imagens).",
+    oque: "Todas as chamadas de IA (Jev, Mestre, Escrivão, Ações rápidas, NPC, Cronista, Roteirista, Ilustrador, Voz e os criadores) saem pela fonte de modelos do agente: o OpenRouter (padrão) ou outra fonte cadastrada em Fontes de modelos (OpenAI, Anthropic, Gemini, OpenCode, outra API compatível com a da OpenAI ou o Login com ChatGPT). Cada chamada vira uma linha no histórico do agente: fonte, tokens, duração, custo, request e resposta. O Jev usa a Decisions API (probabilidades), a Voz o endpoint de fala (audio/speech) e os demais, chat completions (modelo que só gera imagem vai pelo endpoint de imagens).",
     custo: "Você paga o preço do modelo escolhido em cada agente, direto à fonte. Só o OpenRouter informa o custo de cada chamada; das outras ficam os tokens.",
   }),
 
@@ -354,7 +350,7 @@ const NODES: (FlowNode | LaneNode)[] = [
     custo: "Grátis com o modelo padrão.",
   }),
   n("b_jobs", X[5], 1050, "code", "Tarefas em segundo plano", "indicador no cabeçalho", {
-    oque: "Perfis, retratos, lotes da biblioteca e mapas rodam fora do turno. O cabeçalho do jogo mostra o que está rodando (com progresso) e, quando termina, a tela recarrega e avisa. Duas tarefas iguais não rodam juntas.",
+    oque: "Perfis, retratos e lotes da biblioteca rodam fora do turno. O cabeçalho do jogo mostra o que está rodando (com progresso) e, quando termina, a tela recarrega e avisa. Duas tarefas iguais não rodam juntas.",
     fallback: "Se o servidor reinicia no meio, a tarefa vira erro depois de 15 min sem sinal.",
   }),
 
@@ -370,33 +366,6 @@ const NODES: (FlowNode | LaneNode)[] = [
   n("b_new", X[2], 1210, "player", "Criar campanha", "kit inicial e extras", {
     oque: "Sem IA: o kit do rank inicial (startingAbilities) e as técnicas extras da tela entram na biblioteca do mundo (a que já existe pelo nome é reaproveitada) e a ficha do jogador recebe as refs com o domínio. Mecânica sem world ganha o slug do nome, fixo desde a criação.",
     quando: "Ao criar a campanha.",
-  }),
-
-  n("m_gm", X[0], 1330, "gm", "Mestre: map_brief", "o que mudou no espaço", {
-    oque: "No lugar das ferramentas do mapa, o Mestre manda uma frase: começo e movimentos de uma luta (quem está onde, distância, cobertura), um lugar de que o jogador ouviu falar, um lugar que merece mapa 3D. Não espera o resultado para narrar. Os lugares visitados entram no mapa do mundo sozinhos pelo set_scene.",
-  }),
-  n("m_surv", X[1], 1330, "surv", "Topógrafo", "brief → ferramentas do mapa", {
-    oque: "Lê o brief com o estado do mapa (local, rotas, palco, mapas 3D, quem está em cena) e chama as ferramentas: set_stage (zonas e posições do palco), update_map (lugar conhecido, direção, distância, rota) e local_map (pede ao Cartógrafo gerar ou editar o mapa 3D de um lugar; não regera um mapa que já existe, e a iniciativa pode ser desligada nas Configurações). Os pontos de interesse do mapa 3D viram as zonas do palco.",
-    quando: "Quando o Mestre manda um map_brief (em batalha, no começo e a cada movimento relevante): é uma anotação, roda depois da narração, em paralelo com o Escrivão, já no local que o set_scene marcou.",
-    freq: "1 chamada por brief; poucas por campanha fora de batalha.",
-    custo: "Modelo barato e rápido: ~3 mil tokens de entrada, cerca de US$ 0,002 e poucos segundos por brief. Tira ~1,6 mil tokens de cada chamada do Mestre.",
-    fallback: "Erro em uma ferramenta não derruba o turno; o palco e o mapa ficam como estavam.",
-  }),
-  n("m_btn", X[2], 1450, "player", "Botões da aba Mapa", "gerar, regerar, editar, remover", {
-    oque: "O jogador pode pedir o mapa de qualquer lugar por onde passou, regerar, editar com uma instrução ou remover.",
-  }),
-  n("m_carto", X[2], 1330, "carto", "Cartógrafo", "mapa 3D de um lugar", {
-    oque: "Compõe a maquete 3D de um lugar a partir da obra, da narração e da cena: relevo, contornos extrudados, caminhos e rios, espalhamento de árvores e casas, materiais, luz do horário e pontos de interesse. Devolve uma descrição declarativa, nunca código.",
-    quando: "Quando o Mestre ou o jogador pede gerar ou editar o mapa de um lugar.",
-    freq: "1 chamada por geração ou edição; um mapa desenhado por vez.",
-    custo: "Opus 5.5 com raciocínio médio: o mais caro dos criadores. Cerca de US$ 0,14 e 1 min por mapa novo; US$ 0,18 por edição (recebe o mapa atual compacto).",
-    fallback: "A tarefa vira erro com aviso; o mapa anterior (se houver) continua.",
-  }),
-  n("m_spec", X[3], 1330, "code", "Mapa validado", "limites, cores, contagens", {
-    oque: "Sem IA: o código valida e limita o que o Cartógrafo devolveu (quantidades, faixas, cores) e guarda o mapa ligado ao lugar do mapa do mundo.",
-  }),
-  n("m_view", X[4], 1330, "code", "Aba Mapa", "o da cena em destaque", {
-    oque: "Mostra em destaque o mapa 3D do lugar da cena atual (girar, zoom, pontos clicáveis) e a galeria dos mapas dos outros lugares por onde o jogador passou. O diorama do mundo continua na visão Mundo.",
   }),
 ];
 
@@ -491,11 +460,6 @@ e("t_jev", "st", "o_gm", "tb", "pergunta sobre o registro", { dashed: true }),
   e("b_player", "sl", "b_abil", "tr", "N com foco"),
   e("b_player", "sr", "b_items", "tl", "N com foco"),
   e("b_items", "sb", "b_lib", "tb2"),
-  e("m_gm", "sr", "m_surv", "tl", "brief"),
-  e("m_surv", "sr", "m_carto", "tl", "local_map"),
-  e("m_btn", "st", "m_carto", "tb", "botões"),
-  e("m_carto", "sr", "m_spec", "tl", "JSON"),
-  e("m_spec", "sr", "m_view", "tl"),
 ];
 
 // ---------- componentes dos nós ----------

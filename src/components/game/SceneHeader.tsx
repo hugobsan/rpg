@@ -56,12 +56,11 @@ function Jobs({ jobs }: { jobs: Job[] }) {
 }
 
 /** Cabeçalho da cena: modo, título, local, relógio com o céu do período e as ações da cena. */
-export default function SceneHeader({ scene, clock, image, onOoc, onMap, onTable, tableHint, jobs = [] }: {
+export default function SceneHeader({ scene, clock, image, onOoc, onTable, tableHint, jobs = [] }: {
   scene: Scene;
   clock: number | null;
   image?: { busy: boolean; onClick: () => void }; // só com a geração de imagem ligada
   onOoc: () => void;
-  onMap?: () => void;
   onTable?: () => void;
   tableHint?: string; // dificuldade atual, quando foge do normal
   jobs?: Job[]; // tarefas em segundo plano rodando
@@ -96,7 +95,6 @@ export default function SceneHeader({ scene, clock, image, onOoc, onMap, onTable
 
       <nav className={s.actions} aria-label="Ações da cena">
         {image && <Action icon="landscape" label="Ambiente" onClick={image.onClick} busy={image.busy} />}
-        {onMap && <Action icon="map" label="Mapa" onClick={onMap} className={s.wide} />}
         {onTable && (
           <button className={`${s.action} ${s.wide}`} onClick={onTable} data-tip="Mesa: dificuldade e dados" data-tip-pos="below" aria-label="Mesa: dificuldade e dados">
             <Icon name="sliders" />

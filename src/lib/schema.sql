@@ -193,13 +193,13 @@ CREATE INDEX IF NOT EXISTS scene_images_campaign_idx ON scene_images (campaign_i
 CREATE INDEX IF NOT EXISTS api_logs_campaign_idx ON api_logs (campaign_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS api_logs_created_idx ON api_logs (created_at DESC);
 
--- tarefas em segundo plano (perfis de NPC, retratos, mapas 3D, biblioteca): a tela de jogo acompanha por aqui (lib/jobs.ts)
+-- tarefas em segundo plano (perfis de NPC, retratos, biblioteca): a tela de jogo acompanha por aqui (lib/jobs.ts)
 CREATE TABLE IF NOT EXISTS jobs (
   id BIGSERIAL PRIMARY KEY,
   campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL,   -- character | portrait | map | library
-  target TEXT,          -- o alvo (id do personagem, do local...): duas iguais não rodam juntas
-  label TEXT NOT NULL,  -- o que o jogador lê ("Cartógrafo desenhando a Vila da Folha")
+  kind TEXT NOT NULL,   -- character | portrait | library
+  target TEXT,          -- o alvo (id do personagem...): duas iguais não rodam juntas
+  label TEXT NOT NULL,  -- o que o jogador lê ("Ilustrador pintando o retrato de Naruto")
   status TEXT NOT NULL DEFAULT 'running', -- running | done | error
   progress JSONB,       -- { done, total }
   error TEXT,
@@ -258,18 +258,8 @@ CREATE TABLE IF NOT EXISTS portraits (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- mapas 3D dos locais (Cartógrafo): spec declarativo (lib/mapSpec.ts) ligado a um lugar de campaigns.state.map;
--- o nome resolve quando o id do lugar muda (junção, gerar novamente). Fora do state, que é lido em todo turno.
-CREATE TABLE IF NOT EXISTS maps (
-  id BIGSERIAL PRIMARY KEY,
-  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-  place_id TEXT NOT NULL,   -- id do lugar no mapa do mundo (l1, l2...)
-  place_name TEXT NOT NULL,
-  spec JSONB NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS maps_campaign_idx ON maps (campaign_id, updated_at DESC);
+-- o mapa saiu do jogo (Cartógrafo e Topógrafo aposentados): a tabela dos mapas 3D dos locais vai junto
+DROP TABLE IF EXISTS maps;
 
 -- 4ª camada da memória: o chat inteiro em trechos com embedding (coluna em db.ts), para o Mestre consultar com
 -- search_history. Turno = ação do jogador + narração (message_id = narração); conversa com NPC = falas do jogador +

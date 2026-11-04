@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Job } from "@/lib/types";
 
 /**
- * Tarefas em segundo plano da campanha (retratos, mapas 3D, biblioteca, perfis de NPC).
+ * Tarefas em segundo plano da campanha (retratos, biblioteca, perfis de NPC).
  * Parte de `fromState` (o GET da campanha, relido depois de cada turno ou ação) e, enquanto
  * alguma roda, consulta /jobs a cada 3 s. Quando uma termina, chama onFinish (a tela recarrega e avisa).
  */

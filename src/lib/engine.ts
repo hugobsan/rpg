@@ -25,7 +25,6 @@ import { attributeCap, attributePoints, controlLabel, costMultOf, powerLevel, pr
 import { formatClock, getClock, period } from "./clock";
 import { hydrateSheets } from "./library";
 import { getObjectives, objectivesPromptBlock, objectiveXp } from "./objectives";
-import { getStage, loadMap, mapPromptBlock, normName } from "./map";
 import { getTable, modeHint, restRuleText, tablePromptBlock, xpRuleText } from "./table";
 import { regenNotes, takeSnapshot } from "./turnSnapshot";
 import { formatMoney } from "./money";
@@ -51,6 +50,10 @@ import {
   Scene,
   TurnEvent,
 } from "./types";
+
+// sem acento, minúsculas, só letras e números separados por espaço: compara nomes ditos na ação e na narração
+const normName = (s: string) =>
+  s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 // ---------- carregamento de estado ----------
 
@@ -234,8 +237,6 @@ async function buildGmSystem(
       (o) => objectiveXp(o, campaign.ruleset, getTable(campaign.state), player?.sheet.xp ?? 0),
       campaign.ruleset.currency && ((n) => formatMoney(n, campaign.ruleset.currency!))
     ),
-    // só local, rotas e palco: o resto do mapa (mapas 3D, locais distantes, regras) vai ao Topógrafo pelo map_brief
-    mapPromptBlock(await loadMap(campaign.id, campaign.state), getStage(scene.state), scene.mode),
     player
       ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset, true, focus)}`
       : "",
@@ -714,15 +715,13 @@ export async function runTurn(
   const applyNote = (call: ToolCall) =>
     executeGmTool(call.function.name, argsOf(call), toolCtx).catch((e) => console.warn(`[anotação] ${call.function.name}:`, e));
   for (const call of deferred) {
-    if (call.function.name === "note_objective" || call.function.name === "map_brief") continue; // Escrivão / em paralelo abaixo
+    if (call.function.name === "note_objective") continue; // Escrivão, abaixo
     await applyNote(call);
   }
   scene = toolCtx.scene;
   const briefs = deferred.filter((c) => c.function.name === "note_objective").map((c) => String(argsOf(c).brief || "")).filter(Boolean);
   await Promise.all([
     maybeCompact(campaignId, scene, emit).catch(() => {}),
-    // briefs de mapa chamam o Topógrafo (um modelo): correm junto, já no local que o set_scene marcou
-    ...deferred.filter((c) => c.function.name === "map_brief").map(applyNote),
     // Escrivão depois do relógio: prazo relativo de missão conta da hora nova e as gravações de objetivos não se cruzam
     (timeMoved ? Promise.resolve() : fallbackClock(campaignId, campaign, scene, playerInput, narration, emit).catch(() => {}))
       .then(() => runScribe(campaignId, toolCtx, playerInput, narration, done, briefs, msgId))
@@ -797,7 +796,7 @@ export async function fallbackCast(
 /**
  * O Mestre não abriu cena nem trocou o local no turno (quase nunca abre): o Jev julga, numa chamada, se a narração
  * levou o jogador a outro lugar e que modo ela mostra. Mudou de lugar: o Cronista dá o nome e o set_scene abre cena
- * nova ali, já no modo novo (o mapa registra pelo mesmo gancho). Ficou: só o modo muda, se o Mestre não o trocou.
+ * nova ali, já no modo novo. Ficou: só o modo muda, se o Mestre não o trocou.
  * Falhou = nada muda.
  */
 export async function fallbackPlace(campaignId: string, ctx: ToolContext, playerInput: string, narration: string): Promise<void> {
@@ -814,20 +813,24 @@ export async function fallbackPlace(campaignId: string, ctx: ToolContext, player
   else if (mode) await executeGmTool("set_scene", { mode }, ctx);
 }
 
-/** Cronista: nome do lugar onde o jogador está no fim da narração (reaproveita os nomes do mapa); null = não sabe. */
+/** Cronista: nome do lugar onde o jogador está no fim da narração (reaproveita os locais das cenas); null = não sabe. */
 async function namePlace(campaignId: string, ctx: ToolContext, narration: string): Promise<string | null> {
-  const [chronicler, map, [player]] = await Promise.all([
+  const [chronicler, places, [player]] = await Promise.all([
     getAgent("chronicler"),
-    loadMap(campaignId, ctx.campaign.state),
+    // os 40 locais de cena mais recentes, sem repetir; a cena de abertura nasce com o ponto de partida, que não é um lugar
+    q<{ location: string }>(
+      `SELECT location FROM scenes WHERE campaign_id = $1 AND location NOT IN ('', $2) GROUP BY location ORDER BY max(seq) DESC LIMIT 40`,
+      [campaignId, String(ctx.campaign.state.startingPoint ?? "").slice(0, 120)]
+    ),
     q<{ name: string }>(`SELECT name FROM characters WHERE campaign_id = $1 AND kind = 'player' LIMIT 1`, [campaignId]),
   ]);
-  const known = map.places.map((p) => p.name).slice(-40);
+  const known = places.map((p) => p.location).reverse();
   const r = await chat({
     model: chronicler.model,
     messages: [
       {
         role: "system",
-        content: `Você dá nome ao lugar onde o personagem do jogador está no FIM da narração de RPG, para o mapa da campanha. Responda só o nome, do mais específico ao mais geral separado por vírgula (ex.: "Casa do Ren, Vila do Norte" ou "Loja de armas, Rua principal, Porto Velho"), sem aspas nem ponto final. Se for um lugar já conhecido, use o nome dele exatamente. Se a narração não disser onde ele está, responda só: ?`,
+        content: `Você dá nome ao lugar onde o personagem do jogador está no FIM da narração de RPG. Responda só o nome, do mais específico ao mais geral separado por vírgula (ex.: "Casa do Ren, Vila do Norte" ou "Loja de armas, Rua principal, Porto Velho"), sem aspas nem ponto final. Se for um lugar já conhecido, use o nome dele exatamente. Se a narração não disser onde ele está, responda só: ?`,
       },
       {
         role: "user",

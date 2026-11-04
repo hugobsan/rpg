@@ -88,14 +88,14 @@ async function main() {
   assert.equal(c.url, "https://api.anthropic.com/v1/chat/completions");
   assert.ok(!("temperature" in c.body) && !("top_p" in c.body));
   assert.equal(sourceView(anthropic).kind, "anthropic");
-  // Cartógrafo (raciocínio + ferramentas) na Anthropic: nada que dê 400 (temperature, top_p, reasoning)
-  const cartographer: ChatOptions = { ...full, webSearch: false, modalities: undefined, onDelta: undefined, temperature: 0.5, model: "claude-opus-5-5", agentId: "cartographer" };
-  assert.deepEqual(Object.keys(chatRequest(cartographer, anthropic).body).sort(), ["max_tokens", "messages", "model", "tools"]);
+  // Árbitro (raciocínio + ferramentas) na Anthropic: nada que dê 400 (temperature, top_p, reasoning)
+  const referee: ChatOptions = { ...full, webSearch: false, modalities: undefined, onDelta: undefined, temperature: 0.5, model: "claude-opus-5-5", agentId: "referee" };
+  assert.deepEqual(Object.keys(chatRequest(referee, anthropic).body).sort(), ["max_tokens", "messages", "model", "tools"]);
   // na OpenAI o raciocínio vira reasoning_effort
-  const oa = chatRequest(cartographer, { ...anthropic, id: "openai", kind: "openai", url: "https://api.openai.com/v1" }).body;
+  const oa = chatRequest(referee, { ...anthropic, id: "openai", kind: "openai", url: "https://api.openai.com/v1" }).body;
   assert.equal(oa.reasoning_effort, "low");
   assert.ok(!("reasoning" in oa));
-  assert.ok(!("reasoning_effort" in chatRequest(cartographer, POD).body), "personalizada não recebe reasoning_effort");
+  assert.ok(!("reasoning_effort" in chatRequest(referee, POD).body), "personalizada não recebe reasoning_effort");
   for (const p of SOURCE_PRESETS) assert.ok(/^https:\/\/[^/]+\/.*[^/]$/.test(p.url), `URL base de ${p.name} sem barra no fim`);
 
   // 3. chave mascarada

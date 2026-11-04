@@ -14,12 +14,12 @@ async function main() {
   try {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    const a = await startJob(id, "map", "l1", "Mapa A", async (progress) => {
+    const a = await startJob(id, "library", "ability:fogo", "Lote A", async (progress) => {
       await progress(1, 3);
       await gate;
     });
     assert.equal(a.started, true);
-    const dup = await startJob(id, "map", "l1", "Mapa A de novo", async () => {});
+    const dup = await startJob(id, "library", "ability:fogo", "Lote A de novo", async () => {});
     assert.deepEqual(dup, { id: a.id, started: false }, "mesma tarefa rodando não começa outra");
     await tick();
     let jobs = await listJobs(id);
@@ -41,7 +41,7 @@ async function main() {
     await q(`INSERT INTO jobs (campaign_id, kind, label, updated_at) VALUES ($1, 'library', 'Velha', now() - interval '20 minutes')`, [id]);
     const old = (await listJobs(id)).find((j) => j.label === "Velha");
     assert.equal(old?.status, "error");
-    const again = await startJob(id, "map", "l1", "Mapa A outra vez", async () => {});
+    const again = await startJob(id, "library", "ability:fogo", "Lote A outra vez", async () => {});
     assert.equal(again.started, true, "terminada não bloqueia uma nova");
     console.log("jobs-check: ok");
   } finally {
