@@ -285,6 +285,10 @@ async function main() {
     { type: "response.output_item.done", item: fcItem },
     { type: "response.completed", response: { id: "resp_1", model: "gpt-6.1-sol", status: "completed", usage: { input_tokens: 120, output_tokens: 30 } } },
   ];
+  // tokens de raciocínio e o esforço que a OpenAI devolve vão para o log
+  const thought = await readResponses(sse([{ type: "response.completed", response: { reasoning: { effort: "medium" }, usage: { input_tokens: 9, output_tokens: 50, output_tokens_details: { reasoning_tokens: 40 } } } }]), () => {});
+  assert.equal(thought.reasoning_effort, "medium");
+  assert.deepEqual((thought.usage as { completion_tokens_details: unknown }).completion_tokens_details, { reasoning_tokens: 40 });
   for (const size of [1, 7, 100, 1e6]) {
     const deltas: string[] = [];
     const out = (await readResponses(sse(textEvents, size), (t) => deltas.push(t))) as {
@@ -344,6 +348,7 @@ async function main() {
   assert.deepEqual(sent.reasoning, { effort: "low" }, "esforço do agente fica");
   await chat({ ...opts, reasoning: undefined, messages: history.slice(0, 2) });
   assert.deepEqual(sent.reasoning, { effort: "medium" }, "GPT sem esforço vai com médio");
+  assert.deepEqual(JSON.parse(logs[logs.length - 1][4] as string).reasoning, { effort: "medium" }, "esforço enviado no log");
   // prompt_cache_key recusado: repete uma vez sem ele e não manda mais nessa fonte e modelo
   const bodies: Record<string, unknown>[] = [];
   onResponses = (b) => (bodies.push(b), "prompt_cache_key" in b

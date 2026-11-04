@@ -365,6 +365,8 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       cache: cache || undefined,
       temperature: body.temperature,
       max_tokens: body.max_tokens,
+      // o esforço que saiu de fato (o que a fonte não aceita fica de fora; a API nativa da Anthropic recebe o do agente)
+      reasoning: body.reasoning ?? body.reasoning_effort ?? (native ? opts.reasoning : undefined),
       tools: opts.tools?.map((t) => t.function.name),
       messages: opts.messages.map((m) => ({
         role: m.role,
