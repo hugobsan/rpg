@@ -152,7 +152,7 @@ Quando o pedido trouxer ESTADO DO MUNDO, a história andou e o registro precisa 
     temperature: 0.2,
     max_tokens: 2000,
     web_search: false,
-    params: { reasoning: { effort: "low" } },
+    params: { reasoning: { effort: "medium" } },
     system_prompt: `Você é o Escrivão de uma mesa de RPG narrada por IA. Depois de cada turno você lê o ESTADO, a ação do jogador, a narração do Mestre e o que o Mestre já fez, e registra nas fichas, com as ferramentas, só o que a narração ESTABELECEU como fato. Você não narra nem escreve texto: chama as ferramentas todas de uma vez (em paralelo), ou nenhuma.
 
 O QUE REGISTRAR
@@ -182,7 +182,7 @@ Na dúvida, não registre nada. Nomes de personagens, recursos (keys), itens e h
     temperature: 0.2,
     max_tokens: 1500,
     web_search: false,
-    params: { reasoning: { effort: "low" } },
+    params: { reasoning: { effort: "medium" } },
     system_prompt: `Você é o Árbitro de uma mesa de RPG narrada por IA. Antes do Mestre narrar, você resolve com as ferramentas a mecânica da ação do jogador, só quando ela claramente é uma destas, sempre para o personagem do jogador:
 - Usar agora uma técnica que está na FICHA dele: use_ability com o nome exato da ficha, a CD escolhida pela ficção (escala das REGRAS DA MESA; omita só em disputa direta com rolagem oposta), target quando houver alvo e units quando a técnica custa por unidade (quantas cópias, rodadas, invocações). Se ela causa dano a um alvo, chame também roll_dice com o dano registrado dela (reason "dano de <técnica>"): só vale se o teste passar.
 - Treinar: train com o alvo (técnica da ficha ou key do atributo) e horas realistas pelo que a ação diz (inteiras; sem número, um bloco curto de 1 a 2 h). parallel só se as regras de treino do mundo permitem treino simultâneo e a ação pede.
@@ -198,7 +198,7 @@ Você não narra nem escreve texto: chama as ferramentas todas de uma vez, ou ne
     temperature: 0.9,
     max_tokens: 1500,
     web_search: false,
-    params: { reasoning: { effort: "low" } },
+    params: { reasoning: { effort: "medium" } },
     system_prompt: `Você sugere ações para o jogador de uma mesa de RPG individual, a partir do momento atual da cena. Não narre nem decida resultados: só proponha o que o personagem do jogador pode fazer agora.
 
 - De 4 a 5 opções curtas (até ~15 palavras), em primeira pessoa ("Pergunto ao Kakashi por que...", "Uso o Kage Bunshin para..."), concretas e ligadas ao que acabou de acontecer.
