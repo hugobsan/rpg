@@ -2,7 +2,11 @@
 """Gera os arquivos de referência de cânone (Naruto) a partir da Narutopedia.
 
 Uso: python3 scripts/narutopedia.py [arco ...]   (sem argumento: todos os arcos)
-Arcos: pais-das-ondas, exame-chunin, invasao-de-konoha, busca-por-tsunade, fuga-de-sasuke
+Arcos da Parte I (configurados no fim deste arquivo): pais-das-ondas, exame-chunin,
+  invasao-de-konoha, busca-por-tsunade, fuga-de-sasuke
+Arcos da Parte II (Shippūden): um arquivo por arco em scripts/naruto_arcs/NN_chave.py
+  (ex.: 06_kazekage-rescue.py -> arco "kazekage-rescue", saída 06-kazekage-rescue.md).
+  Como criar um arco novo: scripts/naruto_arcs/README.md. Arcos hoje: ver essa pasta.
 Saída: references/naruto/<arco>.md. Cache bruto em references/.cache/ (fora do git).
 Conteúdo da Narutopedia (naruto.fandom.com), CC BY-SA 3.0. Só stdlib.
 """
@@ -14,6 +18,8 @@ import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # para importar naruto_arcs
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "references" / ".cache"
@@ -265,13 +271,15 @@ def infobox_rows(title):
     return rows
 
 
-def part1_value(vals):
-    """De ['Part I:', '12', 'Part II:', '17'] pega só o valor da Parte I."""
-    if "Part I:" in vals:
-        i = vals.index("Part I:")
-        if i + 1 < len(vals) and not vals[i + 1].startswith("Part"):
+def part_value(vals, part="Part I"):
+    """De ['Part I:', '12', 'Part II:', '17'] pega só o valor da parte pedida."""
+    if part + ":" in vals:
+        i = vals.index(part + ":")
+        if i + 1 < len(vals) and not vals[i + 1].startswith("Part") and not vals[i + 1].endswith(":"):
             return vals[i + 1]
         return ""
+    if part != "Part I":  # formato 'Part II: 15–17' numa célula só (na Parte I fica como sempre foi: vazio)
+        return next((v.split(":", 1)[1].strip() for v in vals if v.startswith(part + ":")), "")
     return ", ".join(v for v in vals if not v.startswith("Part"))
 
 
@@ -280,17 +288,18 @@ def character_block(name, arc):
     if wt is None:
         return None
     bad = arc["bad"]
+    part = arc.get("part", "Part I")
     rows = infobox_rows(name)
     ficha = []
-    for label, key in [("Sex", "Sex"), ("Birthdate", "Birthdate"), ("Age", "Age (Part I)"),
-                       ("Affiliation", "Village/affiliation"), ("Ninja Rank", "Ninja rank (Part I)")]:
+    for label, key in [("Sex", "Sex"), ("Birthdate", "Birthdate"), ("Age", f"Age ({part})"),
+                       ("Affiliation", "Village/affiliation"), ("Ninja Rank", f"Ninja rank ({part})")]:
         if label in rows:
             v = rows[label]
-            val = part1_value(v) if label in ("Age", "Ninja Rank") else ", ".join(x for x in v if not x.startswith("Part"))
+            val = part_value(v, part) if label in ("Age", "Ninja Rank") else ", ".join(x for x in v if not x.startswith("Part"))
             items = [x.strip() for x in re.split(r"\s*,\s*", val) if x.strip()]
             items = [x for x in items if not re.search(bad, x, re.I)]
             if label == "Affiliation":  # só vila/país/clã; times e grupos posteriores vazam spoiler
-                items = [x for x in items if re.search(r"gakure|Land of|Konoha|Kiri|Suna|Oto|Waves|Clan|Company|Yuki|Demon", x)]
+                items = [x for x in items if re.search(arc.get("affil", r"gakure|Land of|Konoha|Kiri|Suna|Oto|Waves|Clan|Company|Yuki|Demon"), x)]
             if items:
                 ficha.append(f"- {key}: {', '.join(items)}")
     pname = clean(name)
@@ -305,14 +314,14 @@ def character_block(name, arc):
     ab = sentence_filter(first_paras(ab, 1), bad, strict=True)
     if ab:
         out.append(f"**{pname} - Habilidades (visão geral, até este ponto)**\n\n{shorten(ab, 1500)}\n")
-    # Parte I: só as subseções deste arco
+    # só as subseções deste arco dentro da Parte (I ou II) do arco
     _, secs = sections(wt)
-    in_p1 = False
+    in_part = False
     for lvl, t, body in secs:
         if lvl == 2:
-            in_p1 = t.lower() == "part i"
+            in_part = t.lower() == part.lower()
             continue
-        if in_p1 and lvl == 3 and t.lower() in [x.lower() for x in arc["part1_sections"]]:
+        if in_part and lvl == 3 and t.lower() in [x.lower() for x in arc["part_sections"]]:
             txt = sentence_filter(clean(body), bad)
             if txt:
                 out.append(f"**{pname} - papel no arco {arc['name']}**\n\n{shorten(txt, 3500)}\n")
@@ -412,7 +421,7 @@ def build(key):
         pass
     out = []
     out.append(f"# {arc['title']}\n")
-    out.append(f"- Episódios (anime): {arc['eps'][0]}-{arc['eps'][1]} (só canônicos; fillers ignorados)")
+    out.append(f"- Episódios (anime{arc.get('series', '')}): {arc['eps'][0]}-{arc['eps'][1]} (só canônicos; fillers ignorados)")
     out.append(f"- Capítulos (mangá): {arc['chapters']}")
     srcs = [BASE + urllib.parse.quote(arc["arc_page"].replace(" ", "_"))]
     out.append("- Fonte: Narutopedia (páginas do arco, dos episódios, dos personagens, das técnicas e dos lugares). Página do arco: " + srcs[0])
@@ -423,10 +432,11 @@ def build(key):
     wt = fetch(arc["arc_page"], "wikitext")
     intro = lead_text(wt)
     out.append(f"## Resumo do arco: {arc['name']}\n")
+    text_bad = arc.get("text_bad", ARC_TEXT_BAD)
     intro = drop_sentences(intro, r"followed by")
-    out.append(drop_sentences(intro, ARC_TEXT_BAD, "intro") + "\n")
+    out.append(drop_sentences(intro, text_bad, "intro") + "\n")
     for t, body in subsections(wt, "Summary"):
-        out.append((f"### {t}\n\n" if t else "") + drop_sentences(body, ARC_TEXT_BAD, "summary") + "\n")
+        out.append((f"### {t}\n\n" if t else "") + drop_sentences(body, text_bad, "summary") + "\n")
 
     # episódios
     out.append("## Sinopse dos episódios (ordem cronológica)\n")
@@ -457,9 +467,9 @@ def build(key):
         chap = clean(m.group(1)) if m else ""
         m = re.search(r"\|japanese airdate=([^\n|]*)", wt_e)
         air = clean(m.group(1)) if m else ""
-        out.append(f"### Episódio {num}: {title.replace('_', ' ')}\n")
+        out.append(f"### Episódio {num}: {title.replace('_', ' ').removesuffix(' (episode)')}\n")
         out.append(f"(arco {arc['name']}" + (f"; capítulo(s) do mangá: {chap}" if chap else "") + (f"; exibido no Japão em {air}" if air else "") + ")\n")
-        out.append(drop_sentences(txt, ARC_TEXT_BAD, f"ep{num}") + "\n")
+        out.append(drop_sentences(txt, text_bad, f"ep{num}") + "\n")
         used.append(num)
         ep_pages.append(BASE + urllib.parse.quote(title.replace(" ", "_")))
 
@@ -551,7 +561,7 @@ ARCS = {
         arc_page="Prologue — Land of Waves",
         eps=(1, 19),
         chapters="1-33",
-        part1_sections=["Prologue — Land of Waves"],
+        part_sections=["Prologue — Land of Waves"],
         bad=bad(ARC1),
         characters=_CHARS_COMMON + ["Iruka Umino", "Hiruzen Sarutobi", "Mizuki", "Konohamaru Sarutobi",
                     "Zabuza Momochi", "Haku", "Gatō", "Tazuna", "Inari", "Tsunami", "Demon Brothers"],
@@ -571,7 +581,7 @@ ARCS = {
         arc_page="Chūnin Exams (Arc)",
         eps=(20, 67),
         chapters="34-115 (as sinopses dos episódios cobrem até o episódio 67; o fim das provas e a invasão estão no arquivo 03)",
-        part1_sections=["Chūnin Exams"],
+        part_sections=["Chūnin Exams"],
         bad=bad(ARC2),
         characters=_CHARS_COMMON + ["Iruka Umino", "Hiruzen Sarutobi", "Orochimaru", "Kabuto Yakushi", "Anko Mitarashi",
                     "Ibiki Morino", "Hayate Gekkō", "Gaara", "Temari", "Kankurō", "Baki", "Rock Lee", "Neji Hyūga",
@@ -598,7 +608,7 @@ ARCS = {
         arc_page="Konoha Crush (Arc)",
         eps=(68, 80),
         chapters="116-138",
-        part1_sections=["Konoha Crush"],
+        part_sections=["Konoha Crush"],
         bad=bad(ARC3),
         characters=_CHARS_COMMON + ["Hiruzen Sarutobi", "Orochimaru", "Kabuto Yakushi", "Gaara", "Temari", "Kankurō",
                     "Baki", "Rasa", "Jiraiya", "Anko Mitarashi", "Shikamaru Nara", "Shino Aburame", "Asuma Sarutobi",
@@ -622,7 +632,7 @@ ARCS = {
         arc_page="Search for Tsunade",
         eps=(81, 100),
         chapters="139-171",
-        part1_sections=["Search for Tsunade"],
+        part_sections=["Search for Tsunade"],
         bad=bad(ARC4),
         characters=_CHARS_COMMON + ["Jiraiya", "Tsunade", "Shizune", "Tonton", "Orochimaru", "Kabuto Yakushi",
                     "Itachi Uchiha", "Kisame Hoshigaki", "Might Guy", "Rock Lee", "Asuma Sarutobi", "Kurenai Yūhi",
@@ -646,7 +656,7 @@ ARCS = {
         arc_page="Sasuke Recovery Mission",
         eps=(107, 135),
         chapters="172-238 (episódios 107-135; os episódios 136 em diante são filler e ficaram de fora)",
-        part1_sections=["Sasuke Recovery Mission"],
+        part_sections=["Sasuke Recovery Mission"],
         bad=bad(ARC5),
         characters=_CHARS_COMMON + ["Shikamaru Nara", "Neji Hyūga", "Chōji Akimichi", "Kiba Inuzuka", "Rock Lee",
                     "Gaara", "Temari", "Kankurō", "Might Guy", "Tsunade", "Shizune", "Jiraiya", "Orochimaru",
@@ -667,6 +677,17 @@ ARCS = {
     ),
 }
 
+
+def load_part2():
+    """Arcos da Parte II: scripts/naruto_arcs/NN_chave.py com ARC = dict(...). Chave e arquivo vêm do nome."""
+    import importlib
+    for f in sorted((Path(__file__).resolve().parent / "naruto_arcs").glob("[0-9][0-9]_*.py")):
+        nn, key = f.stem.split("_", 1)
+        arc = importlib.import_module("naruto_arcs." + f.stem).ARC
+        ARCS[key] = dict(arc, file=f"{nn}-{key}.md")
+
+
+load_part2()
 
 if __name__ == "__main__":
     keys = sys.argv[1:] or list(ARCS)
