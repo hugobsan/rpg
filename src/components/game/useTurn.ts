@@ -57,7 +57,8 @@ import { diceText } from "../DiceRoller";
  * ooc: a ação era pergunta ou reclamação sobre o registro e foi respondida na conversa fora do jogo (gm_notes),
  * sem turno. O hook tira a ação do chat e devolve as opções de antes; a tela abre a conversa no onEvent.
  * npc_talk: idem, a ação era fala só com um NPC em cena e virou a 1ª mensagem da conversa particular com ele (a tela abre
- * o modal). talked(nome): a linha discreta da conversa encerrada (mensagem 'talk', um chip no feed).
+ * o modal). talked(nome, fala): a linha discreta da conversa encerrada (mensagem 'talk', um chip no feed) e, se a conversa
+ * nasceu na campanha, a fala de encerramento do NPC logo depois.
  */
 
 export interface FeedItem {
@@ -78,9 +79,9 @@ const IMMEDIATE = new Set(["status", "scene", "state", "error", "done"]);
 const toFeed = (messages: ChatLine[], scribe = false): FeedItem[] => {
   const last = scribe ? messages.findLast((m) => m.role === "gm") : undefined;
   return messages.flatMap((m): FeedItem[] => [
-    m.role === "talk"
-      ? { key: `m${m.id}`, kind: "chip", name: "npc_talk", content: m.content } // conversa particular encerrada
-      : { key: `m${m.id}`, kind: m.role === "player" ? "player" : "gm", content: m.content },
+    ...(m.role === "talk" // conversa particular encerrada: o chip e a fala de encerramento do NPC
+      ? talkItems(`m${m.id}`, m.content, m.speaker, m.meta.farewell)
+      : [{ key: `m${m.id}`, kind: m.role === "player" ? "player" : "gm", content: m.content } as FeedItem]),
     ...(m === last ? m.meta.scribe ?? [] : [])
       .map((e, index) => ({ e, index }))
       .filter(({ e }) => e.undo || e.summary !== e.tool)
@@ -90,6 +91,12 @@ const toFeed = (messages: ChatLine[], scribe = false): FeedItem[] => {
       })),
   ]);
 };
+
+// fala de encerramento: linha do Mestre com name (não conta como narração para o desfazer) e chave sem "m" (não é mensagem salva)
+const talkItems = (key: string, content: string, npc?: string | null, farewell?: string): FeedItem[] => [
+  { key, kind: "chip", name: "npc_talk", content },
+  ...(farewell && npc ? [{ key: `f${key}`, kind: "gm" as const, name: "npc_talk", content: `**${npc}:** ${farewell}` }] : []),
+];
 
 // o feed guarda mensagens salvas com chave "m<id>"; os eventos ao vivo do turno usam "k<n>"
 const savedId = (i: FeedItem) => (i.key[0] === "m" && i.kind !== "chip" ? Number(i.key.slice(1)) : null);
@@ -427,7 +434,8 @@ export function useTurn(
     return true;
   };
 
-  const talked = (name: string) => setFeed((f) => [...f, { key: nextKey(), kind: "chip", name: "npc_talk", content: `Conversa particular com ${name}` }]);
+  const talked = (name: string, farewell?: string) =>
+    setFeed((f) => [...f, ...talkItems(nextKey(), `Conversa particular com ${name}`, name, farewell)]);
 
   return {
     state, setState, reload, error, setError, talked,

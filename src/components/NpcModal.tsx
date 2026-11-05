@@ -94,7 +94,8 @@ export default function NpcModal({
   // conversa que começou no chat da campanha (evento npc_talk): abre nela, já com as falas
   session?: { id: string; messages: ChatMsg[] };
   onToggleActive: (npc: Character) => void; // tirar/trazer da cena; quem chama fecha o modal
-  onClose: (saved: boolean) => void; // saved: a conversa foi encerrada e registrada (linha no chat da campanha)
+  // saved: a conversa foi encerrada e registrada (linha no chat da campanha); farewell: a fala de encerramento do NPC
+  onClose: (saved: boolean, farewell?: string) => void;
   // "não era uma conversa": a conversa é apagada e quem chama manda a fala como turno da campanha (e fecha o modal)
   onBackToCampaign?: () => void;
 }) {
@@ -185,16 +186,20 @@ export default function NpcModal({
   const endChat = async () => {
     if (ending) return;
     let saved = false;
+    let farewell: string | undefined;
     if (sessionId && msgs.length >= 2) {
       setEnding(true);
-      saved = await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}/end`, {
+      // session: a conversa nasceu de uma ação no chat da campanha, e o NPC fecha com uma fala lá
+      const res = await fetch(`/api/campaigns/${campaignId}/npcs/${npc.id}/end`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      }).then((r) => r.ok, () => false);
+        body: JSON.stringify({ sessionId, fromCampaign: !!session }),
+      }).catch(() => null);
+      saved = !!res?.ok;
+      if (saved) farewell = (await res!.json().catch(() => ({}))).farewell;
     }
     stopVoice();
-    onClose(saved);
+    onClose(saved, farewell);
   };
 
   const backToCampaign = async () => {

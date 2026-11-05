@@ -11,7 +11,9 @@ export interface ChatLine {
   id: number;
   role: string;
   content: string;
-  meta: { choices?: string[]; scribe?: ScribeEntry[] }; // scribe: registros do Escrivão depois desta narração
+  speaker?: string | null;
+  // scribe: registros do Escrivão depois desta narração; farewell: fala de encerramento do NPC (conversa particular)
+  meta: { choices?: string[]; scribe?: ScribeEntry[]; farewell?: string };
 }
 
 /** Estado da campanha para a tela de jogo: GET /api/campaigns/[id] e o HTML inicial da página. */

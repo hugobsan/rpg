@@ -5,7 +5,8 @@
  * interceptados.
  * Confere: conversa sim = sem Mestre nem Escrivão, o NPC responde, nada em messages, a foto do turno anterior fica e o
  * evento npc_talk traz as duas falas; ao fechar, o Escrivão registra (add_item) com a conversa, o relógio anda e a linha
- * 'talk' entra no chat; o próximo turno do Mestre recebe a conversa no contexto uma vez só; abaixo do limiar, Jev
+ * 'talk' entra no chat com a fala de encerramento do NPC (conversa nascida na campanha); a conversa fica no histórico do
+ * Mestre nos turnos seguintes, com o começo, o fim, a despedida e o registro; abaixo do limiar, Jev
  * falhando, NPC recusando, meta junto (prioridade), Continuar, ação editada e batalha = turno normal.
  * Rodar: npx tsx scripts/talk-check.ts
  */
@@ -46,7 +47,7 @@ let jevMeta = 0;
 let willing = 0.9;
 const calls = { gm: 0, scribe: 0, npc: 0 };
 const jevQuestions: string[][] = []; // perguntas de cada decisão do turno
-const gmContexts: string[] = []; // contexto do turno de cada chamada do Mestre
+const gmContexts: string[] = []; // mensagens (histórico e contexto do turno) de cada chamada do Mestre
 let scribeInput = "";
 let events: TurnEvent[] = [];
 const sse = (text: string) =>
@@ -82,7 +83,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   const system = String(body.messages?.[0]?.content || "");
   if (tools.includes("save_directive")) return Response.json({ choices: [{ message: { content: "Fora do jogo: anotado." } }] });
   if (tools.includes("note_objective")) {
-    gmContexts.push(String(body.messages.at(-2).content));
+    gmContexts.push(JSON.stringify(body.messages));
     return calls.gm++, sse('**Teuchi:** "Vai querer uma tigela?"');
   }
   if (tools.includes("update_resource")) {
@@ -94,6 +95,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   }
   if (system.includes("PERSONAGEM QUE VOCÊ INTERPRETA")) {
     calls.npc++;
+    if (String(body.messages.at(-1).content).includes("encerrou a conversa"))
+      return Response.json({ choices: [{ message: { content: "*acena com a concha* Volte sempre, Hugo!" } }] });
     assert.ok(system.includes("Vai querer uma tigela?"), "o NPC em cena vê a última narração");
     return Response.json({ choices: [{ message: { content: "Ela foi ao mercado. Uma tigela de porco, então? Fica 300 ryō." } }] });
   }
@@ -148,23 +151,29 @@ async function main() {
 
     // 2. ao fechar: relógio anda (Jev: ~15 min), Escrivão registra com a conversa, linha 'talk' no chat
     const t0 = await clock();
-    await endNpcChat(id, teuchi.id, ev.sessionId);
+    const npcBefore = calls.npc;
+    const ended = await endNpcChat(id, teuchi.id, ev.sessionId, true);
+    assert.equal(calls.npc - npcBefore, 1, "uma chamada do NPC para a despedida");
+    assert.equal("farewell" in ended && ended.farewell, "*acena com a concha* Volte sempre, Hugo!", "a despedida volta para a tela");
     assert.equal(await clock(), t0 + 15, "o relógio anda pelo tempo da conversa");
     assert.ok(scribeInput.includes(`Hugo: ${LINE}`) && scribeInput.includes("Teuchi: Ela foi ao mercado"), "o Escrivão lê a conversa");
     const inv = (await one<{ sheet: { inventory: { name: string; qty: number }[] } }>(`SELECT sheet FROM characters WHERE campaign_id = $1 AND kind = 'player'`)).sheet.inventory;
     assert.ok(inv.some((i) => i.name === "Lámen de porco"), "add_item do Escrivão aplicado");
     const page = await messagePage(id);
-    const last = page.messages.at(-1) as { role: string; content: string; meta: { notes?: string[] } };
-    assert.deepEqual([last.role, last.content], ["talk", "Conversa particular com Teuchi"]);
+    const last = page.messages.at(-1) as { role: string; content: string; speaker?: string; meta: { notes?: string[]; farewell?: string } };
+    assert.deepEqual([last.role, last.content, last.speaker], ["talk", "Conversa particular com Teuchi", "Teuchi"]);
     assert.ok(last.meta.notes?.[0]?.startsWith("add_item"), "o que o Escrivão gravou fica na linha");
+    assert.equal(last.meta.farewell, "*acena com a concha* Volte sempre, Hugo!", "a despedida fica na linha");
 
-    // 3. o próximo turno do Mestre recebe a conversa (e o registro) uma vez só
+    // 3. a conversa fica no histórico do Mestre, no lugar dela, nos turnos seguintes (não só no próximo)
     jevTalk = 0;
-    await turn("Agradeço e como.");
-    assert.ok(gmContexts.at(-1)!.includes("CONVERSA PARTICULAR QUE ACABOU DE ACONTECER") && gmContexts.at(-1)!.includes(`Hugo: ${LINE}`), "conversa no contexto");
-    assert.ok(gmContexts.at(-1)!.includes("O Escrivão já registrou:\n- add_item"), "registro no contexto");
-    await turn("Pago e saio.");
-    assert.ok(!gmContexts.at(-1)!.includes("CONVERSA PARTICULAR"), "só uma vez");
+    for (const input of ["Agradeço e como.", "Pago e saio."]) {
+      await turn(input);
+      const ctx = gmContexts.at(-1)!;
+      assert.ok(ctx.includes("conversou em particular com Teuchi") && ctx.includes(`Hugo: ${LINE}`), `${input}: conversa no histórico`);
+      assert.ok(ctx.includes("Teuchi, ao encerrar: *acena com a concha*"), `${input}: despedida no histórico`);
+      assert.ok(ctx.includes("O Escrivão já registrou:") && ctx.includes("- add_item"), `${input}: registro no histórico`);
+    }
 
     // 4. abaixo do limiar (0,75), Jev falhando, NPC recusando e meta junto (prioridade): turno normal ou fora do jogo
     for (const [label, talk, w, meta] of [["abaixo do limiar", 0.7, 0.9, 0], ["Jev falhando", "falha", 0.9, 0], ["NPC recusa", 0.9, 0.1, 0], ["meta junto", 0.9, 0.9, 0.9]] as const) {
@@ -210,7 +219,7 @@ async function main() {
     assert.deepEqual(await turn(LINE), { gm: 1, scribe: 1, npc: 0 }, "treino");
     assert.ok(!jevQuestions.at(-1)?.includes("talk"), "treino: sem pergunta talk");
 
-    console.log("talk-check: ok (fala só com um NPC em cena vai ao chat dele sem Mestre, Escrivão nem mensagem salva; ao fechar, relógio, Escrivão e a linha no chat; o próximo turno do Mestre vê a conversa uma vez; \"não era uma conversa\" apaga e vira turno sem perguntar; limiar, Jev falhando, recusa, meta, Continuar, ação editada, batalha e treino seguem o padrão)");
+    console.log("talk-check: ok (fala só com um NPC em cena vai ao chat dele sem Mestre, Escrivão nem mensagem salva; ao fechar, relógio, Escrivão, despedida do NPC e a linha no chat; a conversa fica no histórico do Mestre; \"não era uma conversa\" apaga e vira turno sem perguntar; limiar, Jev falhando, recusa, meta, Continuar, ação editada, batalha e treino seguem o padrão)");
   } finally {
     await new Promise((r) => setTimeout(r, 500)); // índice do histórico e memórias da conversa rodam em segundo plano
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);

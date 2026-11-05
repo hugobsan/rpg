@@ -213,7 +213,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   };
   const idle = !busy && !pendingDice;
   // etiquetas do Escrivão depois da última narração: só elas se desfazem (o servidor confere)
-  const undoFrom = useMemo(() => feed.slice(feed.findLastIndex((i) => i.kind === "gm") + 1).find((i) => i.scribe)?.scribe?.messageId, [feed]);
+  const undoFrom = useMemo(() => feed.slice(feed.findLastIndex((i) => i.kind === "gm" && !i.name) + 1).find((i) => i.scribe)?.scribe?.messageId, [feed]);
   // estável entre os pedaços do streaming: os itens do feed (memo) não re-renderizam
   const cast = useMemo<Cast>(
     () => ({
@@ -533,8 +533,8 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
             setTalk(null);
             if (text) send(text, true);
           }}
-          onClose={(saved) => {
-            if (saved) talked(openNpc.name); // a linha que o servidor gravou no chat da campanha
+          onClose={(saved, farewell) => {
+            if (saved) talked(openNpc.name, farewell); // a linha que o servidor gravou no chat da campanha
             setOpenNpc(null);
             setTalk(null);
             reloadState();

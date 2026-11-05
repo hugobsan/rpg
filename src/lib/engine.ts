@@ -45,7 +45,6 @@ import {
   Campaign,
   CampaignScript,
   Character,
-  GameMessage,
   Ruleset,
   Scene,
   TurnEvent,
@@ -196,7 +195,6 @@ async function buildGmSystem(
     [campaign.id]
   );
   const lastNotes = Array.isArray(last?.notes) ? last.notes : [];
-  const talked = await talkHandoff(campaign.id);
   // cena nova ainda sem resumo: o fim do último resumo de cena, para o Mestre não perder o fio
   const [before] = scene.summary
     ? []
@@ -271,7 +269,6 @@ async function buildGmSystem(
       ? `\n--- O ESCRIVÃO REGISTROU DEPOIS DA SUA ÚLTIMA NARRAÇÃO (já está nas fichas; reconheça na história se for marcante, como um marco de domínio ou nível novo) ---\n${lastNotes.map((n) => `- ${n}`).join("\n")}`
       : "",
     playerFixesLine(campaign.state),
-    talked,
     directives.length
       ? `\n--- DIRETRIZES DO JOGADOR (fora do jogo) — siga ---\n${directives
           .map((d) => `- ${d.content}${d.subject === "proxima_cena" ? " (vale nesta cena e na próxima)" : ""}`)
@@ -287,22 +284,20 @@ async function buildGmSystem(
 }
 
 /**
- * Conversas particulares encerradas depois da última narração (linhas 'talk' que lib/npc grava ao fechar): o fim delas
- * e o que o Escrivão registrou vão ao Mestre uma vez só, no turno seguinte (depois dele há narração mais nova).
+ * Conversa particular encerrada (linha 'talk' que lib/npc grava ao fechar), como o Mestre a vê no histórico e na
+ * compactação: fica no lugar dela entre os turnos, com o começo e o fim da conversa, a fala de encerramento do NPC e o
+ * que o Escrivão registrou. A conversa inteira está no search_history.
  */
-async function talkHandoff(campaignId: string): Promise<string> {
-  const talks = await q<{ tail: string | null; notes: string[] | null }>(
-    `SELECT meta->>'tail' AS tail, meta->'notes' AS notes FROM messages
-     WHERE campaign_id = $1 AND role = 'talk' AND id > COALESCE((SELECT MAX(id) FROM messages WHERE campaign_id = $1 AND role = 'gm'), 0)
-     ORDER BY id`,
-    [campaignId]
-  );
-  if (!talks.length) return "";
-  const notes = talks.flatMap((t) => (Array.isArray(t.notes) ? t.notes : []));
-  return `\n--- CONVERSA PARTICULAR QUE ACABOU DE ACONTECER (o jogador falou direto com o NPC, fora da sua narração; continue a cena de onde ela parou, sem repetir as falas) ---\n${talks
-    .map((t) => t.tail || "")
-    .join("\n\n")
-    .slice(-1500)}${notes.length ? `\nO Escrivão já registrou:\n${notes.map((n) => `- ${n}`).join("\n")}` : ""}`;
+function talkNote(m: { speaker: string | null; meta: { tail?: string; notes?: string[]; farewell?: string } | null }): string {
+  const { tail, notes, farewell } = m.meta ?? {};
+  return [
+    `(Nota do sistema: o jogador conversou em particular com ${m.speaker}, fora da sua narração. Continue a cena de onde a conversa parou, sem repetir as falas; ela inteira está no search_history.)`,
+    tail || "",
+    farewell ? `${m.speaker}, ao encerrar: ${farewell}` : "",
+    notes?.length ? `O Escrivão já registrou:\n${notes.map((n) => `- ${n}`).join("\n")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** Candidatas a memória do turno: top-k por similaridade + as mais importantes/recentes (Configurações avançadas). */
@@ -348,15 +343,18 @@ export function windowStart(lengths: number[], budget: number): number {
 /** Histórico recente não compactado dentro do orçamento de tokens, começando numa fala do jogador. */
 async function historyWindow(campaignId: string, budgetTokens: number): Promise<ChatMessage[]> {
   // a compactação do Cronista mantém poucas mensagens não compactadas; elas vêm todas para o começo ser estável
-  const rows = await q<Pick<GameMessage, "role" | "content">>(
-    `SELECT role, content FROM messages
-     WHERE campaign_id = $1 AND role IN ('player','gm','system') AND NOT compacted
-     ORDER BY id`,
-    [campaignId]
-  );
+  const rows = (
+    await q<{ role: string; speaker: string | null; content: string; meta: Parameters<typeof talkNote>[0]["meta"] }>(
+      `SELECT role, speaker, content, meta FROM messages
+       WHERE campaign_id = $1 AND role IN ('player','gm','system','talk') AND NOT compacted
+       ORDER BY id`,
+      [campaignId]
+    )
+  ).map((m) => (m.role === "talk" ? { ...m, content: talkNote(m) } : m));
   let i = windowStart(rows.map((m) => m.content.length), budgetTokens * CHARS_PER_TOKEN);
   while (i < rows.length && rows[i].role !== "player") i++; // a API da Anthropic quer o 1º turno do usuário
-  return rows.slice(i).map((m) => ({ role: m.role === "player" ? "user" : "assistant", content: m.content }));
+  // conversa particular entra como nota do lado do jogador (falas seguidas do mesmo lado se juntam na API)
+  return rows.slice(i).map((m) => ({ role: m.role === "player" || m.role === "talk" ? "user" : "assistant", content: m.content }));
 }
 
 // ---------- persistência de mensagens ----------
@@ -1196,18 +1194,20 @@ export async function maybeCompact(campaignId: string, scene: Scene, emit?: (e: 
   const threshold = params.compactThresholdTokens ?? 11000;
   const keep = params.keepRecentMessages ?? 12;
 
-  const rows = await q<{ id: number; role: string; content: string; tokens: number }>(
-    `SELECT id, role, content, COALESCE(tokens, 0) AS tokens FROM messages
-     WHERE campaign_id = $1 AND role IN ('player','gm') AND NOT compacted
-     ORDER BY id`,
-    [campaignId]
-  );
+  const rows = (
+    await q<{ id: number; role: string; speaker: string | null; content: string; meta: Parameters<typeof talkNote>[0]["meta"] }>(
+      `SELECT id, role, speaker, content, meta FROM messages
+       WHERE campaign_id = $1 AND role IN ('player','gm','talk') AND NOT compacted
+       ORDER BY id`,
+      [campaignId]
+    )
+  ).map((m) => (m.role === "talk" ? { ...m, content: talkNote(m) } : m));
   const total = rows.reduce((a, r) => a + estimateTokens(r.content), 0); // pelo texto: tokens gravados podem ser de outra estimativa
   if (total < threshold || rows.length <= keep) return;
 
   const toCompact = rows.slice(0, rows.length - keep);
   const transcript = toCompact
-    .map((r) => `${r.role === "player" ? "JOGADOR" : "MESTRE"}: ${r.content}`)
+    .map((r) => `${r.role === "player" ? "JOGADOR" : r.role === "talk" ? "CONVERSA PARTICULAR" : "MESTRE"}: ${r.content}`)
     .join("\n\n");
 
   const campaign = await getCampaign(campaignId);

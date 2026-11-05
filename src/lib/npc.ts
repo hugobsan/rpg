@@ -188,7 +188,9 @@ export async function discardNpcChat(campaignId: string, npcId: string, sessionI
 /**
  * Encerra a conversa. Antes de responder: o relógio anda pelo tempo dela e o Escrivão registra o que ela estabeleceu
  * (missão oferecida ou aceita, item comprado ou recebido...), uma chamada com a conversa inteira no lugar da narração;
- * depois uma linha 'talk' entra no chat da campanha com o fim da conversa, que vai uma vez ao próximo turno do Mestre.
+ * depois uma linha 'talk' entra no chat da campanha com o começo e o fim da conversa, que fica no histórico do Mestre.
+ * fromCampaign (a conversa nasceu de uma ação no chat da campanha): ao mesmo tempo, o NPC faz a fala de encerramento,
+ * que aparece no chat depois da linha da conversa e mostra que houve uma troca ali.
  * Ao fechar e não a cada fala: uma chamada só, que vê a conversa inteira (oferecida e aceita viram um registro), e o
  * modal aberto segura o próximo turno até tudo estar gravado. Em segundo plano, o Cronista extrai só os pontos
  * importantes e grava como memórias da campanha (o Mestre passa a "saber" o essencial; o NPC guarda tudo).
@@ -196,8 +198,9 @@ export async function discardNpcChat(campaignId: string, npcId: string, sessionI
 export async function endNpcChat(
   campaignId: string,
   npcId: string,
-  sessionId: string
-): Promise<{ id: number; started: boolean } | { saved: 0 }> {
+  sessionId: string,
+  fromCampaign = false
+): Promise<{ id: number; started: boolean; farewell: string } | { saved: 0 }> {
   const npc = await getNpc(campaignId, npcId);
   const rows = await q<{ role: string; content: string }>(
     `SELECT role, content FROM npc_chats
@@ -211,15 +214,20 @@ export async function endNpcChat(
   ]);
   const you = player?.name || "Jogador";
   const transcript = rows.map((r) => `${r.role === "player" ? you : npc.name}: ${r.content}`).join("\n");
-  const notes = await scribeConversation(
-    campaignId,
-    `(Conversa particular de ${you} com ${npc.name}: as falas abaixo fazem as vezes da narração)`,
-    transcript
-  ).catch((e): string[] => (console.warn("[escrivão da conversa]", e), []));
-  await saveMessage(campaignId, scene.id, "talk", `Conversa particular com ${npc.name}`, { npcId, sessionId, tail: transcript.slice(-1500), notes }, npc.name);
+  const [notes, farewell] = await Promise.all([
+    scribeConversation(
+      campaignId,
+      `(Conversa particular de ${you} com ${npc.name}: as falas abaixo fazem as vezes da narração)`,
+      transcript
+    ).catch((e): string[] => (console.warn("[escrivão da conversa]", e), [])),
+    fromCampaign ? npcFarewell(campaignId, npc, rows).catch((e) => (console.warn("[despedida do NPC]", e), "")) : "",
+  ]);
+  // conversa longa: a 1ª fala (o que o jogador foi fazer) e o fim
+  const tail = transcript.length > 1500 ? `${transcript.slice(0, 300)}\n[...]\n${transcript.slice(-1200)}` : transcript;
+  await saveMessage(campaignId, scene.id, "talk", `Conversa particular com ${npc.name}`, { npcId, sessionId, tail, notes, farewell }, npc.name);
 
   // em segundo plano: o modal não espera as memórias, e o cabeçalho mostra a tarefa até elas entrarem
-  return startJob(campaignId, "npc-memory", sessionId, `Memórias da conversa: ${npc.name}`, async () => {
+  const job = await startJob(campaignId, "npc-memory", sessionId, `Memórias da conversa: ${npc.name}`, async () => {
     const chronicler = await getAgent("chronicler");
     const result = await chat({
       model: chronicler.model,
@@ -255,6 +263,32 @@ export async function endNpcChat(
       /* sem memórias extraíveis */
     }
   });
+  return { ...job, farewell };
+}
+
+/** Fala com que o NPC fecha a conversa, vista no chat da campanha (o jogador fechou o modal e volta à cena). */
+async function npcFarewell(campaignId: string, npc: Character, rows: { role: string; content: string }[]): Promise<string> {
+  const agent = await getAgent("npc");
+  const result = await chat({
+    model: agent.model,
+    messages: [
+      { role: "system", content: `${agent.system_prompt}\n\n--- ${npcContext(npc)}` },
+      ...rows.map((h): ChatMessage => ({ role: h.role === "player" ? "user" : "assistant", content: h.content })),
+      {
+        role: "user",
+        content:
+          "(Nota do sistema, fora do jogo: o jogador encerrou a conversa e volta para a cena. Responda só com a sua última fala, " +
+          "curta (uma ou duas frases, gesto opcional entre asteriscos), fechando a conversa do jeito que ela terminou: despedida, " +
+          "recado final ou reação. Sem repetir o que já disse e sem narrar o que o jogador faz.)",
+      },
+    ],
+    temperature: agent.temperature,
+    max_tokens: agent.max_tokens,
+    agentId: "npc",
+    campaignId,
+    purpose: `despedida de ${npc.name}`,
+  });
+  return result.content.replace(/^\s*\[RECUSA\]\s*/, "").trim();
 }
 
 /** Mensagens de NPC não lidas, uma linha por sessão (GET da campanha). */
