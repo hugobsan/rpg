@@ -207,7 +207,8 @@ const npcCases: [string, Parameters<typeof buildNpcRequest>[0], boolean | null][
 
   console.log(`\n== 14. Roteirista: beat exige ato do personagem do jogador? (sai se P >= ${PC_ACT_MIN}; falso positivo mata o mistério)`);
   const pcCases: [string, boolean | null][] = [
-    ["Hugo é forçado a usar um poder desconhecido diante do Hokage.", true],
+    // voz passiva: o Jev dá ~0,25 (jev-1.14); quem pega é o demandsPcAct (regex), que roda antes dele
+    ["Hugo é forçado a usar um poder desconhecido diante do Hokage.", null],
     ["Hugo decide aceitar a missão de escolta.", true],
     ["Os Irmãos Demônio emboscam a escolta de Tazuna na estrada.", false],
     ["O selo no braço de Hugo brilha quando Kakashi usa o Sharingan perto dele.", false],
