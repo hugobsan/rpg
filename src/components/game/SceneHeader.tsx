@@ -56,8 +56,9 @@ function Jobs({ jobs }: { jobs: Job[] }) {
 }
 
 /** Cabeçalho da cena: modo, título, local, relógio com o céu do período e as ações da cena. */
-export default function SceneHeader({ scene, clock, image, onOoc, onTable, tableHint, jobs = [] }: {
+export default function SceneHeader({ scene, clock, image, onOoc, onTable, tableHint, jobs = [], mission }: {
   scene: Scene;
+  mission?: "main" | "side"; // em missão o selo diz "Missão" no lugar do modo da cena
   clock: number | null;
   image?: { busy: boolean; onClick: () => void }; // só com a geração de imagem ligada
   onOoc: () => void;
@@ -70,7 +71,7 @@ export default function SceneHeader({ scene, clock, image, onOoc, onTable, table
   return (
     <header className={s.head}>
       <div className={s.scene}>
-        <span className={s.mode}>{MODE_LABEL[scene.mode] || scene.mode}</span>
+        <span className={s.mode}>{mission ? (mission === "main" ? "Missão principal" : "Missão") : MODE_LABEL[scene.mode] || scene.mode}</span>
         <h1 className={s.title}>{scene.title || scene.location || "Cena sem nome"}</h1>
         {scene.location && scene.title && (
           <span className={s.loc}><Icon name="pin" size={13} />{scene.location}</span>

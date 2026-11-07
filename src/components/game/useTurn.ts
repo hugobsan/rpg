@@ -310,7 +310,15 @@ export function useTurn(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(regen ? { regenerate: true, feedback: regen.feedback, input: regen.edit ? text : undefined } : { input: text, noTalk, optionIndex }),
       });
-      if (!res.ok || !res.body) throw new Error(`Erro ${res.status}`);
+      // recusado antes do turno (400: texto livre em missão): a ação sai do chat, as opções voltam e a mensagem aparece
+      if (res.status === 400 && !regen) {
+        setFeed((f) => {
+          const i = f.map((x) => x.kind).lastIndexOf("player");
+          return i >= 0 ? f.slice(0, i) : f;
+        });
+        setChoices(before);
+      }
+      if (!res.ok || !res.body) throw new Error((await res.json().catch(() => null))?.error || `Erro ${res.status}`);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";

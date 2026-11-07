@@ -56,6 +56,11 @@
 .quest.warn { border-color: color-mix(in srgb, var(--warn) 35%, var(--border)); }
 .quest.danger { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
 .offered { border-style: dashed; }
+/* principal (arco) no acento, secundária em info: a mesma cor da faixa de missão do composer */
+.main { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+.side { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); background: var(--info-soft); }
+.quest.mainQuest::before { background: var(--accent); }
+.quest.sideQuest::before { background: color-mix(in srgb, var(--info) 60%, transparent); }
 .xp { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .closed { opacity: 0.72; }
 .closed .title { text-decoration: line-through; text-decoration-color: var(--text-faint); }

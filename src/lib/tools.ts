@@ -25,6 +25,7 @@ import {
   raiseBlocked,
   train,
   trainingRules,
+  trainCeiling,
   type TrainResult,
   useGain,
 } from "./progression";
@@ -32,6 +33,7 @@ import { clockParts, formatClock, formatDuration, getClock, period, toMinutes } 
 import {
   expireObjectives,
   formatRemaining,
+  defaultPay,
   getObjectives,
   Objective,
   OBJECTIVE_KIND_LABEL,
@@ -755,7 +757,11 @@ export async function useAbility(ctx: ToolContext, args: Record<string, unknown>
     ...adj.dice,
   };
   const clock = getClock(ctx.campaign.state);
-  const g = gainMastery(rs, c.sheet, ability, useGain(rs, ability), clock ? clockParts(clock.minutes).day : 0);
+  const day = clock ? clockParts(clock.minutes).day : 0;
+  // risky false (Resolvedor: sem alvo, fácil, fora de missão): o uso repetido no dia rende cada vez menos
+  // e só o uso arriscado passa do próximo marco (o salto de faixa é a prova)
+  const risky = args.risky !== false;
+  const g = gainMastery(rs, c.sheet, ability, useGain(rs, ability, c.sheet, day, risky), day, risky ? 100 : trainCeiling(ability));
   markGained(ctx, c, ability);
   await saveSheet(c.id, c.sheet);
   ctx.emit({ type: "state" });
@@ -1003,7 +1009,7 @@ export async function executeGmTool(
             : `${x.label}: ${x.atCap ? "no teto" : `${x.banked}/${x.need} h para +1`}`;
       const detail = (x: Done) => {
         if (x.kind === "ability")
-          return ` Domínio de ${x.label}: ${x.before}% → ${x.after}%.${x.capped ? " Rendimento cortado: chegou ao máximo de domínio por dia nesta habilidade." : ""}${
+          return ` Domínio de ${x.label}: ${x.before}% → ${x.after}%.${x.plateau ? ` Platô (${x.plateau}).` : ""}${x.capped ? " Rendimento cortado: chegou ao máximo de domínio por dia nesta habilidade." : ""}${
             x.milestone ? ` NOVO MARCO ALCANÇADO: ${x.milestone.description} — narre esse avanço.` : ""
           }`;
         return (
@@ -1272,9 +1278,17 @@ export async function executeGmTool(
           giver: args.giver ? String(args.giver) : undefined,
           createdAt: now ?? 0,
         };
+        // missão sempre com tamanho e pagamento (sem eles, pelo tamanho e pelos preços de referência do mundo)
+        if (kind === "missao" && size === undefined) o.xpSize = "pequena";
         const bad = setSize(o);
         if (bad) return bad;
         if (payArg) o.pay = payArg;
+        else if (kind === "missao") o.pay = defaultPay(cur, o.xpSize);
+        // campos do código (beat, quadro de missões), fora do schema da ferramenta
+        if (args.scope === "main") o.scope = "main";
+        for (const k of ["arcId", "beatId", "proof"] as const) if (args[k]) o[k] = String(args[k]);
+        if (args.board === true) o.board = true;
+        if (args.domestic === true) o.domestic = true;
         list.push(o);
         chip = `📜 ${o.status === "oferecida" ? "Oferecida" : OBJECTIVE_KIND_LABEL[kind]}: ${title} (${deadlineText(deadline, now)})`;
       } else {

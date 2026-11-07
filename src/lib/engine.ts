@@ -24,15 +24,17 @@ import {
   type EffectsCtx,
   type Interpretation,
   type InterpStep,
+  missionOptions,
   optionSteps,
   parseLooseJson,
+  spokenTold,
   proseIssues,
   resolveName,
   splitNarration,
   type StepResult,
   validateEffects,
 } from "./contracts";
-import { activeArc, loadStory, narrativeCandidates, prepareScene, afterTurn } from "./story";
+import { activeArc, enterMission, getPlay, loadStory, narrativeCandidates, prepareScene, afterTurn, type Play } from "./story";
 import { Campaign, Character, Scene, TurnEvent } from "./types";
 
 // ---------- carregamento de estado ----------
@@ -40,7 +42,7 @@ import { Campaign, Character, Scene, TurnEvent } from "./types";
 export async function getCampaign(id: string): Promise<Campaign> {
   // sem a coluna script (roteiro antigo, legado); o arco ativo vem junto (momento da história)
   const rows = await q<Campaign>(
-    `SELECT c.id, c.name, c.style, c.ruleset, c.state,
+    `SELECT c.id, c.name, c.ruleset, c.state,
        (SELECT jsonb_build_object('title', a.title, 'premise', a.premise, 'stakes', a.stakes) FROM arcs a
          WHERE a.campaign_id = c.id AND a.status = 'active' ORDER BY a.ord LIMIT 1) AS arc
      FROM campaigns c WHERE c.id = $1`,
@@ -185,7 +187,7 @@ export function effectsCtx(campaign: Campaign, chars: Character[], activeBeat: s
     items: player?.sheet.inventory.map((i) => i.name) ?? [],
     npcs: chars.filter((c) => c.kind === "npc").map((c) => c.name),
     missions: getObjectives(campaign.state)
-      .filter((o) => o.status === "aberto" || o.status === "oferecida")
+      .filter((o) => o.status === "aberto" || (o.status === "oferecida" && !o.board))
       .map((o) => ({ id: o.id, title: o.title, status: o.status })),
     money: campaign.ruleset.currency ? (player?.sheet.money ?? 0) : null,
     resourceWords: campaign.ruleset.resources.flatMap((r) => [r.key, r.label]),
@@ -203,16 +205,21 @@ async function narratorContext(
   results: string,
   books: string,
   storyBlock: string,
-  memory: TurnMemory
+  memory: TurnMemory,
+  play: Play = { mode: "exploration" }
 ): Promise<[fixed: string, turn: string]> {
   const rs = campaign.ruleset;
   const player = chars.find((c) => c.kind === "player");
   const here = chars.filter((c) => c.kind === "npc" && c.active);
   const away = chars.filter((c) => c.kind === "npc" && !c.active).map((c) => c.name);
   const clock = getClock(campaign.state);
-  const directives = await activeDirectives(campaign.id);
+  // diretriz que só fala de registro (ferramentas, anotar) é do motor velho: o Narrador não registra nada
+  // ponytail: por palavra; se pegar diretriz de história, trocar por uma marca na diretriz
+  const directives = (await activeDirectives(campaign.id)).filter((d) => !/\b(registr|anot[ae]|ferramenta|grant_xp|update_|add_)/i.test(d.content));
   const objectives = getObjectives(campaign.state);
-  const live = objectives.filter((o) => o.status === "aberto" || o.status === "oferecida");
+  // ofertas do quadro ficam só no painel
+  const live = objectives.filter((o) => o.status === "aberto" || (o.status === "oferecida" && !o.board));
+  const mission = play.mode === "mission" ? objectives.find((o) => o.id === play.objectiveId) : undefined;
   const done = objectives.filter((o) => o.status === "concluido").slice(-6);
   const money = (n: number) => (rs.currency ? formatMoney(n, rs.currency) : String(n));
 
@@ -246,6 +253,9 @@ async function narratorContext(
           .join("\n")}${done.length ? `\nJá cumpridas (não ofereça de novo como inéditas): ${done.map((o) => o.title).join("; ")}` : ""}`
       : "",
     storyBlock,
+    mission
+      ? `\n--- MODO: MISSÃO ${play.scope === "main" ? "PRINCIPAL" : "SECUNDÁRIA"} [${mission.id}] ${mission.title} ---\n${cut(mission.description, 300)}\nO jogador só escolhe entre as suas opções: mande 3 ou 4, ao menos uma composta (2 ou 3 passos com técnicas e itens da ficha, nomes exatos) e uma que avança a missão. approach exit = abandonar a missão (ela falha). Cumprida: "mission":{"op":"complete","id":"${mission.id}"}; perdida na história: "fail".`
+      : "",
     books ? `\n--- TRECHOS DOS LIVROS DE REFERÊNCIA ---\n${books}` : "",
     playerFixesLine(campaign.state),
     directives.length
@@ -489,7 +499,10 @@ export async function runTurn(
     it = await interpret(campaignId, playerInput, player, campaign.ruleset.attributes, npcsHere.map((c) => c.name), lastGmText);
     steps = it.steps;
   }
-  const results: StepResult[] = player && steps.length ? await resolveSteps(toolCtx, player, steps) : [];
+  const playBefore = getPlay(campaign.state);
+  // em missão: técnica conta como uso arriscado; a opção "exit" abandona a missão (falha, aplicada no afterTurn)
+  const abandon = option?.approach === "exit" && playBefore.mode === "mission";
+  const results: StepResult[] = player && steps.length ? await resolveSteps(toolCtx, player, steps, { mission: playBefore.mode === "mission" }) : [];
   const oracleLine = it?.question ? askOracle(it.question) : undefined;
 
   // história por código + cartão do Diretor (síncrono, antes do Narrador); falhou = turno sem cartão
@@ -502,7 +515,11 @@ export async function runTurn(
   const memory: TurnMemory = await sceneKnowledge(campaignId, memQuery, npcsHere.map((c) => c.id), player?.id ?? null, (await getAdvanced()).memory.knowsTopK).catch(
     (e) => (console.warn("[memória]", e), { sabe: new Map(), onlyPlayer: [] })
   );
-  const [fixed, turn] = await narratorContext(campaign, toolCtx.scene, chars, gm.system_prompt, resultsBlock(results, steps.length, it, oracleLine), bookText, scenePlan.block, memory);
+  const resolved = [
+    resultsBlock(results, steps.length, it, oracleLine),
+    abandon ? `O jogador abandona a missão "${playBefore.title ?? ""}": ela fracassa. Narre a retirada e o preço dela.` : "",
+  ].filter(Boolean).join("\n");
+  const [fixed, turn] = await narratorContext(campaign, toolCtx.scene, chars, gm.system_prompt, resolved, bookText, scenePlan.block, memory, abandon ? { mode: "exploration" } : getPlay(toolCtx.campaign.state));
   if (history.length) history[history.length - 1] = { ...history[history.length - 1], cache: true };
   const messages: ChatMessage[] = [
     { role: "system", content: fixed },
@@ -679,6 +696,12 @@ export async function runTurn(
   if (dropped.length) console.warn("[efeitos descartados]", dropped);
   // sem opções no bloco: as saídas do cartão
   if (!fx.options.length && scenePlan.card) fx.options = scenePlan.card.exits.map((label) => ({ label, approach: "move" as const, steps: [] }));
+  // fala do jogador entre aspas para um NPC em cena e o bloco sem "told": o código registra o que ele contou
+  if (acting && !option && player && !fx.told.length) {
+    const to = it?.steps.find((x) => x.kind === "talk" && x.target)?.target ?? (npcsHere.length === 1 ? npcsHere[0].name : undefined);
+    const told = to ? spokenTold(playerInput, player.name, to) : null;
+    if (told) fx.told = [told];
+  }
 
   const narration = prose || "*(O Mestre ficou em silêncio — tente novamente.)*";
   const choices = fx.options.map((o) => o.label);
@@ -691,10 +714,6 @@ export async function runTurn(
     ...(leaks.length && { leaks }),
   });
   emit({ type: "narration", content: narration, messageId: msgId });
-  if (choices.length) {
-    emit({ type: "choices", choices });
-    emit({ type: "options", options: fx.options });
-  }
 
   // depois da narração (o jogador já está lendo), antes do done: o "gerar novamente" não cruza com a gravação
   if (player) {
@@ -708,8 +727,26 @@ export async function runTurn(
     // marco do Resolvedor (domínio que subiu de faixa): quem está na cena viu
     for (const r of results.filter((x) => x.fact))
       await recordFact(campaignId, r.fact!, { sceneId: toolCtx.scene.id, messageId: msgId, minute: getClock(toolCtx.campaign.state)?.minutes ?? null }).catch((e) => console.warn("[fatos]", e));
-    // beats, relógios, missão do beat e agenda (falhou = a história fica como estava; o turno vale)
-    await afterTurn(toolCtx, fx.beat).catch((e) => console.warn("[história]", e));
+    // beats, relógios, missão do beat, modo de jogo, quadro e agenda (falhou = a história fica como estava; o turno vale)
+    await afterTurn(toolCtx, fx, { abandon }).catch((e) => console.warn("[história]", e));
+    // em missão o jogador só tem as opções: o código garante 3-4, uma composta da ficha e uma de avanço
+    if (getPlay(toolCtx.campaign.state).mode === "mission") {
+      const abilities = player.sheet.abilities.filter((a) => !a.removed).sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0)).map((a) => a.name);
+      const fixed = missionOptions(fx.options, { abilities, items: player.sheet.inventory.map((i) => i.name), exits: scenePlan.card?.exits ?? [], seed: msgId });
+      if (JSON.stringify(fixed) !== JSON.stringify(fx.options)) {
+        fx.options = fixed;
+        await q(`UPDATE messages SET meta = meta || jsonb_build_object('options', $1::jsonb, 'choices', $2::jsonb) WHERE id = $3`, [
+          JSON.stringify(fixed),
+          JSON.stringify(fixed.map((o) => o.label)),
+          msgId,
+        ]);
+      }
+    }
+  }
+  // opções depois dos efeitos: o modo de jogo do fim do turno decide se o código completa as de missão
+  if (fx.options.length) {
+    emit({ type: "choices", choices: fx.options.map((o) => o.label) });
+    emit({ type: "options", options: fx.options });
   }
   indexHistory(campaignId).catch((e) => console.warn("[histórico]", e));
   emit({ type: "done" });
@@ -730,5 +767,7 @@ export async function conversationEffects(campaignId: string, npc: { id: string;
   // ponytail: sem desfazer pela etiqueta (messageId 0); o desfazer vale só para a última narração do Mestre
   // fatos da conversa: só o jogador e o NPC ficam sabendo
   const entries = await applyEffects({ campaign, scene, emit: () => {} }, fx, { player, messageId: 0, audience: [player.id, npc.id] });
+  // missão aceita na conversa: entra em missão como no turno
+  if (fx.mission?.op === "accept") await enterMission(campaignId, fx.mission.id).catch((e) => console.warn("[missão]", e));
   return entries.map((e) => e.summary);
 }

@@ -11,18 +11,27 @@ export interface ComposerHandle {
   use: (name: string) => void;
 }
 
+/** Missão em curso: o campo de texto some e fica a faixa (principal ou secundária) com quem dá para chamar à conversa. */
+export interface ComposerMission {
+  title: string;
+  scope: "main" | "side";
+  talk: { name: string; onTalk: () => void }[]; // NPCs em cena: a conversa particular é livre em qualquer modo
+}
+
 /**
  * Campo da ação: cresce com o texto, Enter envia, Shift+Enter quebra linha, Esc solta o foco
  * (aí as teclas 1 a 9 escolhem uma opção). O texto vive aqui: digitar não re-renderiza a tela.
  * Com onStop (o Mestre está gerando a narração), o botão de enviar vira o de parar; Esc também para.
+ * Com mission, só as opções acima valem (a API recusa texto livre em missão).
  */
-export default function Composer({ ref, onSend, busy, placeholder, onOoc, onStop }: {
+export default function Composer({ ref, onSend, busy, placeholder, onOoc, onStop, mission }: {
   ref?: Ref<ComposerHandle>;
   onSend: (text: string) => boolean;
   busy: boolean;
   placeholder: string;
   onOoc: () => void;
   onStop?: () => void;
+  mission?: ComposerMission;
 }) {
   const [text, setText] = useState("");
   const area = useRef<HTMLTextAreaElement>(null);
@@ -57,6 +66,42 @@ export default function Composer({ ref, onSend, busy, placeholder, onOoc, onStop
     if (onSend(text)) setText("");
   };
 
+  const stopButton = onStop && (
+    <button className={`btn primary ${s.send}`} onClick={onStop} aria-label="Parar o Mestre"
+      data-tip="Parar o Mestre" data-tip-align="end" aria-keyshortcuts="Escape">
+      <Icon name="stop" size={16} />
+    </button>
+  );
+  const oocButton = (
+    <button className={`${s.tool} ${s.ooc}`} onClick={onOoc} aria-label="Fora do jogo" title="Converse com o Mestre como jogador: nada disso entra na história">
+      <Icon name="chat" size={16} /><span>Fora do jogo</span>
+    </button>
+  );
+
+  if (mission)
+    return (
+      <div className={s.composer}>
+        <div className={`${s.box} ${s.mission}`} data-scope={mission.scope}>
+          <div className={s.band} role="status">
+            <Icon name="flag" size={16} />
+            <span className={s.bandText}>
+              <b>{mission.scope === "main" ? "Missão principal" : "Missão"}: {mission.title}</b>
+              <span className={s.bandHint}>Escolha uma das opções acima</span>
+            </span>
+          </div>
+          <div className={s.bar}>
+            {oocButton}
+            {mission.talk.slice(0, 3).map((n) => (
+              <button key={n.name} className={s.tool} onClick={n.onTalk} title={`Conversa particular com ${n.name}: livre também em missão`}>
+                <Icon name="people" size={16} /><span>Falar com {n.name.split(" ")[0]}</span>
+              </button>
+            ))}
+            {stopButton ?? <span className={s.hint}>Teclas 1 a 4 escolhem</span>}
+          </div>
+        </div>
+      </div>
+    );
+
   return (
     <div className={s.composer}>
       <div className={s.box}>
@@ -76,16 +121,9 @@ export default function Composer({ ref, onSend, busy, placeholder, onOoc, onStop
           }}
         />
         <div className={s.bar}>
-          <button className={`${s.tool} ${s.ooc}`} onClick={onOoc} aria-label="Fora do jogo" title="Converse com o Mestre como jogador: nada disso entra na história">
-            <Icon name="chat" size={16} /><span>Fora do jogo</span>
-          </button>
+          {oocButton}
           <span className={s.hint}>Enter envia · Shift+Enter quebra a linha</span>
-          {onStop ? (
-            <button className={`btn primary ${s.send}`} onClick={onStop} aria-label="Parar o Mestre"
-              data-tip="Parar o Mestre" data-tip-align="end" aria-keyshortcuts="Escape">
-              <Icon name="stop" size={16} />
-            </button>
-          ) : (
+          {stopButton ?? (
             <button className={`btn primary ${s.send}`} onClick={send} disabled={busy || !text.trim()} aria-label="Enviar ação">
               {busy ? <Loader size={16} label="O Mestre está respondendo" /> : <Icon name="send" size={18} />}
             </button>

@@ -5,14 +5,21 @@
  *  - effects.json: parse tolerante do bloco ```efeitos e validação campo a campo (técnica fora da ficha descarta o passo,
  *    bloco quebrado vai ao Anotador, campo ruim sai sozinho);
  *  - interpreter.json: saída do Intérprete contra a ficha;
- *  - tabelas fixas: oráculo Mythic, desfecho pela CD, níveis de recurso e domínio; o tamanho do prompt do Narrador.
+ *  - tabelas fixas: oráculo Mythic, desfecho pela CD, níveis de recurso e domínio; o tamanho do prompt do Narrador;
+ *  - opções de missão (3-4, composta da ficha, avanço), "told" pela fala entre aspas e pagamento padrão da missão.
  * Rodar: npx tsx scripts/eval-check.ts
+ *
+ * Métrica (lê o banco, sem IA): npx tsx scripts/eval-check.ts --campaign <id> — nas narrações gravadas (messages gm),
+ * a taxa das que terminam em pergunta, das que trazem número de regra (validador de prosa) e das que tiveram fala de
+ * NPC fora do SABE (meta.leaks, gravado desde a F3).
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import {
   dcFor,
+  missionOptions,
+  spokenTold,
   type EffectsCtx,
   masteryWord,
   optionSteps,
@@ -27,6 +34,48 @@ import {
 } from "../src/lib/contracts";
 import { DEFAULT_AGENTS } from "../src/lib/agents";
 import { validateCard } from "../src/lib/story";
+import { defaultPay } from "../src/lib/objectives";
+
+/** Último parágrafo de prosa (sem o bloco e sem lista de opções no fim). */
+function lastParagraph(text: string): string {
+  const lines = splitNarration(text).prose.split("\n").map((l) => l.trim()).filter(Boolean);
+  while (lines.length && /^(\d+[.)]|[-*•])\s/.test(lines.at(-1)!)) lines.pop();
+  return lines.at(-1) ?? "";
+}
+/** Termina em pergunta: o último parágrafo acaba em "?" (estrito). */
+export const endsInQuestion = (text: string) => /\?[\s*_"”'’»)]*$/.test(lastParagraph(text));
+
+async function metrics(id: string) {
+  const { q, pool } = await import("../src/lib/db");
+  try {
+    const [c] = await q<{ name: string; ruleset: { resources?: { key: string; label: string }[] } }>(`SELECT name, ruleset FROM campaigns WHERE id = $1`, [id]);
+    if (!c) throw new Error(`campanha ${id} não existe`);
+    const rows = await q<{ content: string; meta: { leaks?: string[] } | null }>(`SELECT content, meta FROM messages WHERE campaign_id = $1 AND role = 'gm' ORDER BY id`, [id]);
+    const words = (c.ruleset.resources ?? []).flatMap((r) => [r.key, r.label]);
+    const pct = (k: number) => `${k}/${rows.length} (${rows.length ? Math.round((k / rows.length) * 100) : 0}%)`;
+    const q1 = rows.filter((r) => endsInQuestion(r.content)).length;
+    const nums = rows.filter((r) => proseIssues(splitNarration(r.content).prose, words).length).length;
+    const leaks = rows.filter((r) => r.meta?.leaks?.length).length;
+    console.log(`${c.name} (${id}): ${rows.length} narrações`);
+    const q2 = rows.filter((r) => lastParagraph(r.content).includes("?")).length;
+    console.log(`  terminam em pergunta: ${pct(q1)}`);
+    console.log(`  pergunta no último parágrafo: ${pct(q2)} (mais solto)`);
+    console.log(`  com número de regra:  ${pct(nums)}`);
+    console.log(`  fala fora do SABE:    ${pct(leaks)} (meta.leaks, só desde a F3)`);
+  } finally {
+    await pool().end();
+  }
+}
+
+const at = process.argv.indexOf("--campaign");
+if (at >= 0) {
+  metrics(process.argv[at + 1] ?? "").catch((e) => {
+    console.error(e);
+    process.exitCode = 1;
+  });
+} else checks();
+
+function checks() {
 
 const dir = path.join(__dirname, "eval", "fixtures");
 const load = (f: string) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8"));
@@ -103,6 +152,34 @@ for (const c of it.cases) {
   ok(`intérprete ${c.id}`);
 }
 
+// ---------- missão: opções, "told" pela fala, pagamento padrão ----------
+const sheetCtx = { abilities: ["Kage Bunshin no Jutsu", "Henge no Jutsu"], items: ["Kunai", "Papel-bomba"], exits: ["Seguir o rastro até o rio", "Voltar e avisar Genma"] };
+const plain = missionOptions([{ label: "Pergunto ao velho o que viu", approach: "talk", steps: [] }], { ...sheetCtx, seed: 0 });
+assert.ok(plain.length >= 3 && plain.length <= 4, JSON.stringify(plain));
+assert.ok(plain.some((o) => o.steps.filter((x) => x.ability || x.item).length >= 2), "composta montada da ficha");
+assert.ok(plain.some((o) => o.approach === "move"), "uma de avanço");
+assert.equal(plain[0].label, "Pergunto ao velho o que viu", "as do Narrador vêm primeiro");
+const full = missionOptions(
+  [
+    { label: "A", approach: "talk", steps: [] }, { label: "B", approach: "force", steps: [] }, { label: "C", approach: "sense", steps: [] },
+    { label: "Saio pela janela", approach: "exit", steps: [] },
+  ],
+  sheetCtx
+);
+assert.equal(full.length, 4, "nunca mais de 4");
+assert.ok(full.some((o) => o.steps.length >= 2) && full.some((o) => o.approach === "move"), "a composta e o avanço entram no lugar das últimas");
+const kept = missionOptions([{ label: "Clone e kunai cercam o javali", approach: "force", steps: [{ ability: "Kage Bunshin no Jutsu" }, { item: "Kunai" }] }, { label: "Saio pela janela", approach: "exit", steps: [] }, { label: "Corro até a ponte", approach: "move", steps: [] }], sheetCtx);
+assert.deepEqual(kept.map((o) => o.label), ["Clone e kunai cercam o javali", "Abandonar a missão: Saio pela janela", "Corro até a ponte"], "exit diz que abandona");
+assert.ok(missionOptions([], { abilities: [], items: [], exits: [] }).length >= 3, "sem ficha nem cartão: ainda 3 opções");
+assert.deepEqual(spokenTold('Olho para Genma. "Vi um homem pálido rondando o portão ontem à noite."', "Hugo", "Genma"), { fact: "Vi um homem pálido rondando o portão ontem à noite.", by: "Hugo", to: ["Genma"] });
+assert.equal(spokenTold('"Você viu o homem pálido?"', "Hugo", "Genma"), null, "pergunta não é contar");
+assert.equal(spokenTold("conto ao Genma o que vi", "Hugo", "Genma"), null, "sem aspas: o bloco do Narrador cobre");
+assert.equal(spokenTold("— Achei a kunai do ladrão perto da ponte velha.", "Hugo", "Genma")?.fact, "Achei a kunai do ladrão perto da ponte velha.");
+const ryo = { units: [{ key: "ryo", label: "Ryō", value: 1 }], prices: "Missões: rank D 5 mil a 50 mil ryō; C 30 mil a 100 mil; B 80 mil a 200 mil" };
+assert.deepEqual([defaultPay(ryo, "pequena"), defaultPay(ryo, "media"), defaultPay(ryo, "grande"), defaultPay(undefined)], [5000, 30000, 80000, undefined]);
+assert.equal(defaultPay({ units: [{ key: "po", label: "PO", value: 1 }], start: 500 }, "media"), 100, "sem faixa: décimo do saldo inicial x2");
+ok("missão: opções garantidas, told pela fala entre aspas, pagamento padrão");
+
 // ---------- tabelas fixas ----------
 assert.deepEqual([dcFor("easy", 2), dcFor("medium", 2), dcFor("hard", 2), dcFor("very_hard", 2)], [14, 18, 22, 26], "Naruto ×2 = diceNotes");
 assert.equal(dcFor("medium", 1), 14);
@@ -132,3 +209,5 @@ assert.equal(card.card?.npcIntents.length, 1);
 ok("prompts curtos e exemplo válido");
 
 console.log(`\n${n} verificações ok`);
+assert.ok(endsInQuestion('**Genma:** "E você, vai ficar aí parado?"\n```efeitos\n{}\n```') && !endsInQuestion("Ele se vira e sai."), "métrica de pergunta");
+}

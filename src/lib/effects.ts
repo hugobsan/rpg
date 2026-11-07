@@ -103,7 +103,7 @@ export async function applyEffects(
 }
 
 /** Missão falhou na história: perdida, com a etiqueta. (update_objective não tem esse status: perder é do relógio.) */
-async function failMission(ctx: ToolContext, id: string) {
+export async function failMission(ctx: ToolContext, id: string) {
   const list = await loadObjectives(ctx.campaign.id);
   const o = list.find((x) => x.id === id);
   if (!o || (o.status !== "aberto" && o.status !== "oferecida")) return;

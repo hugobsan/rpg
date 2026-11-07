@@ -48,7 +48,7 @@ ALTER TABLE api_logs ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'op
 CREATE TABLE IF NOT EXISTS campaigns (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
-  style TEXT NOT NULL DEFAULT 'hybrid', -- open | hybrid | guided
+  style TEXT NOT NULL DEFAULT 'hybrid', -- legado (estilos de campanha saíram), sem uso
   ruleset JSONB NOT NULL,
   script JSONB, -- roteiro interno do mestre (arcos, eventos canônicos, progresso)
   state JSONB NOT NULL DEFAULT '{}',

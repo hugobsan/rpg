@@ -17,7 +17,6 @@ export async function GET() {
 
 interface CreateBody {
   name: string;
-  style: "open" | "hybrid" | "guided";
   ruleset: unknown;
   character: {
     name: string;
@@ -47,10 +46,9 @@ export async function POST(req: NextRequest) {
   ruleset.world ||= slugKey(ruleset.name) || `mundo_${crypto.randomUUID().slice(0, 8)}`;
 
   const rows = await q<Campaign>(
-    `INSERT INTO campaigns (name, style, ruleset, state) VALUES ($1,$2,$3,$4) RETURNING *`,
+    `INSERT INTO campaigns (name, ruleset, state) VALUES ($1,$2,$3) RETURNING *`,
     [
       body.name.trim(),
-      body.style || "hybrid",
       JSON.stringify(ruleset),
       JSON.stringify({
         startingPoint: body.startingPoint || "",

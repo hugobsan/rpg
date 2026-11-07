@@ -1,7 +1,7 @@
 import { formatClock } from "./clock";
 import { powerLevel, powerLevels } from "./progression";
 import { xpRule } from "./table";
-import type { Ruleset, TableRules } from "./types";
+import type { Currency, Ruleset, TableRules } from "./types";
 
 /**
  * Missões, eventos e prazos da história (campaigns.state.objectives). Sem relação com os
@@ -31,7 +31,29 @@ export interface Objective {
   closedAt?: number;
   // aceita ou recusada pelo painel (Date.now): o Mestre reconhece na cena; sai quando o turno seguinte termina
   decidedAt?: number;
+  scope?: ObjectiveScope; // main = missão de beat do arco principal; side = o resto (sem campo = side)
+  arcId?: string;
+  beatId?: string; // beat de onde veio (main) ou cuja pista ela traz (side do quadro)
+  board?: boolean; // oferta do quadro de missões (código): fica no painel, sem o aviso na tela nem o Narrador
+  domestic?: boolean; // doméstica rank D do quadro (no máximo uma por dia de jogo)
+  proof?: string; // prova de técnica: nome da técnica que está no platô do treino
 }
+
+export type ObjectiveScope = "main" | "side";
+export const scopeOf = (o: Objective): ObjectiveScope => o.scope ?? "side";
+
+/** Modo de jogo (campaigns.state.play): em missão a ação é só pelas opções; exploração e conversa, texto livre. */
+export interface Play {
+  mode: "exploration" | "mission" | "conversation";
+  beatId?: string; // só em missão principal: o beat que ela fecha
+  objectiveId?: string;
+  title?: string;
+  scope?: ObjectiveScope;
+}
+export const getPlay = (state: Record<string, unknown> | null | undefined): Play => {
+  const p = state?.play as Play | undefined;
+  return p && typeof p === "object" && p.mode ? p : { mode: "exploration" };
+};
 
 export const OBJECTIVE_KIND_LABEL: Record<ObjectiveKind, string> = { missao: "Missão", evento: "Evento", outro: "Outro" };
 
@@ -51,6 +73,24 @@ export function objectiveXp(o: Objective, ruleset: Ruleset, table: TableRules, p
   const base = next ? next.xpRequired - playerXp : levels.length > 1 ? levels.at(-1)!.xpRequired - levels.at(-2)!.xpRequired : 0;
   const pct = xpRule(table)[o.xpSize === "pequena" ? "min" : o.xpSize === "media" ? "max" : "great"];
   return Math.max(1, Math.round((base * pct) / 100));
+}
+
+/**
+ * Pagamento padrão da parte do jogador pelo tamanho, quando a oferta veio sem pay: o começo da faixa do rank nos preços
+ * de referência do mundo (pequena = D, media = C, grande = B, excepcional = A; "rank D 5 mil a 50 mil; C 30 mil..."); sem faixa
+ * legível, um décimo do saldo inicial ×1/2/4/8. Sem moeda: undefined.
+ */
+export function defaultPay(c: Currency | undefined, size: ObjectiveXpSize = "pequena"): number | undefined {
+  if (!c) return undefined;
+  const rank = { pequena: "D", media: "C", grande: "B", excepcional: "A" }[size];
+  const m = c.prices?.match(new RegExp(`(?:\\brank\\s+|[;,:]\\s*)${rank}\\s+([\\d.,]+)\\s*(mil|milh[aãoõ]+)?`, "i"));
+  if (m) {
+    const n = Number(m[1].replace(/\./g, "").replace(",", "."));
+    const mult = !m[2] ? 1 : /^mil$/i.test(m[2]) ? 1000 : 1_000_000;
+    if (n > 0) return Math.round(n * mult) * (c.units.at(-1)?.value ?? 1);
+  }
+  const k = { pequena: 1, media: 2, grande: 4, excepcional: 8 }[size];
+  return Math.max(1, Math.round(((c.start ?? 1000) / 10) * k));
 }
 
 /** "faltam 2 dias e 3 h", "faltam 5 h e 20 min", "vence em 40 min", "venceu". */

@@ -4,6 +4,8 @@ import { restoreSnapshot } from "@/lib/turnSnapshot";
 import { clearPanelDecisions } from "@/lib/tools";
 import { clearPlayerFixes, turns } from "@/lib/corrections";
 import { TurnEvent } from "@/lib/types";
+import { q } from "@/lib/db";
+import { CONTINUE_INPUT } from "@/lib/continueScene";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -14,6 +16,7 @@ export const maxDuration = 300;
 // com vários, precisaria de um lock no banco
 
 /**
+ * Em missão (campaigns.state.play.mode) só optionIndex, Continuar e gerar novamente: texto livre → 400 { error }.
  * POST { input, noTalk?, optionIndex? } | { regenerate, feedback? } | { regenerate, input } (editar a última ação) → SSE de
  * eventos do turno (status, tools, dados, narração, opções). optionIndex: a ação é a opção N da última narração (passos já
  * tipados, sem Intérprete); input traz o rótulo dela. Pergunta ou reclamação sobre o registro vai à conversa fora do jogo: evento ooc, sem turno.
@@ -39,6 +42,14 @@ export async function POST(
     t?.stop.abort();
     await t?.done;
     return Response.json({ ok: true });
+  }
+
+  // em missão a ação é só pelas opções: texto livre volta 400 (Continuar e gerar novamente passam)
+  const option = Number.isInteger(optionIndex) && optionIndex! >= 0 ? optionIndex : undefined;
+  if (!regenerate && option === undefined && String(input || "").trim() !== CONTINUE_INPUT) {
+    const [row] = await q<{ mode: string | null }>(`SELECT state->'play'->>'mode' AS mode FROM campaigns WHERE id = $1`, [id]);
+    if (row?.mode === "mission")
+      return Response.json({ error: "Em missão você age pelas opções: escolha uma delas (conversar com um NPC em cena e Fora do jogo continuam livres)." }, { status: 400 });
   }
 
   const prev = turns.get(id)?.done;
@@ -70,7 +81,6 @@ export async function POST(
             if (edited) await runTurn(id, edited, emit, undefined, signal, false);
             else await runTurn(id, lastInput, emit, { feedback: String(feedback || "").slice(0, 1000) }, signal);
           } else {
-            const option = Number.isInteger(optionIndex) && optionIndex! >= 0 ? optionIndex : undefined;
             await runTurn(id, String(input || "").trim() || "(o jogador hesita)", emit, undefined, signal, true, !noTalk, option);
           }
           // missão aceita ou recusada pelo painel antes deste turno: o Mestre já reconheceu na cena (fala fora do jogo não narra)

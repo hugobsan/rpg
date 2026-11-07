@@ -5,7 +5,6 @@ import { formatClock, period } from "@/lib/clock";
 import type { CampaignRow } from "./campaignList";
 import s from "./home.module.css";
 
-export const STYLE_LABEL: Record<string, string> = { open: "Aberta", hybrid: "Híbrida", guided: "Guiada" };
 const MODE_LABEL: Record<string, string> = {
   exploration: "Exploração",
   dialogue: "Diálogo",
@@ -55,7 +54,7 @@ export default function CampaignCard({ c, featured, actions, href = `/campaign/$
           {href ? <Link href={href} className={s.link}>{c.name}</Link> : c.name || "Sua campanha"}
         </h2>
         <p className={s.char}>
-          {c.character_name && <>com <b>{c.character_name}</b> · </>}campanha {(STYLE_LABEL[c.style] || c.style).toLowerCase()}
+          {c.character_name ? <>com <b>{c.character_name}</b></> : "sem personagem"}
         </p>
         {(c.mode || c.location || c.clock != null) && (
           <div className={s.where}>

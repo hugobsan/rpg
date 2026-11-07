@@ -189,7 +189,8 @@ export interface Sheet {
   /** horas de treino acumuladas por atributo, rumo ao próximo +1 */
   trainingHours?: Record<string, number>;
   /** treino e ganho de domínio do dia do jogo atual (zera quando o dia muda) */
-  trainingLog?: { day: number; hours: number; mastery: Record<string, number> };
+  // blocks/uses: blocos de treino e usos sem risco por técnica no dia (retorno decrescente)
+  trainingLog?: { day: number; hours: number; mastery: Record<string, number>; blocks?: Record<string, number>; uses?: Record<string, number> };
   /** multiplicador geral de custo das habilidades (Ruleset.costControlLabel; ex.: 0,75 controle excelente, 1,25 ruim); padrão 1 */
   costMult?: number;
   /** dinheiro, na menor moeda do mundo (Ruleset.currency) */
@@ -251,7 +252,6 @@ export interface Character {
 
 // ---------- Campanha / cena ----------
 
-export type CampaignStyle = "open" | "hybrid" | "guided";
 export type SceneMode =
   | "exploration"
   | "dialogue"
@@ -262,7 +262,6 @@ export type SceneMode =
 export interface Campaign {
   id: string;
   name: string;
-  style: CampaignStyle;
   ruleset: Ruleset;
   state: Record<string, unknown>;
   // arco ativo (lib/story.ts), lido junto em getCampaign: momento da história para o Ilustrador e o Criador de personagens

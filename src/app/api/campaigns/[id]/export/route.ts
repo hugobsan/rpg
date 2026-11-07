@@ -40,7 +40,7 @@ export async function GET(
   ]);
   const dump = {
     exportedAt: new Date().toISOString(),
-    campaign: { name: campaign.name, style: campaign.style, ruleset: campaign.ruleset },
+    campaign: { name: campaign.name, ruleset: campaign.ruleset },
     story,
     characters,
     scenes,

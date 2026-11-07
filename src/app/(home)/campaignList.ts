@@ -6,7 +6,6 @@ import type { Campaign } from "@/lib/types";
 export interface CampaignRow {
   id: string;
   name: string;
-  style: string;
   ruleset_name: string;
   theme: ThemeKey;
   mode: string | null; // modo da cena atual
@@ -24,7 +23,7 @@ export interface CampaignRow {
 export async function listCampaigns(): Promise<CampaignRow[]> {
   // só os campos que o tema usa (o state inteiro pode ser grande: missões...)
   const rows = await q<Omit<CampaignRow, "theme"> & Pick<Campaign, "state" | "ruleset">>(
-    `SELECT c.id, c.name, c.style, c.created_at::text, c.updated_at::text,
+    `SELECT c.id, c.name, c.created_at::text, c.updated_at::text,
             c.ruleset->>'name' AS ruleset_name,
             jsonb_build_object('name', c.ruleset->'name', 'description', c.ruleset->'description', 'theme', c.ruleset->'theme') AS ruleset,
             jsonb_build_object('theme', c.state->'theme') AS state,

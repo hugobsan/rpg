@@ -1,5 +1,6 @@
 /**
- * Checagem da progressão (domínio, nível de poder, pontos livres, teto, treino) sem IA.
+ * Checagem da progressão (domínio, nível de poder, pontos livres, teto, treino com retorno decrescente por técnica no
+ * dia e platô antes do marco, que só a prova no uso arriscado passa) sem IA.
  * Parte pura sobre o naruto-ruleset.json e parte de banco: cria uma campanha de teste,
  * chama as ferramentas do Mestre direto (use_ability, train, update_attribute, grant_xp)
  * e apaga a campanha no fim. A campanha usa um mundo test-<uuid>: o kit entra na biblioteca desse mundo
@@ -13,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { q, pool } from "../src/lib/db";
 import { blankSheet, normalizeRuleset, startingKit } from "../src/lib/ruleset";
 import {
-  attributeCap, attributePoints, effectiveCost, LEGACY_MASTERY, masteryBonus, powerLevel, raiseBlocked, train,
+  attributeCap, attributePoints, effectiveCost, LEGACY_MASTERY, masteryBonus, powerLevel, raiseBlocked, repeatFactor, train, trainCeiling, useGain,
 } from "../src/lib/progression";
 import { executeGmTool, ToolContext } from "../src/lib/tools";
 import { dehydrateSheet, ensureLibraryAbility, hydrateSheets } from "../src/lib/library";
@@ -101,15 +102,43 @@ ok("treino de jutsu: por hora, rendimento menor no alto, teto diário", () => {
   assert.ok(!("error" in r) && r.kind === "ability");
   assert.equal(s.abilities[0].progress, 66); // 2/h na faixa 50-74
   const r2 = train(rs, s, "Bunshin", 7, 1);
-  assert.ok(!("error" in r2) && r2.kind === "ability");
-  // 66→68→70→72→74→76→77→78 = +12, mas o teto diário é 25 (já tinha +6): cabe
-  assert.equal(s.abilities[0].progress, 78);
+  assert.ok(!("error" in r2) && r2.kind === "ability" && r2.plateau === "tired");
+  // 66→68→70→72→74→76→77→78 = +12, mas é o 2º bloco do dia: rende metade (+6)
+  assert.equal(s.abilities[0].progress, 72);
   assert.equal(s.trainingLog!.hours, 10);
   const r3 = train(rs, s, "Bunshin", 1, 1);
   assert.ok("error" in r3 && /exausto/.test(r3.error), "11ª hora no mesmo dia é recusada");
   const r4 = train(rs, s, "Bunshin", 1, 2); // dia seguinte zera
   assert.ok(!("error" in r4));
   assert.equal(s.trainingLog!.day, 2);
+});
+ok("retorno decrescente: 2º bloco do dia rende metade, 3º nada (platô); uso sem risco também decresce", () => {
+  const s = sheet();
+  s.abilities = [{ name: "Henge", type: "ninjutsu", rank: "D", progress: 0 }, { name: "Kawarimi", type: "ninjutsu", rank: "D", progress: 0 }];
+  const a = train(rs, s, "Henge", 2, 1); // +6
+  const b = train(rs, s, "Henge", 2, 1); // +3
+  const c = train(rs, s, "Henge", 2, 1); // 0, platô
+  assert.ok(!("error" in a) && !("error" in b) && !("error" in c));
+  assert.ok(a.kind === "ability" && b.kind === "ability" && c.kind === "ability");
+  assert.deepEqual([a.after, b.after, c.after, c.plateau], [6, 9, 9, "repeat"]);
+  assert.equal(s.trainingLog!.hours, 6, "o platô também gasta as horas (o relógio anda)");
+  const k = train(rs, s, "Kawarimi", 2, 1); // outra técnica, 1º bloco: inteiro
+  assert.ok(!("error" in k) && k.after === 6);
+  const d = train(rs, s, "Henge", 2, 2); // dia seguinte: inteiro de novo
+  assert.ok(!("error" in d) && d.after === 15);
+  // uso: arriscado sempre inteiro; sem risco, 1º inteiro, 2º metade, 3º zero
+  const h = s.abilities[0];
+  assert.deepEqual([useGain(rs, h, s, 3, true), useGain(rs, h, s, 3, false), useGain(rs, h, s, 3, false), useGain(rs, h, s, 3, false), useGain(rs, h, s, 3, true)], [5, 5, 2, 0, 5]);
+  assert.deepEqual([0, 1, 2, 5].map(repeatFactor), [1, 0.5, 0, 0]);
+});
+ok("salto de faixa por prova: o treino para um ponto antes do marco", () => {
+  const s = sheet();
+  s.abilities = [{ name: "Kanchi", type: "ninjutsu", rank: "D", progress: 18, milestones: [{ threshold: 25, description: "sente através de paredes" }] }];
+  const r = train(rs, s, "Kanchi", 4, 1); // +12 queria, para em 24
+  assert.ok(!("error" in r) && r.kind === "ability" && r.after === 24 && r.plateau === "milestone" && !r.milestone);
+  assert.equal(trainCeiling(s.abilities[0]), 24);
+  const again = train(rs, s, "Kanchi", 2, 2);
+  assert.ok(!("error" in again) && again.kind === "ability" && again.after === 24 && again.plateau === "milestone");
 });
 ok("treino de jutsu corta no teto diário de domínio", () => {
   const s = sheet();

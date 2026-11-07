@@ -8,6 +8,11 @@ import { clockParts, formatClock, getClock, toMinutes } from "./clock";
 import { decide, PC_ACT_MIN } from "./decisions";
 import { activeDirectives } from "./retrieval";
 import { addEvent } from "./knowledge";
+import { failMission } from "./effects";
+import { mastery } from "./progression";
+import { nextMilestone } from "./ruleset";
+import { getObjectives, getPlay, scopeOf, type Objective, type ObjectiveXpSize, type Play } from "./objectives";
+export { getPlay, type Play };
 import { executeGmTool, loadObjectives, type ToolContext } from "./tools";
 import { fold, matchName, parseLooseJson } from "./contracts";
 import type { Campaign, Character, Scene } from "./types";
@@ -558,6 +563,70 @@ export function cardBlock(card: Card | null, beat: BeatRow | null, news: string[
   return lines.join("\n");
 }
 
+// ---------- quadro de missões (puro) ----------
+
+export interface BoardOffer {
+  title: string;
+  description: string;
+  xpSize: ObjectiveXpSize;
+  giver?: string;
+  beatId?: string;
+  domestic?: true;
+  proof?: string;
+}
+
+// ponytail: domésticas genéricas que servem a qualquer mundo; por mundo (references/) se ficarem repetitivas
+const DOMESTIC: [string, string][] = [
+  ["Animal fugido", "Um morador perdeu o animal de estimação e paga a quem o trouxer de volta sem um arranhão."],
+  ["Entregas pela cidade", "Um comerciante atrasado precisa de alguém rápido para levar encomendas a vários endereços antes do fim do dia."],
+  ["Mutirão na obra", "Uma família reconstrói a casa depois de um temporal e falta braço para carregar e erguer."],
+  ["Vigia do armazém", "O dono de um armazém ouviu barulhos à noite e quer alguém de guarda até o amanhecer."],
+  ["Ervas para a curandeira", "A curandeira precisa de ervas que só crescem fora dos muros, colhidas ainda com orvalho."],
+  ["Terreno tomado pelo mato", "Um velho não dá conta do terreno atrás de casa: mato alto, entulho e um toco teimoso."],
+];
+
+/**
+ * Até `want` ofertas para o quadro, por código: 1 ligada à trama (pista ou detalhe de um beat que vem, senão o pedido
+ * de um NPC com agenda), prova de técnica parada no platô do treino e no máximo 1 doméstica rank D por dia de jogo.
+ * Nada repete o que já está oferecido ou aberto.
+ */
+export function boardOffers(
+  input: { story: Story; npcs: { name: string; wants?: string; agenda?: string }[]; objectives: Objective[]; day: number; location: string; proofs: string[] },
+  want: number
+): BoardOffer[] {
+  const live = input.objectives.filter((o) => o.status === "oferecida" || o.status === "aberto");
+  const taken = new Set(live.map((o) => fold(o.title)));
+  const out: BoardOffer[] = [];
+  const add = (o: BoardOffer) => out.length < want && !taken.has(fold(o.title)) && (taken.add(fold(o.title)), out.push(o));
+  if (!live.some((o) => o.beatId || (o.giver && input.npcs.some((n) => n.name === o.giver && (n.agenda || n.wants))))) {
+    const arc = activeArc(input.story);
+    const beat = input.story.beats
+      .filter((b) => b.arc_id === arc?.id && (b.status === "pending" || b.status === "ready") && (b.foreshadow || b.clue))
+      .sort((a, b) => a.ord - b.ord)[0];
+    const npc = input.npcs.find((n) => (n.wants || n.agenda) && !live.some((o) => o.giver === n.name));
+    if (beat) add({ title: `Boato ${beat.location ? `em ${cut(beat.location, 40)}` : "pela cidade"}`, description: `Alguém comenta, baixo: ${cut(beat.foreshadow || beat.clue, 200)}`, xpSize: "media", beatId: beat.id });
+    else if (npc) add({ title: `Pedido de ${npc.name}`, description: cut(npc.wants || npc.agenda, 200), xpSize: "media", giver: npc.name });
+  }
+  for (const name of input.proofs)
+    if (!live.some((o) => o.proof === name))
+      add({ title: `Prova: ${name}`, description: `O treino sozinho chegou ao limite: mostrar ${name} a quem possa avaliar, numa situação de verdade.`, xpSize: "pequena", proof: name });
+  const today = input.objectives.some((o) => o.domestic && clockParts(o.createdAt).day === input.day);
+  if (!today) {
+    const recent = new Set(input.objectives.filter((o) => o.domestic && clockParts(o.createdAt).day > input.day - 5).map((o) => fold(o.title)));
+    for (let i = 0; i < DOMESTIC.length; i++) {
+      const [title, description] = DOMESTIC[(input.day + i) % DOMESTIC.length];
+      if (recent.has(fold(title)) || taken.has(fold(title))) continue;
+      add({ title, description: input.location ? `${description} (${cut(input.location, 40)})` : description, xpSize: "pequena", domestic: true });
+      break;
+    }
+  }
+  return out;
+}
+
+/** Técnicas paradas no platô do treino (a um ponto do próximo marco): pedem prova em situação de verdade. */
+export const proofAbilities = (abilities: Character["sheet"]["abilities"]) =>
+  abilities.filter((a) => !a.removed && nextMilestone(a) && mastery(a) >= nextMilestone(a)!.threshold - 1).map((a) => a.name);
+
 // ---------- banco ----------
 
 export async function loadStory(campaignId: string): Promise<Story> {
@@ -587,17 +656,28 @@ async function saveDiff(before: Story, after: Story): Promise<void> {
     }
 }
 
-export interface Play {
-  mode: "exploration" | "mission" | "conversation";
-  beatId?: string;
-  objectiveId?: string;
-  title?: string;
-}
-export const getPlay = (state: Record<string, unknown>): Play => (obj(state.play).mode ? (state.play as Play) : { mode: "exploration" });
+/** Missão aceita → modo missão. beatId só na principal (a side do quadro só traz a pista do beat). */
+export const missionPlay = (o: Objective): Play => ({
+  mode: "mission",
+  objectiveId: o.id,
+  title: o.title,
+  scope: scopeOf(o),
+  ...(scopeOf(o) === "main" && o.beatId && { beatId: o.beatId }),
+});
 
 async function patchState(ctx: ToolContext, patch: Record<string, unknown>) {
   await q(`UPDATE campaigns SET state = state || $1::jsonb WHERE id = $2`, [JSON.stringify(patch), ctx.campaign.id]);
   ctx.campaign.state = { ...ctx.campaign.state, ...patch };
+}
+
+/** Entra na missão aberta `id` (painel, bloco de efeitos, conversa particular). Já em outra missão: não troca. */
+export async function enterMission(campaignId: string, id: string): Promise<Play | null> {
+  const [row] = await q<{ state: Record<string, unknown> }>(`SELECT state FROM campaigns WHERE id = $1`, [campaignId]);
+  const o = getObjectives(row?.state).find((x) => x.id === id && x.status === "aberto");
+  if (!o || getPlay(row.state).mode === "mission") return null;
+  const play = missionPlay(o);
+  await q(`UPDATE campaigns SET state = state || jsonb_build_object('play', $1::jsonb) WHERE id = $2`, [JSON.stringify(play), campaignId]);
+  return play;
 }
 
 /** Fecha o beat (done): missão dele concluída por código (paga e dá XP), modo volta a exploração. */
@@ -620,11 +700,16 @@ async function activateBeat(ctx: ToolContext, b: BeatRow) {
   if (!b.reward) return;
   await executeGmTool(
     "add_objective",
-    { title: b.title, kind: "missao", description: cut(b.situation.replace(/^No cânone, com ou sem o jogador: /, ""), 300), status: "aberto", xpSize: b.reward.xp ?? "pequena", ...(b.reward.pay && { pay: b.reward.pay, payUnit: ctx.campaign.ruleset.currency?.units.at(-1)?.key }) },
+    {
+      title: b.title, kind: "missao", description: cut(b.situation.replace(/^No cânone, com ou sem o jogador: /, ""), 300), status: "aberto",
+      xpSize: b.reward.xp ?? "pequena", scope: "main", arcId: b.arc_id, beatId: b.id,
+      ...(b.reward.pay && { pay: b.reward.pay, payUnit: ctx.campaign.ruleset.currency?.units.at(-1)?.key }),
+    },
     ctx
   );
   const o = (await loadObjectives(ctx.campaign.id)).find((x) => x.status === "aberto" && fold(x.title) === fold(b.title));
-  if (o) await patchState(ctx, { play: { mode: "mission", beatId: b.id, objectiveId: o.id, title: b.title } });
+  // em outra missão (side): fica aberta e entra quando aquela acabar (afterTurn)
+  if (o && getPlay(ctx.campaign.state).mode !== "mission") await patchState(ctx, { play: missionPlay(o) });
 }
 
 /**
@@ -663,16 +748,92 @@ async function markCardStale(scene: Scene) {
  * Depois dos efeitos do turno: o "beat" do Narrador (done fecha e conclui a missão; advance pede cartão novo), missão
  * do beat que fechou por outro caminho, passo da história e agenda (< 4 beats abertos: Roteirista em segundo plano).
  */
-export async function afterTurn(ctx: ToolContext, beat: { op: "advance" | "done"; id: string } | null): Promise<void> {
+export async function afterTurn(
+  ctx: ToolContext,
+  fx: { beat: { op: "advance" | "done"; id: string } | null; mission?: { op: string; id: string } | null },
+  o: { abandon?: boolean } = {}
+): Promise<void> {
+  const { beat, mission } = fx;
   if (beat?.op === "done") await finishBeat(ctx, beat.id, true);
   else if (beat?.op === "advance") await markCardStale(ctx.scene);
+  if (mission?.op === "accept") {
+    const play = await enterMission(ctx.campaign.id, mission.id);
+    if (play) ctx.campaign.state = { ...ctx.campaign.state, play };
+  }
+  // a missão do modo fechou (concluída, falhou, prazo): volta à exploração
   const play = getPlay(ctx.campaign.state);
-  if (play.mode === "mission" && play.objectiveId) {
-    const o = (await loadObjectives(ctx.campaign.id)).find((x) => x.id === play.objectiveId);
-    if (!o || o.status !== "aberto") await finishBeat(ctx, play.beatId ?? "", false);
+  if (play.mode === "mission") {
+    const m = (await loadObjectives(ctx.campaign.id)).find((x) => x.id === play.objectiveId);
+    if (!m || m.status !== "aberto") {
+      if (play.beatId) await finishBeat(ctx, play.beatId, false);
+      else await patchState(ctx, { play: { mode: "exploration" } });
+    }
   }
   const step = await advanceStory(ctx, { clearNews: true });
+  // depois do passo da história: a notícia do beat perdido fica para o próximo Narrador
+  if (o.abandon) await abandonMission(ctx);
+  if (getPlay(ctx.campaign.state).mode === "exploration") {
+    // missão principal que abriu enquanto o jogador estava numa side: entra agora
+    const act = activeBeat(step.story);
+    const main = act && getObjectives(ctx.campaign.state).find((x) => x.status === "aberto" && x.beatId === act.id && scopeOf(x) === "main");
+    if (main) await patchState(ctx, { play: missionPlay(main) });
+    else await ensureBoard(ctx, step.story).catch((e) => console.warn("[quadro]", e));
+  }
   if (agendaSize(step.story) < 4) extendInBackground(ctx.campaign.id);
+}
+
+/**
+ * Quadro de missões: em exploração e sem side aberta, completa até 3 ofertas (boardOffers). Ofertas do quadro com mais
+ * de 2 dias saem sem aviso. Ficam no painel Missões (sem o aviso na tela nem o Narrador); aceitar entra em missão.
+ */
+async function ensureBoard(ctx: ToolContext, story: Story) {
+  const now = getClock(ctx.campaign.state)?.minutes;
+  if (now === undefined) return;
+  let list = await loadObjectives(ctx.campaign.id);
+  if (list.some((o) => o.status === "aberto" && scopeOf(o) === "side")) return;
+  const old = (o: Objective) => o.board && o.status === "oferecida" && o.createdAt < now - 2 * 1440;
+  if (list.some(old)) {
+    list = list.map((o) => (old(o) ? { ...o, status: "cancelado" as const, closedAt: now } : o));
+    await q(`UPDATE campaigns SET state = state || jsonb_build_object('objectives', $1::jsonb) WHERE id = $2`, [JSON.stringify(list), ctx.campaign.id]);
+    ctx.campaign.state = { ...ctx.campaign.state, objectives: list };
+  }
+  const want = 3 - list.filter((o) => o.status === "oferecida").length;
+  if (want <= 0) return;
+  const chars = await (await import("./engine")).getCharacters(ctx.campaign.id);
+  const player = chars.find((c) => c.kind === "player");
+  const offers = boardOffers(
+    {
+      story,
+      npcs: chars.filter((c) => c.kind === "npc").map((c) => ({ name: c.name, wants: c.persona.wants, agenda: c.persona.agenda })),
+      objectives: list,
+      day: clockParts(now).day,
+      location: ctx.scene.location,
+      proofs: player ? proofAbilities(player.sheet.abilities) : [],
+    },
+    want
+  );
+  for (const o of offers)
+    await executeGmTool("add_objective", { ...o, kind: "missao", status: "oferecida", board: true }, ctx).catch((e) => console.warn("[quadro]", e));
+}
+
+/**
+ * Abandonar a missão (opção "exit" em missão): ela vira falha; na principal o beat fica perdido (o fallback vira notícia
+ * pública) e o primeiro relógio do arco anda um segmento. Volta à exploração.
+ */
+async function abandonMission(ctx: ToolContext) {
+  const play = getPlay(ctx.campaign.state);
+  if (play.mode !== "mission") return;
+  if (play.objectiveId) await failMission(ctx, play.objectiveId);
+  if (play.beatId) {
+    const [b] = await q<BeatRow>(`UPDATE beats SET status = 'missed', resolved_at = now() WHERE id = $1 AND status IN ('ready','active') RETURNING *`, [play.beatId]);
+    if (b?.fallback) {
+      await addEvent(ctx.campaign.id, b.fallback, { public: true, minute: getClock(ctx.campaign.state)?.minutes ?? null }).catch((e) => console.warn("[história]", e));
+      await patchState(ctx, { news: [...((ctx.campaign.state.news as string[] | undefined) ?? []), b.fallback].slice(-4) });
+    }
+    if (b) await q(`UPDATE clocks SET filled = LEAST(segments, filled + 1) WHERE id = (SELECT id FROM clocks WHERE arc_id = $1 ORDER BY name LIMIT 1)`, [b.arc_id]);
+    await markCardStale(ctx.scene);
+  }
+  await patchState(ctx, { play: { mode: "exploration" } });
 }
 
 // ponytail: trava por processo; dois servidores podiam estender juntos (a agenda só ficaria maior)

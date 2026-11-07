@@ -4,7 +4,7 @@
  * ferramentas (tools.ts) e a rota de atributos gravam e emitem os eventos.
  */
 import { Ability, AbilityMilestone, MasteryBand, PowerLevelDef, Ruleset, Sheet, TrainingRules } from "./types";
-import { abilityCost, currentMilestone } from "./ruleset";
+import { abilityCost, currentMilestone, nextMilestone } from "./ruleset";
 
 /** Domínio de habilidade sem `progress` (fichas antigas, NPCs): neutro, sem bônus de custo. */
 export const LEGACY_MASTERY = 50;
@@ -194,28 +194,52 @@ function todayLog(s: Sheet, day: number) {
   return s.trainingLog;
 }
 
-/** Sobe o domínio respeitando 100% e o teto diário por habilidade. Muta a ficha. */
+/**
+ * Sobe o domínio respeitando 100% e o teto diário por habilidade. Muta a ficha. ceiling: teto deste ganho (o treino para
+ * um ponto antes do próximo marco: o salto vem por prova, no uso de verdade).
+ */
 export function gainMastery(
   r: Ruleset,
   s: Sheet,
   a: Ability,
   wanted: number,
-  day: number
+  day: number,
+  ceiling = 100
 ): { before: number; after: number; capped: boolean; milestone: AbilityMilestone | null } {
   const log = todayLog(s, day);
   const key = a.name.toLowerCase();
   const left = Math.max(0, trainingRules(r).maxMasteryPerDay - (log.mastery[key] ?? 0));
   const before = mastery(a);
   const prevMs = currentMilestone({ ...a, progress: before });
-  const gain = Math.max(0, Math.min(wanted, left, 100 - before));
+  const gain = Math.max(0, Math.min(wanted, left, 100 - before, ceiling - before));
   a.progress = before + gain;
   log.mastery[key] = (log.mastery[key] ?? 0) + gain;
   const ms = currentMilestone(a);
   return { before, after: a.progress, capped: gain < wanted && before + gain < 100, milestone: ms && ms.threshold !== prevMs?.threshold ? ms : null };
 }
 
-/** Ganho de domínio por um uso real. */
-export const useGain = (r: Ruleset, a: Ability) => band(trainingRules(r).masteryPerUse, mastery(a));
+/** Fator do retorno decrescente pelo n-ésimo bloco (ou uso sem risco) da técnica no dia: 1º inteiro, 2º metade, 3º zero. */
+export const repeatFactor = (n: number) => (n <= 0 ? 1 : n === 1 ? 0.5 : 0);
+
+/** Teto do treino: um ponto antes do próximo marco (o salto de faixa vem pela prova, no uso arriscado). */
+export const trainCeiling = (a: Ability) => {
+  const next = nextMilestone({ ...a, progress: mastery(a) });
+  return next ? next.threshold - 1 : 100;
+};
+
+/**
+ * Ganho de domínio por um uso real. risky = havia risco (alvo, dificuldade alta, missão): ganho inteiro, sem contar.
+ * Sem risco, o uso repetido da mesma técnica no dia decresce (repeatFactor) e conta no dia. Muta o registro do dia.
+ */
+export function useGain(r: Ruleset, a: Ability, s?: Sheet, day?: number, risky = true): number {
+  const full = band(trainingRules(r).masteryPerUse, mastery(a));
+  if (risky || !s || day === undefined) return full;
+  const log = todayLog(s, day);
+  const key = a.name.toLowerCase();
+  const n = log.uses?.[key] ?? 0;
+  log.uses = { ...log.uses, [key]: n + 1 };
+  return Math.floor(full * repeatFactor(n));
+}
 
 export type TrainResult =
   | { error: string }
@@ -228,6 +252,8 @@ export type TrainResult =
       capped: boolean;
       milestone: AbilityMilestone | null;
       hoursToday: number;
+      // repeat: 3º bloco do dia (nada); tired: 2º (metade); milestone: parou antes do marco (falta a prova)
+      plateau?: "repeat" | "tired" | "milestone";
     }
   | {
       kind: "attribute";
@@ -275,9 +301,16 @@ export function train(r: Ruleset, s: Sheet, target: string, hours: number, day: 
     // hora a hora: a faixa muda no meio do treino
     let p = before;
     for (let i = 0; i < h; i++) p = Math.min(100, p + band(tr.masteryPerHour, p));
-    const g = gainMastery(r, s, ability, p - before, day);
-    if (!parallel) todayLog(s, day).hours += h;
-    return { kind: "ability", label: ability.name, hours: h, ...g, hoursToday: todayLog(s, day).hours };
+    // retorno decrescente: o 2º bloco da mesma técnica no dia rende metade, o 3º nada (platô, cansaço)
+    const log = todayLog(s, day);
+    const n = log.blocks?.[key] ?? 0;
+    log.blocks = { ...log.blocks, [key]: n + 1 };
+    const factor = repeatFactor(n);
+    const ceiling = trainCeiling(ability);
+    const g = gainMastery(r, s, ability, Math.floor((p - before) * factor), day, ceiling);
+    if (!parallel) log.hours += h;
+    const plateau = factor === 0 ? "repeat" : before >= ceiling || (g.after >= ceiling && ceiling < 100) ? "milestone" : factor < 1 ? "tired" : undefined;
+    return { kind: "ability", label: ability.name, hours: h, ...g, hoursToday: log.hours, ...(plateau && { plateau }) };
   }
 
   const key = attr!.key;

@@ -78,11 +78,6 @@
   background: var(--accent-fill); color: var(--accent-ink);
 }
 
-/* estilo: miniatura do que aparece no fim da narração */
-.mock { display: flex; flex-direction: column; gap: 5px; margin-top: auto; padding: var(--s-3); border-radius: var(--r-md); background: var(--bg-sunken); border: 1px solid var(--border); }
-.mockChoice { height: 9px; border-radius: 3px; background: var(--accent-soft); border: 1px solid var(--accent-line); }
-.mockInput { height: 16px; border-radius: 4px; border: 1px solid var(--border-strong); background: var(--bg); display: flex; align-items: center; padding-left: 6px; }
-.mockInput::before { content: ""; width: 1px; height: 9px; background: var(--accent); }
 
 /* importar JSON */
 .drop {

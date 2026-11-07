@@ -6,19 +6,12 @@ import { abilityCost, startingKit } from "@/lib/ruleset";
 import { DEFAULT_THEME, THEMES, inferTheme, type ThemeKey } from "@/lib/theme";
 import Loader from "@/components/ui/Loader";
 import { toast } from "@/components/ui/Toast";
-import CampaignCard, { STYLE_LABEL } from "@/app/(home)/CampaignCard";
+import CampaignCard from "@/app/(home)/CampaignCard";
 import AdventureChat from "./AdventureChat";
 import s from "./new.module.css";
 
 type Preset = "naruto" | "default" | "import" | "ai";
-type Style = "open" | "hybrid" | "guided";
-const STEPS = ["Mundo", "Visual", "Estilo", "Personagem", "Extras", "Revisão"] as const;
-
-const STYLES: [Style, string, string, string, number][] = [
-  ["open", "Aberta", "Você descreve tudo o que faz. O Mestre nunca sugere opções: liberdade total.", "Quem gosta de improvisar e conhece o cenário.", 0],
-  ["hybrid", "Híbrida", "Nas cenas normais o Mestre sugere opções, e você também pode escrever o que quiser. Diálogos são sempre livres.", "A maioria das campanhas.", 2],
-  ["guided", "Guiada", "O Mestre dá opções concretas e você escolhe entre elas; a história fica mais controlada e verossímil. Só os diálogos são livres.", "Começar num cenário que você ainda não conhece.", 3],
-];
+const STEPS = ["Mundo", "Visual", "Personagem", "Extras", "Revisão"] as const;
 
 const facts = (r: Ruleset) => [
   `${r.attributes.length} atributos`,
@@ -42,11 +35,10 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
   const [startingPoint, setStartingPoint] = useState("");
   const ruleset = preset === "import" ? imported : preset === "ai" ? null : presets[preset];
 
-  // visual (null = o tema sugerido pelo cenário) e estilo
+  // visual (null = o tema sugerido pelo cenário)
   const [theme, setTheme] = useState<ThemeKey | null>(null);
   const suggested = inferTheme(ruleset) ?? DEFAULT_THEME;
   const shownTheme = theme ?? suggested;
-  const [style, setStyle] = useState<Style>("hybrid");
 
   // personagem
   const [charName, setCharName] = useState("");
@@ -136,7 +128,6 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          style,
           ruleset,
           theme: theme ?? undefined,
           startingPoint,
@@ -166,7 +157,7 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
     }
   };
 
-  const valid = [!!name.trim() && !!ruleset, true, true, !!charName.trim() && pointsLeft >= 0, true, true];
+  const valid = [!!name.trim() && !!ruleset, true, !!charName.trim() && pointsLeft >= 0, true, true];
   const reachable = (i: number) => valid.slice(0, i).every(Boolean);
   const go = (i: number) => {
     setStep(i);
@@ -177,7 +168,7 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
   return (
     <main className={`container ${s.wrap}`}>
       <h1>Nova campanha</h1>
-      <p className={`muted ${s.lede}`}>Seis passos curtos. Só o nome da campanha e o do personagem são obrigatórios; o resto tem padrão.</p>
+      <p className={`muted ${s.lede}`}>Cinco passos curtos. Só o nome da campanha e o do personagem são obrigatórios; o resto tem padrão.</p>
 
       <ol className={s.steps} aria-label="Passos">
         {STEPS.map((label, i) => (
@@ -273,28 +264,7 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
           </>
         )}
 
-        {step === 2 && (
-          <>
-            <h2>Estilo de condução</h2>
-            <p className="muted">Quanto o Mestre conduz. Afeta as opções que aparecem no fim de cada narração.</p>
-            <div className={s.options} role="radiogroup" aria-label="Estilo de condução">
-              {STYLES.map(([k, title, desc, goodFor, choices]) => (
-                <button key={k} type="button" role="radio" aria-checked={style === k} className={s.option} onClick={() => setStyle(k)}>
-                  <span className={s.optTitle}>{title}</span>
-                  {k === "hybrid" && <span className={`pill ${s.tag}`}>Recomendado</span>}
-                  <span className={s.optText}>{desc}</span>
-                  <span className={s.optText}><b style={{ color: "var(--text)" }}>Bom para:</b> {goodFor}</span>
-                  <span className={s.mock} aria-hidden="true">
-                    {Array.from({ length: choices }, (_, i) => <span key={i} className={s.mockChoice} style={{ width: `${88 - i * 14}%` }} />)}
-                    {k !== "guided" && <span className={s.mockInput} />}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        {step === 3 && ruleset && (
+        {step === 2 && ruleset && (
           <>
             <h2>Seu personagem</h2>
             <label className="field" style={{ marginTop: 16 }}>
@@ -447,7 +417,7 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
           </>
         )}
 
-        {step === 4 && (
+        {step === 3 && (
           <>
             <h2>Referências e roteiro</h2>
             <p className="muted">Opcional. Material de consulta para o Mestre, o roteiro interno e quem já está na sua vida.</p>
@@ -472,7 +442,7 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
           </>
         )}
 
-        {step === 5 && ruleset && (
+        {step === 4 && ruleset && (
           <>
             <h2>Revisão</h2>
             <p className="muted">Confira antes de abrir a mesa. Tudo aqui ainda dá para ajustar voltando ao passo.</p>
@@ -480,7 +450,7 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
               <div>
                 <div className={`overline ${s.previewLabel}`}>Assim ela aparece na sua lista</div>
                 <CampaignCard href={null} c={{
-                  id: "preview", name: name.trim(), style, ruleset_name: ruleset.name, theme: shownTheme,
+                  id: "preview", name: name.trim(), ruleset_name: ruleset.name, theme: shownTheme,
                   mode: "exploration", location: startingPoint.trim().slice(0, 120) || null, clock: null,
                   character_name: charName.trim() || null, message_count: 0, last_played: "", image_id: null, created_at: "", updated_at: "",
                 }} />
@@ -490,12 +460,11 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
                   ["Campanha", name.trim(), 0],
                   ["Cenário", ruleset.name, 0],
                   ["Tema", THEMES.find((t) => t.key === shownTheme)?.label, 1],
-                  ["Estilo", STYLE_LABEL[style], 2],
-                  ["Personagem", charName.trim(), 3],
-                  ["Atributos", ruleset.attributes.map((a) => `${a.label} ${attrs[a.key] ?? a.default}`).join(" · "), 3],
-                  [abLabel, `${kit.length} do kit inicial${extraAbilities.length ? ` + ${extraAbilities.length} extra` : ""}`, 3],
-                  ["Livro", bookFile?.name || "nenhum", 4],
-                  ["Roteiro", genScript ? "gerar ao criar (chamada de IA)" : "não gerar agora", 4],
+                  ["Personagem", charName.trim(), 2],
+                  ["Atributos", ruleset.attributes.map((a) => `${a.label} ${attrs[a.key] ?? a.default}`).join(" · "), 2],
+                  [abLabel, `${kit.length} do kit inicial${extraAbilities.length ? ` + ${extraAbilities.length} extra` : ""}`, 2],
+                  ["Livro", bookFile?.name || "nenhum", 3],
+                  ["Roteiro", genScript ? "gerar ao criar (chamada de IA)" : "não gerar agora", 3],
                 ] as const).map(([k, v, to]) => (
                   <div key={k} className={s.sumRow}>
                     <dt>{k}</dt>

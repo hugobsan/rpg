@@ -1,6 +1,6 @@
 "use client";
 import { formatClock, getClock } from "@/lib/clock";
-import { formatRemaining, getObjectives, Objective, OBJECTIVE_KIND_LABEL, objectiveXp } from "@/lib/objectives";
+import { formatRemaining, getObjectives, getPlay, Objective, OBJECTIVE_KIND_LABEL, objectiveXp, scopeOf } from "@/lib/objectives";
 import { getTable } from "@/lib/table";
 import type { Ruleset } from "@/lib/types";
 import { formatMoney } from "@/lib/money";
@@ -37,6 +37,8 @@ export default function ObjectivesView({ state, ruleset, playerXp, onDecide, dis
   const now = getClock(state)?.minutes;
   const all = getObjectives(state);
   const table = getTable(state);
+  // em missão não dá para aceitar outra (o servidor também recusa)
+  const busyMission = getPlay(state).mode === "mission";
   // prazo mais próximo primeiro; sem prazo no fim
   const byDeadline = (a: Objective, b: Objective) => (a.deadlineMinutes ?? Infinity) - (b.deadlineMinutes ?? Infinity);
   const offered = all.filter((o) => o.status === "oferecida").sort(byDeadline);
@@ -52,8 +54,9 @@ export default function ObjectivesView({ state, ruleset, playerXp, onDecide, dis
     // quanto do prazo já passou, desde que a missão surgiu
     const span = o.deadlineMinutes !== undefined ? o.deadlineMinutes - o.createdAt : 0;
     const used = left !== null && span > 0 ? Math.max(0, Math.min(1, 1 - left / span)) : null;
+    const main = o.kind === "missao" && scopeOf(o) === "main";
     return (
-      <div key={o.id} className={`${s.card} ${s.quest}${u ? ` ${s[u]}` : ""}${isOffer ? ` ${s.offered}` : isOpen ? "" : ` ${s.closed}`}`}
+      <div key={o.id} className={`${s.card} ${s.quest} ${main ? s.mainQuest : s.sideQuest}${u ? ` ${s[u]}` : ""}${isOffer ? ` ${s.offered}` : isOpen ? "" : ` ${s.closed}`}`}
         style={{ animationDelay: `${Math.min(n, 8) * 25}ms` }}>
         <div className={s.row} style={{ alignItems: "flex-start" }}>
           <div className={s.grow}>
@@ -65,7 +68,13 @@ export default function ObjectivesView({ state, ruleset, playerXp, onDecide, dis
             </span>
           )}
           {isOpen || isOffer ? (
-            <span className={s.chip}>{OBJECTIVE_KIND_LABEL[o.kind] || o.kind}</span>
+            o.kind === "missao" ? (
+              <span className={`${s.chip} ${main ? s.main : s.side}`} data-tip={main ? "Missão do arco principal" : o.board ? "Do quadro de missões" : "Missão secundária"}>
+                {main ? "Principal" : o.domestic ? "Rank D" : o.board ? "Quadro" : "Secundária"}
+              </span>
+            ) : (
+              <span className={s.chip}>{OBJECTIVE_KIND_LABEL[o.kind] || o.kind}</span>
+            )
           ) : (
             <span className={`${s.chip} ${o.status === "concluido" ? s.ok : o.status === "perdido" ? s.bad : ""}`}>{STATUS_LABEL[o.status]}</span>
           )}
@@ -80,7 +89,8 @@ export default function ObjectivesView({ state, ruleset, playerXp, onDecide, dis
         {isOffer && (
           <div className={s.row} style={{ justifyContent: "flex-end", marginTop: 4 }}>
             <button className="btn ghost small" disabled={disabled} onClick={() => onDecide(o, false)}>Recusar</button>
-            <button className="btn small" disabled={disabled || isLate(o, now)} onClick={() => onDecide(o, true)}>Aceitar</button>
+            <button className="btn small" disabled={disabled || isLate(o, now) || busyMission} onClick={() => onDecide(o, true)}
+              title={busyMission ? "Termine ou abandone a missão atual antes" : "Aceitar entra em missão: você age pelas opções"}>Aceitar</button>
           </div>
         )}
         {isOpen && (
@@ -113,6 +123,8 @@ export default function ObjectivesView({ state, ruleset, playerXp, onDecide, dis
         <summary>Como funcionam os prazos</summary>
         <p>
           O Mestre registra missões, eventos marcados e compromissos quando surgem na história e marca quando são cumpridos.
+          Fora de missão, o quadro traz até 3 ofertas (uma ligada à história, no máximo uma doméstica por dia). Aceitar
+          entra em missão: você age pelas opções até concluir, falhar ou abandonar. Principal é do arco; o resto é secundária.
           Prazos correm no tempo do jogo: treinar, viajar ou descansar demais faz o prazo passar, e a missão é perdida.
           Missão oferecida ainda não foi aceita: o prazo só corre depois que você aceitar. A XP mostrada vem pela regra de
           XP da mesa e entra na ficha quando a missão é concluída.

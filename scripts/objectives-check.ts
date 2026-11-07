@@ -1,6 +1,7 @@
 /**
  * Verificação de missões, eventos e prazos: cria uma campanha temporária e chama as
- * ferramentas do Mestre direto (sem IA). Rodar: npx tsx scripts/objectives-check.ts
+ * ferramentas do Mestre direto (sem IA). Missão sempre com tamanho e pagamento (padrão pelos preços de referência);
+ * aceitar pelo painel entra em missão. Rodar: npx tsx scripts/objectives-check.ts
  */
 import assert from "node:assert/strict";
 import { pool, q } from "../src/lib/db";
@@ -151,7 +152,9 @@ async function main() {
     out = await run("update_objective", { objective: "Entregar a carta", status: "concluido" });
     assert.match(out, /deu 5 XP/, out);
     assert.equal(await playerXp(), 5, "concluir direto a oferecida dá a XP");
-    assert.ok(events.some((e) => e.type === "tool" && e.summary === "✅ Concluído: Entregar a carta (+5 XP)"));
+    // sem pay na oferta: o código pôs pelo tamanho (preços de referência do mundo) e pagou ao concluir
+    assert.ok(events.some((e) => e.type === "tool" && e.summary.startsWith("✅ Concluído: Entregar a carta") && e.summary.endsWith("(+5 XP)")));
+    assert.ok(rs.currency ? (await byTitle("Entregar a carta")).payGiven! > 0 : true, "pay padrão pago");
     assert.ok(events.some((e) => e.type === "tool" && e.summary.includes("+5 XP (total 5) — missão: Entregar a carta")));
 
     // conclusão com tamanho: a XP vem da missão, por código
@@ -219,6 +222,11 @@ async function main() {
       assert.equal((await byTitle("Vigiar o portão")).status, "cancelado", "recusar = cancelado");
       assert.ok((await byTitle("Vigiar o portão")).closedAt !== undefined);
       assert.match((await decide(aka.id, false)).body.error, /já foi decidida/, "decidida não volta");
+      // aceitar pelo painel entra em missão (só opções); em missão não dá para aceitar outra
+      const play = (await state()).play as { mode: string; objectiveId: string; scope: string };
+      assert.deepEqual([play.mode, play.objectiveId, play.scope], ["mission", aka.id, "side"]);
+      assert.match((await decide(late.id, true)).body.error, /numa missão/, "em missão não aceita outra");
+      await q(`UPDATE campaigns SET state = state || '{"play":{"mode":"exploration"}}'::jsonb WHERE id = $1`, [id]);
       assert.match((await decide(late.id, true)).body.error, /prazo já passou/, "oferecida vencida não se aceita");
       assert.equal((await byTitle("Recado vencido")).status, "oferecida");
       assert.equal((await decide("o999", true)).status, 409);

@@ -7,7 +7,9 @@
  *  - validação do Roteirista: rejeita "Hugo é forçado a usar um poder" e aceita um arco bom;
  *  - fallback do cânone com references/naruto/01-pais-das-ondas.md (≥ 4 beats) e arco genérico;
  *  - cartão de fallback, beat com recompensa vira missão (state.play) e "done" do Narrador conclui e paga;
- *  - foto do turno e "gerar novamente" com arcos, beats, relógios, ganchos e state.play.
+ *  - foto do turno e "gerar novamente" com arcos, beats, relógios, ganchos e state.play;
+ *  - modos (F4): abandonar a missão principal (falha, beat perdido com notícia, relógio +1, exploração), quadro de
+ *    missões (até 3 ofertas com pay e XP, ≥1 ligada à trama, 1 doméstica por dia, prova de técnica) e aceitar entra em missão.
  * Campanha temporária, apagada no fim. Rodar: npx tsx scripts/story-check.ts
  */
 import assert from "node:assert/strict";
@@ -16,9 +18,9 @@ import { q, pool } from "../src/lib/db";
 import { normalizeRuleset } from "../src/lib/ruleset";
 import { restoreSnapshot, takeSnapshot } from "../src/lib/turnSnapshot";
 import { validateEffects } from "../src/lib/contracts";
-import { getObjectives } from "../src/lib/objectives";
+import { decideOffer, getObjectives, type Objective } from "../src/lib/objectives";
 import {
-  advanceStory, afterTurn, agendaSize, canonPlan, cardBlock, demandsPcAct, fallbackCard, genericPlan, getPlay, isWeakModel, loadStory,
+  advanceStory, afterTurn, agendaSize, boardOffers, canonPlan, enterMission, proofAbilities, cardBlock, demandsPcAct, fallbackCard, genericPlan, getPlay, isWeakModel, loadStory,
   narrativeCandidates, parseCanon, pickCanonFile, prepareScene, savePlan, sid, stepStory, triggerMet, validatePlan, writeArc,
   type BeatRow, type Story,
 } from "../src/lib/story";
@@ -172,6 +174,20 @@ function pure() {
   assert.equal(validateEffects({ beat: { op: "done", id: "3f" } }, ctx).effects.beat, null, "id curto demais");
   ok("beat no bloco de efeitos validado contra o cartão");
 
+  // quadro de missões: trama (pista do beat; sem beat, NPC com agenda), prova de técnica, 1 doméstica por dia
+  const bs = story([beat("b1", { status: "done" }), beat("b2", { ord: 1, foreshadow: "pegadas de sandália na lama seca", location: "Portão Leste" })]);
+  const offers = boardOffers({ story: bs, npcs: [{ name: "Teuchi", wants: "Quer saber quem anda roubando o caldo" }], objectives: [], day: 3, location: "Konoha", proofs: ["Kage Bunshin no Jutsu"] }, 3);
+  assert.deepEqual(offers.map((o) => [o.beatId ?? null, !!o.proof, !!o.domestic]), [["b2", false, false], [null, true, false], [null, false, true]]);
+  assert.ok(offers.every((o) => o.xpSize) && offers[0].title === "Boato em Portão Leste");
+  const npcOnly = boardOffers({ story: story([]), npcs: [{ name: "Teuchi", wants: "Quer saber quem anda roubando o caldo" }], objectives: [], day: 3, location: "", proofs: [] }, 3);
+  assert.equal(npcOnly[0].giver, "Teuchi", "sem beat com pista: o pedido do NPC com agenda");
+  const dom = (d: number): Objective => ({ id: "o9", title: offers[2].title, kind: "missao", description: "", status: "concluido", createdAt: day(d), domestic: true });
+  assert.equal(boardOffers({ story: story([]), npcs: [], objectives: [dom(3)], day: 3, location: "", proofs: [] }, 3).length, 0, "doméstica já saiu hoje");
+  assert.notEqual(boardOffers({ story: story([]), npcs: [], objectives: [dom(2)], day: 3, location: "", proofs: [] }, 3)[0]?.title, offers[2].title, "não repete a de ontem");
+  assert.equal(boardOffers({ story: bs, npcs: [], objectives: [{ ...dom(1), status: "aberto", domestic: false, beatId: "b2", title: "x" }], day: 3, location: "", proofs: [] }, 3).filter((o) => o.beatId).length, 0, "já há oferta ligada à trama");
+  assert.deepEqual(proofAbilities([{ name: "A", type: "x", progress: 24, milestones: [{ threshold: 25, description: "m" }] }, { name: "B", type: "x", progress: 10, milestones: [{ threshold: 25, description: "m" }] }]), ["A"]);
+  ok("quadro de missões: trama, prova de técnica no platô, uma doméstica por dia");
+
   assert.deepEqual(["x/y:free", "google/gemini-3.5-flash", "openai/gpt-6-luna", "openai/gpt-5-mini", "anthropic/claude-haiku-5.5"].map(isWeakModel), [true, true, true, true, true]);
   assert.deepEqual(["google/gemini-3.5-pro", "deepseek/deepseek-v4-pro", "anthropic/claude-sonnet-5.5"].map(isWeakModel), [false, false, false]);
   ok("modelo fraco por nome (gemini não é mini)");
@@ -260,7 +276,7 @@ async function db() {
 
     // "done" do Narrador: conclui a missão do beat (paga) e volta à exploração; agenda ainda ≥ 4 (sem Roteirista)
     assert.ok(agendaSize(s) >= 4);
-    await afterTurn(ctx, { op: "done", id: b0.id });
+    await afterTurn(ctx, { beat: { op: "done", id: b0.id } });
     play = getPlay(ctx.campaign.state);
     const o2done = getObjectives(ctx.campaign.state).find((o) => o.id === o2!.id)!;
     const [player] = await q<{ sheet: { money: number } }>(`SELECT sheet FROM characters WHERE campaign_id = $1 AND kind = 'player'`, [id]);
@@ -277,6 +293,41 @@ async function db() {
     assert.equal(getObjectives(st.state).find((o) => o.id === o2!.id)?.status, "aberto");
     assert.deepEqual(await q(`SELECT id FROM events WHERE campaign_id = $1`, [id]), [], "o evento público do beat perdido some com a foto");
     ok("foto do turno e gerar novamente com arcos, beats, relógios, ganchos, eventos e state.play");
+
+    // abandonar a missão principal (opção exit): falha, beat perdido com notícia, relógio do arco +1, exploração
+    ctx.campaign = (await q<Campaign>(`SELECT * FROM campaigns WHERE id = $1`, [id]))[0];
+    await afterTurn(ctx, { beat: null }, { abandon: true });
+    const ab = await loadStory(id);
+    assert.deepEqual(
+      [getPlay(ctx.campaign.state).mode, getObjectives(ctx.campaign.state).find((o) => o.id === o2!.id)?.status, ab.beats[0].status, ab.clocks[0].filled],
+      ["exploration", "perdido", "missed", 1]
+    );
+    assert.ok((ctx.campaign.state.news as string[]).includes("Outra equipe parte com Tazuna."), "o fallback do beat abandonado vira notícia");
+    assert.equal(getObjectives(ctx.campaign.state).filter((o) => o.board).length, 0, "com side aberta (Teuchi), o quadro não oferece");
+    ok("abandonar a missão principal: falha, beat perdido + notícia, relógio +1, exploração");
+
+    // side concluída: o quadro completa até 3 ofertas com pagamento e tamanho; aceitar entra em missão secundária
+    const done = getObjectives(ctx.campaign.state).map((o) => (o.id === "o1" ? { ...o, status: "concluido" as const } : o));
+    await q(`UPDATE campaigns SET state = state || $1::jsonb WHERE id = $2`, [JSON.stringify({ objectives: done }), id]);
+    ctx.campaign = (await q<Campaign>(`SELECT * FROM campaigns WHERE id = $1`, [id]))[0];
+    await afterTurn(ctx, { beat: null });
+    const board = getObjectives(ctx.campaign.state).filter((o) => o.board && o.status === "oferecida");
+    assert.ok(board.length >= 1 && board.length <= 3 && board.every((o) => o.pay! > 0 && o.xpSize), JSON.stringify(board));
+    assert.ok(board.filter((o) => o.domestic).length <= 1);
+    await afterTurn(ctx, { beat: null });
+    assert.equal(getObjectives(ctx.campaign.state).filter((o) => o.board && o.domestic).length, board.filter((o) => o.domestic).length, "no mesmo dia, nenhuma doméstica nova");
+    const accepted = decideOffer(getObjectives(ctx.campaign.state), board[0].id, true, day(4));
+    assert.ok(Array.isArray(accepted));
+    await q(`UPDATE campaigns SET state = state || $1::jsonb WHERE id = $2`, [JSON.stringify({ objectives: accepted }), id]);
+    const mp = await enterMission(id, board[0].id);
+    assert.deepEqual([mp?.mode, mp?.scope, mp?.beatId], ["mission", "side", undefined]);
+    assert.equal(await enterMission(id, board[0].id), null, "já em missão: não troca");
+    // em missão a rota do turno recusa texto livre (400) antes de qualquer turno
+    const { POST: turn } = await import("../src/app/api/campaigns/[id]/turn/route");
+    const res = await turn(new Request("http://x", { method: "POST", body: JSON.stringify({ input: "vou embora pela janela" }) }) as never, { params: Promise.resolve({ id }) });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /opções/);
+    ok(`quadro: ${board.length} ofertas com pay e XP; aceitar entra em missão secundária`);
   } finally {
     await q(`DELETE FROM api_logs WHERE campaign_id = $1`, [id]);
     await q(`DELETE FROM campaigns WHERE id = $1`, [id]);

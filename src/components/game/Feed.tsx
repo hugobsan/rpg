@@ -209,7 +209,8 @@ export function EditLine({ text, onSave, onCancel }: { text: string; onSave: (t:
 }
 
 /** Opções do turno como cartões; teclas 1 a 9 escolhem (fora de campo de texto e sem modal aberto). */
-export function Choices({ choices, onPick, onEdit }: { choices: string[]; onPick: (c: string, index: number) => void; onEdit: (c: string) => void }) {
+/** Opções do turno; sem onEdit (missão: só opções) não há o lápis de editar antes de enviar. */
+export function Choices({ choices, onPick, onEdit }: { choices: string[]; onPick: (c: string, index: number) => void; onEdit?: (c: string) => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
@@ -233,9 +234,11 @@ export function Choices({ choices, onPick, onEdit }: { choices: string[]; onPick
             {i < 9 && <kbd className={s.key}>{i + 1}</kbd>}
             <span>{c}</span>
           </button>
-          <button className={s.choiceEdit} onClick={() => onEdit(c)} data-tip="Editar antes de enviar" data-tip-align="end" aria-label="Editar esta opção antes de enviar">
-            <Icon name="edit" size={15} />
-          </button>
+          {onEdit && (
+            <button className={s.choiceEdit} onClick={() => onEdit(c)} data-tip="Editar antes de enviar" data-tip-align="end" aria-label="Editar esta opção antes de enviar">
+              <Icon name="edit" size={15} />
+            </button>
+          )}
         </div>
       ))}
     </div>

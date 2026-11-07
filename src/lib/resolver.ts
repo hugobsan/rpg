@@ -98,7 +98,15 @@ const costOf = (amount: number, max: number): StepResult["cost"] => (amount <= 0
  * Dano: técnica com dano que deu certo rola o dano no alvo registrado; falha contra um alvo, em passo arriscado, custa
  * vida ao jogador (leve em médio, pesado em difícil ou mais).
  */
-export async function resolveSteps(ctx: ToolContext, player: Character, steps: InterpStep[]): Promise<StepResult[]> {
+// retorno decrescente do treino, em palavras para o Narrador
+const PLATEAU = {
+  tired: "Rendeu menos que o primeiro treino do dia: o corpo já sente.",
+  repeat: "Não rendeu nada novo: platô de cansaço, repetir hoje é só suor.",
+  milestone: "Parou num platô antes do próximo salto: o treino sozinho não leva adiante; falta provar numa situação de verdade.",
+};
+
+/** mission: em missão todo uso de técnica conta como arriscado (domínio cheio e pode passar do marco). */
+export async function resolveSteps(ctx: ToolContext, player: Character, steps: InterpStep[], o: { mission?: boolean } = {}): Promise<StepResult[]> {
   const rs = ctx.campaign.ruleset;
   const mult = rs.attributeMultiplier ?? 1;
   const table = getTable(ctx.campaign.state);
@@ -118,7 +126,8 @@ export async function resolveSteps(ctx: ToolContext, player: Character, steps: I
     if (step.kind === "ability" && step.ability) {
       const ability = findAbility(player.sheet, step.ability);
       if (ability) {
-        const use = await useAbility(ctx, { character: player.name, ability: ability.name, dc, target: step.target });
+        const risky = !!step.target || step.difficulty === "hard" || step.difficulty === "very_hard" || o.mission === true;
+        const use = await useAbility(ctx, { character: player.name, ability: ability.name, dc, target: step.target, risky });
         if (use.short) {
           r = { ...r, result: "fail", note: "Faltou energia para a técnica: nada saiu." };
         } else if (use.roll) {
@@ -148,7 +157,9 @@ export async function resolveSteps(ctx: ToolContext, player: Character, steps: I
       if (res.startsWith("Treino de")) {
         const after = (await refreshed(ctx, player)).sheet;
         const a = findAbility(after, target);
-        r.note = a ? `Domínio de ${a.name} agora: ${masteryWord(a.progress ?? 0)}.` : "";
+        const plateau = res.match(/Platô \((\w+)\)/)?.[1] as keyof typeof PLATEAU | undefined;
+        r.note = a ? `Domínio de ${a.name} agora: ${masteryWord(a.progress ?? 0)}.${plateau ? ` ${PLATEAU[plateau]}` : ""}` : "";
+        if (plateau === "repeat") r.result = "partial";
         if (a && masteryWord(a.progress ?? 0) !== was) r.fact = `${player.name} melhorou no domínio de ${a.name} (agora: ${masteryWord(a.progress ?? 0)})`;
       } else r = { ...r, result: "fail", note: "O treino não rende agora (cansaço ou limite do dia)." };
     } else if (step.kind === "item" && step.item) {

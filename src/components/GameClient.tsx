@@ -16,7 +16,7 @@ import InventoryView from "./InventoryView";
 import AbilitiesView from "./AbilitiesView";
 import LibraryView from "./LibraryView";
 import ObjectivesView, { OfferModal } from "./ObjectivesView";
-import { getObjectives, type Objective } from "@/lib/objectives";
+import { getObjectives, getPlay, type Objective } from "@/lib/objectives";
 import SheetView from "./SheetView";
 import NpcList from "./NpcList";
 import MemoriesView from "./MemoriesView";
@@ -27,7 +27,7 @@ import TableRulesPanel from "./TableRulesPanel";
 import Skeleton from "./ui/Skeleton";
 import { toast } from "./ui/Toast";
 import SceneHeader from "./game/SceneHeader";
-import Composer, { type ComposerHandle } from "./game/Composer";
+import Composer, { type ComposerHandle, type ComposerMission } from "./game/Composer";
 import SidePanel, { type PanelTab } from "./game/SidePanel";
 import Icon from "./game/Icon";
 import { Choices, Draft, EditLine, FeedLine, Recap, TurnWait, type Cast } from "./game/Feed";
@@ -287,11 +287,15 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   const unread = state.inbox?.reduce((n, i) => n + i.unread, 0) ?? 0;
   const difficulty = getTable(campaign.state).difficulty;
   const lastGm = feed.findLast((i) => i.kind === "gm")?.content;
-  const offer = idle && !recap ? getObjectives(campaign.state).find((o) => o.status === "oferecida" && !offerLater.has(o.id)) : undefined;
-  const placeholder =
-    choices.length && campaign.style !== "open"
-      ? "Escolha uma opção acima ou escreva a sua ação..."
-      : MODE_PLACEHOLDER[scene.mode] ?? "O que você faz?";
+  // oferta do quadro de missões fica só no painel; a da história abre na tela
+  const offer = idle && !recap ? getObjectives(campaign.state).find((o) => o.status === "oferecida" && !o.board && !offerLater.has(o.id)) : undefined;
+  const placeholder = choices.length ? "Escolha uma opção acima ou escreva a sua ação..." : MODE_PLACEHOLDER[scene.mode] ?? "O que você faz?";
+  // em missão: só opções (o campo de texto some); a conversa particular com quem está em cena continua livre
+  const play = getPlay(campaign.state);
+  const mission: ComposerMission | undefined =
+    play.mode === "mission"
+      ? { title: play.title || "em curso", scope: play.scope === "main" ? "main" : "side", talk: npcs.filter((n) => n.active).map((n) => ({ name: n.name, onTalk: () => setOpenNpc(n) })) }
+      : undefined;
 
   const tabs: PanelTab<Tab>[] = [
     { key: "sheet", label: "Ficha", icon: "sheet", mobile: true },
@@ -380,6 +384,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           onTable={() => show("table")}
           tableHint={difficulty === "normal" ? undefined : DIFFICULTIES.find((d) => d.key === difficulty)?.label}
           jobs={jobs.filter((j) => j.status === "running")}
+          mission={mission?.scope}
         />
 
         <div className={s.feedWrap}>
@@ -408,6 +413,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
 
               {groups.map((g) =>
                 g.key !== lastPlayer?.key || lastPlayer.content === CONTINUE_INPUT ? <FeedLine key={g.key} item={g.item} chips={g.chips} cast={cast} />
+                : mission ? <FeedLine key={g.key} item={g.item} chips={g.chips} cast={cast} />
                 : editing && idle ? <EditLine key={g.key} text={lastPlayer.content} onSave={saveEdit} onCancel={() => setEditing(false)} />
                 : (
                   <Fragment key={g.key}>
@@ -445,7 +451,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
                 </div>
               )}
               {!busy && !pendingDice && choices.length > 0 && (
-                <Choices choices={choices} onPick={sendTurn} onEdit={(c) => composer.current?.fill(c)} />
+                <Choices choices={choices} onPick={sendTurn} onEdit={mission ? undefined : (c) => composer.current?.fill(c)} />
               )}
             </div>
           </div>
@@ -458,6 +464,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           placeholder={placeholder}
           onOoc={() => setOocOpen(true)}
           onStop={canStop ? stop : undefined}
+          mission={mission}
         />
       </main>
 

@@ -306,6 +306,9 @@ export function validateEffects(raw: unknown, ctx: EffectsCtx): { effects: Effec
     else {
       const pay = Math.round(Number(mi.pay));
       const size = oneOf(["pequena", "media", "grande"] as const, mi.size);
+      // sem pay ou size: a oferta fica e o código completa (pelo tamanho e pelos preços de referência do mundo)
+      if (!(pay > 0) && ctx.money !== null) drop(`missão oferecida sem pay: ${title} (o código põe pelo tamanho)`);
+      if (!size) drop(`missão oferecida sem size: ${title} (pequena)`);
       fx.mission = { op, id: "", title, ...(pay > 0 && { pay }), size: size ?? "pequena" };
     }
   } else if (op && op !== "none") {
@@ -324,6 +327,18 @@ export function validateEffects(raw: unknown, ctx: EffectsCtx): { effects: Effec
   }
 
   return { effects: fx, dropped };
+}
+
+/**
+ * O que o jogador CONTOU, quando a ação traz fala entre aspas (ou travessão) dirigida a um NPC: a fala vira "told" (até
+ * 25 palavras). Pergunta, fala curta (< 5 palavras) ou sem aspas: null (o bloco do Narrador cobre o resto).
+ */
+export function spokenTold(action: string, player: string, to: string): Effects["told"][number] | null {
+  const quoted = [...action.matchAll(/["“«]([^"”»]{3,400})["”»]/g)].map((m) => m[1]);
+  const dashed = action.split("\n").filter((l) => /^\s*[—–]\s*\S/.test(l)).map((l) => l.replace(/^\s*[—–]\s*/, ""));
+  const said = [...quoted, ...dashed].join(" ").replace(/\s+/g, " ").trim();
+  if (!said || /\?\s*$/.test(said) || said.split(" ").length < 5) return null;
+  return { fact: words(said, 25), by: player, to: [to] };
 }
 
 // ---------- validador de prosa ----------
@@ -418,6 +433,49 @@ export function validateInterpretation(
     declaresOutcome: r.declaresOutcome === true,
     ...(str(qo.text) && likelihood && { question: { text: str(qo.text), likelihood } }),
   };
+}
+
+// ---------- opções em missão ----------
+
+const label12 = (s: string) => words(s, 12);
+const isAbandon = (l: string) => /abandon|desist/i.test(l);
+
+/**
+ * Em missão o jogador só escolhe opções, então o código garante: 3 a 4 opções, ≥1 composta (2-3 passos com técnicas e
+ * itens da ficha; sem ela no bloco, montada aqui da ficha + 1ª saída do cartão), ≥1 de avanço (move; senão a saída do
+ * cartão) e, faltando, "Esperar e observar". exit = abandonar a missão: o rótulo diz isso. seed varia a composta.
+ */
+export function missionOptions(
+  opts: EffectOption[],
+  ctx: { abilities: string[]; items: string[]; exits: string[]; seed?: number }
+): EffectOption[] {
+  const base = opts.map((o) => (o.approach === "exit" && !isAbandon(o.label) ? { ...o, label: label12(`Abandonar a missão: ${o.label}`) } : o));
+  const exits = ctx.exits.filter(Boolean);
+  let composite = base.find((o) => o.steps.filter((s) => s.ability || s.item).length >= 2);
+  if (!composite && ctx.abilities.length && ctx.abilities.length + ctx.items.length >= 2) {
+    const k = Math.abs(ctx.seed ?? 0);
+    const a = ctx.abilities[k % ctx.abilities.length];
+    const second: OptionStep = ctx.items.length ? { item: ctx.items[k % ctx.items.length] } : { ability: ctx.abilities[(k + 1) % ctx.abilities.length] };
+    const name = (n: string) => n.split(":").pop()!.trim();
+    const goal = exits[0] ? exits[0].charAt(0).toLowerCase() + exits[0].slice(1) : "virar a situação";
+    composite = { label: label12(`${name(a)} e ${name(second.item ?? second.ability!)} para ${goal}`), approach: "finesse", steps: [{ ability: a }, second] };
+  }
+  const advance =
+    base.find((o) => o.approach === "move") ?? (exits[0] ? { label: label12(exits[0]), approach: "move" as const, steps: [] } : { label: "Seguir em frente com a missão", approach: "move" as const, steps: [] });
+  const fillers: EffectOption[] = [
+    ...exits.slice(1).map((e) => ({ label: label12(e), approach: "move" as const, steps: [] })),
+    { label: "Esperar e observar", approach: "wait", steps: [] },
+    { label: "Recuar e avaliar a situação", approach: "sense", steps: [] },
+  ];
+  const out: EffectOption[] = [];
+  const push = (o: EffectOption | undefined) => o && out.length < 4 && !out.some((x) => fold(x.label) === fold(o.label)) && out.push(o);
+  // obrigatórias primeiro (para o corte em 4 não tirá-las), depois as do Narrador na ordem dele, depois os enchimentos
+  push(composite);
+  push(advance);
+  for (const o of base) push(o);
+  for (const o of fillers) if (out.length < 3) push(o);
+  // a ordem do Narrador volta: as dele primeiro, as do código no fim
+  return [...base.filter((o) => out.includes(o)), ...out.filter((o) => !base.includes(o))];
 }
 
 /** Passos tipados de uma opção escolhida (sem Intérprete). */

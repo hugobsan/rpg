@@ -44,6 +44,18 @@
 .hint + .send { margin-left: 0; }
 .send :global(.loader) { color: var(--accent-ink); } /* selo visível sobre o botão primário */
 
+/* missão: só opções; a faixa diz qual missão (principal no acento, secundária em info) */
+.mission { --band: var(--info); border-color: color-mix(in srgb, var(--band) 45%, var(--border)); }
+.mission[data-scope="main"] { --band: var(--accent); }
+.mission:hover { border-color: color-mix(in srgb, var(--band) 60%, var(--border)); }
+.band {
+  display: flex; align-items: center; gap: var(--s-2); padding: 11px 14px 4px;
+  color: var(--band);
+}
+.bandText { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s-2); min-width: 0; }
+.bandText b { font: 600 14px/1.4 var(--font-body); color: var(--text); }
+.bandHint { font-size: 12.5px; color: var(--text-dim); }
+
 @container main (max-width: 720px) { .hint { display: none; } .bar .send { margin-left: auto; } }
 @container main (max-width: 600px) {
   .composer { padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); }
