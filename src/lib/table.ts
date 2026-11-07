@@ -43,7 +43,7 @@ export const xpRuleText = (t: TableRules) => {
   return `de ${x.min} a ${x.max}% do que falta para o próximo nível num feito comum, até ${x.great}% num grande; feito excepcional (só o que as faixas acima não cobrem, como derrotar um vilão principal ou salvar a vila): valor livre, proporcional ao feito, que pode subir mais de um nível`;
 };
 
-// descanso: quanto cada recurso recupera (faixa por key do ruleset); sem regra, o Escrivão estima
+// descanso: quanto cada recurso recupera (faixa por key do ruleset); sem regra, leve +15% e completo enche (effects.ts)
 export const REST_KINDS: { key: RestKind; label: string; when: string }[] = [
   { key: "light", label: "Descanso leve", when: "refeição, pausa" },
   { key: "full", label: "Descanso completo", when: "noite de sono" },

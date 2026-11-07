@@ -266,10 +266,9 @@ export default function TableRulesPanel({ campaign, onChange }: { campaign: Camp
           })}
         </div>
         <p className={s.tone}>
-          O Escrivão dá XP só por feito que a narração mostra concluído (missão, luta vencida, descoberta, avanço de treino),
-          em % do que falta para o próximo nível. Conversa, viagem e rotina não dão XP.
-          Feito excepcional (derrotar um vilão principal, salvar a vila) foge das faixas: XP livre, que pode subir mais de um nível.
-          Missão com tamanho dá a XP ao ser concluída: pequena = mínimo, média = máximo, grande = feito grande.
+          A XP vem da missão concluída, em % do que falta para o próximo nível: pequena = mínimo, média = máximo,
+          grande = feito grande. Feito excepcional (derrotar um vilão principal, salvar a vila) foge das faixas: XP livre,
+          que pode subir mais de um nível. Conversa, viagem e rotina não dão XP.
         </p>
         {/* cada passo respeita min ≤ max ≤ grande, então nunca manda uma regra inválida */}
         {([
@@ -287,8 +286,8 @@ export default function TableRulesPanel({ campaign, onChange }: { campaign: Camp
       <section className={s.section}>
         <h4>Descanso {tick("rest")}</h4>
         <p className={s.help}>
-          Quanto cada recurso recupera quando a narração mostra o descanso; o Escrivão escolhe um valor dentro da faixa.
-          Vazio: sem regra, o Escrivão estima.
+          Quanto cada recurso recupera quando a narração mostra o descanso; o sistema sorteia um valor dentro da faixa.
+          Vazio: descanso leve recupera um pouco e o completo enche.
         </p>
         {REST_KINDS.map((k) => (
           <div key={k.key} className={s.restKind}>

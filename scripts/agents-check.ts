@@ -47,25 +47,25 @@ const row = async (id: string) =>
     assert.equal((await row("npc")).prompt_base, promptHash(def("npc").system_prompt));
 
     // editado à mão (como o PUT da tela: só system_prompt): o padrão muda e o prompt fica
-    const mine = def("chronicler").system_prompt + "\nRegra minha.";
-    await pool.query(`UPDATE agents SET system_prompt = $1 WHERE id = 'chronicler'`, [mine]);
+    const mine = def("scriptwriter").system_prompt + "\nRegra minha.";
+    await pool.query(`UPDATE agents SET system_prompt = $1 WHERE id = 'scriptwriter'`, [mine]);
     await insertDefaultAgents();
-    assert.equal((await getAgent("chronicler")).default_prompt, undefined, "editado sem padrão novo: nada a oferecer");
-    def("chronicler").system_prompt = "Cronista: padrão novo.\n" + def("chronicler").system_prompt;
+    assert.equal((await getAgent("scriptwriter")).default_prompt, undefined, "editado sem padrão novo: nada a oferecer");
+    def("scriptwriter").system_prompt = "Roteirista: padrão novo.\n" + def("scriptwriter").system_prompt;
     await insertDefaultAgents();
-    assert.equal((await row("chronicler")).system_prompt, mine, "editado à mão não é sobrescrito");
-    const listed = (await listAgents()).find((a) => a.id === "chronicler")!;
-    assert.equal(listed.default_prompt, def("chronicler").system_prompt, "a API manda o padrão novo");
+    assert.equal((await row("scriptwriter")).system_prompt, mine, "editado à mão não é sobrescrito");
+    const listed = (await listAgents()).find((a) => a.id === "scriptwriter")!;
+    assert.equal(listed.default_prompt, def("scriptwriter").system_prompt, "a API manda o padrão novo");
     assert.equal((await getAgent("npc")).default_prompt, undefined);
 
     // restaurar pela rota: troca e grava prompt_base
-    const res = await PUT(new NextRequest("http://x/api/agents/chronicler", { method: "PUT", body: JSON.stringify({ restorePrompt: true }) }), {
-      params: Promise.resolve({ id: "chronicler" }),
+    const res = await PUT(new NextRequest("http://x/api/agents/scriptwriter", { method: "PUT", body: JSON.stringify({ restorePrompt: true }) }), {
+      params: Promise.resolve({ id: "scriptwriter" }),
     });
     const restored = await res.json();
-    assert.equal(restored.system_prompt, def("chronicler").system_prompt, "restaurar traz o padrão atual");
+    assert.equal(restored.system_prompt, def("scriptwriter").system_prompt, "restaurar traz o padrão atual");
     assert.equal(restored.default_prompt, undefined);
-    assert.equal((await row("chronicler")).prompt_base, promptHash(def("chronicler").system_prompt), "restaurar grava prompt_base");
+    assert.equal((await row("scriptwriter")).prompt_base, promptHash(def("scriptwriter").system_prompt), "restaurar grava prompt_base");
 
     // sem prompt_base: gm igual ao padrão vira intocado; scribe diferente fica editado (NULL) e a tela oferece o padrão
     await pool.query(`UPDATE agents SET prompt_base = NULL WHERE id = 'gm'`);

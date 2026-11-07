@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Correção do registro pelo jogador, sem IA (src/lib/corrections.ts). Recusada durante um turno.
- * POST { undo: { messageId, index } } → desfaz um registro do Escrivão do último turno (pela etiqueta no chat).
+ * POST { undo: { messageId, index } } → desfaz um efeito aplicado no último turno (pela etiqueta no chat).
  * POST { fix: "resource", resource, current?, max? } | { fix: "item", name, qty } (qty < 0 tira) |
  *      { fix: "mastery", ability, progress } | { fix: "xp", xp } | { fix: "objective", objective, status }
  * → { summary } (o que o Mestre lê no próximo turno) | { error }

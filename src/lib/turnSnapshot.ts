@@ -18,8 +18,8 @@ interface Snapshot {
   maxMessageId: number;
   maxMemoryId: number;
   maxNpcChatId?: number; // ausente em fotos antigas: não apaga conversa nenhuma
-  openMessageIds: number[]; // mensagens não compactadas (a compactação pós-turno as marca)
   regenNotes?: string[]; // motivos dos "gerar novamente" desta ação, em ordem (somam a cada vez; ação nova zera)
+  option?: number; // a ação foi a opção N da narração anterior: o "gerar novamente" resolve a mesma opção tipada
 }
 
 /** Motivos dos "gerar novamente" já pedidos para a ação da foto atual. */
@@ -28,8 +28,14 @@ export async function regenNotes(campaignId: string): Promise<string[]> {
   return Array.isArray(row?.notes) ? row.notes.map(String) : [];
 }
 
-export async function takeSnapshot(campaignId: string, playerInput: string, notes: string[] = []): Promise<void> {
-  const [characters, scenes, [campaign], [ids], open] = await Promise.all([
+/** Índice da opção escolhida na ação da foto atual (undefined = texto livre). */
+export async function snapshotOption(campaignId: string): Promise<number | undefined> {
+  const [row] = await q<{ option: unknown }>(`SELECT data->'option' AS option FROM turn_snapshots WHERE campaign_id = $1`, [campaignId]);
+  return typeof row?.option === "number" ? row.option : undefined;
+}
+
+export async function takeSnapshot(campaignId: string, playerInput: string, notes: string[] = [], option?: number): Promise<void> {
+  const [characters, scenes, [campaign], [ids]] = await Promise.all([
     q(`SELECT * FROM characters WHERE campaign_id = $1`, [campaignId]),
     q(`SELECT * FROM scenes WHERE campaign_id = $1`, [campaignId]),
     q<{ script: unknown; state: unknown }>(`SELECT script, state FROM campaigns WHERE id = $1`, [campaignId]),
@@ -39,7 +45,6 @@ export async function takeSnapshot(campaignId: string, playerInput: string, note
               (SELECT MAX(id) FROM npc_chats WHERE campaign_id = $1) AS npc`,
       [campaignId]
     ),
-    q<{ id: string }>(`SELECT id FROM messages WHERE campaign_id = $1 AND NOT compacted`, [campaignId]),
   ]);
   const snap: Snapshot = {
     characters,
@@ -48,8 +53,8 @@ export async function takeSnapshot(campaignId: string, playerInput: string, note
     maxMessageId: Number(ids.msg ?? 0),
     maxMemoryId: Number(ids.mem ?? 0),
     maxNpcChatId: Number(ids.npc ?? 0),
-    openMessageIds: open.map((m) => Number(m.id)),
     ...(notes.length && { regenNotes: notes }),
+    ...(option !== undefined && { option }),
   };
   await q(
     `INSERT INTO turn_snapshots (campaign_id, player_input, data) VALUES ($1, $2, $3)
@@ -106,7 +111,6 @@ export async function restoreSnapshot(campaignId: string, keepAction = false): P
     await client.query(`DELETE FROM memories WHERE campaign_id = $1 AND id > $2 AND kind <> 'directive'`, [campaignId, s.maxMemoryId]);
     // mensagens de NPC (npc_message) e falas de conversa particular depois da foto
     await client.query(`DELETE FROM npc_chats WHERE campaign_id = $1 AND id > $2`, [campaignId, s.maxNpcChatId ?? null]);
-    await client.query(`UPDATE messages SET compacted = FALSE WHERE id = ANY($1::bigint[])`, [s.openMessageIds]);
     await client.query("COMMIT");
   } catch (e) {
     await client.query("ROLLBACK");

@@ -16,7 +16,7 @@ export interface Cast {
   player?: string;
   campaignId: string;
   onNpc: (npc: Character) => void;
-  // etiquetas do Escrivão desta narração ganham "desfazer" (só a do último turno, fora do turno)
+  // etiquetas dos efeitos desta narração ganham "desfazer" (só a do último turno, fora do turno)
   undoFrom?: number;
   onUndo?: (item: FeedItem) => void;
 }
@@ -148,7 +148,7 @@ function DiceLine({ item }: { item: FeedItem }) {
 
 const CHIP_LIMIT = 4;
 
-/** Ações do Mestre seguidas, compactas; muitas de uma vez dobram num "+N". Registro do Escrivão: desfazer. */
+/** Ações do Mestre seguidas, compactas; muitas de uma vez dobram num "+N". Efeito aplicado: desfazer. */
 function ChipGroup({ items, cast }: { items: FeedItem[]; cast: Cast }) {
   const [open, setOpen] = useState(false);
   const shown = open || items.length <= CHIP_LIMIT ? items : items.slice(0, CHIP_LIMIT - 1);
@@ -160,7 +160,7 @@ function ChipGroup({ items, cast }: { items: FeedItem[]; cast: Cast }) {
           {c.scribe?.undone ? <del>{chipText(c.content)}</del> : chipText(c.content)}
           {c.scribe?.undone ? <span className={s.undoneTag}>desfeito</span>
             : c.scribe && c.scribe.messageId === cast.undoFrom && cast.onUndo && (
-              <button className={s.undo} onClick={() => cast.onUndo!(c)} data-tip="Desfazer este registro do Escrivão"
+              <button className={s.undo} onClick={() => cast.onUndo!(c)} data-tip="Desfazer este registro"
                 aria-label={`Desfazer: ${chipText(c.content)}`}>desfazer</button>
             )}
         </span>
@@ -209,7 +209,7 @@ export function EditLine({ text, onSave, onCancel }: { text: string; onSave: (t:
 }
 
 /** Opções do turno como cartões; teclas 1 a 9 escolhem (fora de campo de texto e sem modal aberto). */
-export function Choices({ choices, onPick, onEdit }: { choices: string[]; onPick: (c: string) => void; onEdit: (c: string) => void }) {
+export function Choices({ choices, onPick, onEdit }: { choices: string[]; onPick: (c: string, index: number) => void; onEdit: (c: string) => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
@@ -219,7 +219,7 @@ export function Choices({ choices, onPick, onEdit }: { choices: string[]; onPick
       const n = Number(e.key);
       if (Number.isInteger(n) && n >= 1 && n <= Math.min(9, choices.length)) {
         e.preventDefault();
-        onPick(choices[n - 1]);
+        onPick(choices[n - 1], n - 1);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -229,7 +229,7 @@ export function Choices({ choices, onPick, onEdit }: { choices: string[]; onPick
     <div className={s.choices} role="group" aria-label="Opções">
       {choices.map((c, i) => (
         <div key={i} className={s.choice} style={{ animationDelay: `${i * 50}ms` }}>
-          <button className={s.choiceMain} onClick={() => onPick(c)}>
+          <button className={s.choiceMain} onClick={() => onPick(c, i)}>
             {i < 9 && <kbd className={s.key}>{i + 1}</kbd>}
             <span>{c}</span>
           </button>

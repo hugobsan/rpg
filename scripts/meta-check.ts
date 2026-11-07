@@ -1,10 +1,12 @@
 /**
  * Fala fora do jogo no chat do jogo, sem IA: roda o runTurn de ponta a ponta numa campanha temporária, com a rede falsa
- * (Jev da decisão do turno, Mestre, Escrivão e Mestre fora do jogo por roteiro; o resto falha e cai no padrão). Os
+ * (Jev da decisão do turno, Narrador com o bloco de efeitos e Mestre fora do jogo por roteiro; Intérprete e Anotador
+ * respondem lixo e caem no padrão). Os
  * agentes e as configurações reais não são lidos nem mexidos: fonte, chave, api_logs e a semeadura de agentes são
  * interceptados.
- * Confere: meta sim = sem Mestre nem Escrivão, a conversa fora do jogo responde (gm_notes), nada em messages e a foto
- * do turno anterior fica; meta abaixo do limiar, Jev falhando, fora do jogo falhando, Continuar e ação editada = turno normal.
+ * Confere: meta sim = sem Narrador nem Anotador, a conversa fora do jogo responde (gm_notes), nada em messages e a foto
+ * do turno anterior fica; meta abaixo do limiar, Jev falhando, fora do jogo falhando, Continuar e ação editada = turno normal;
+ * opção escolhida (optionIndex) vai tipada, sem Intérprete, inclusive no gerar novamente.
  * Rodar: npx tsx scripts/meta-check.ts
  */
 import assert from "node:assert/strict";
@@ -28,7 +30,7 @@ g.__pgPool = {
     if (/SELECT source(, params)? FROM agents/.test(text)) return { rows: [{ source: "openrouter", params: {} }] };
     if (/INSERT INTO api_logs/.test(text)) return { rows: [] };
     if (/^\s*(INSERT INTO|UPDATE|DELETE FROM) agents/.test(text)) return { rows: [] };
-    if (/SELECT \* FROM agents WHERE id/.test(text) && ["gm", "scribe", "decider", "chronicler"].includes(params[0] as string))
+    if (/SELECT \* FROM agents WHERE id/.test(text) && ["gm", "scribe", "decider", "interpreter"].includes(params[0] as string))
       return { rows: [row(params[0] as string)] };
     return real.query(text, params);
   },
@@ -39,7 +41,7 @@ g.__pgPool = {
 // ---------- rede ----------
 let jevMeta: number | "falha" = 0;
 let oocFails = false;
-const calls = { gm: 0, scribe: 0, ooc: 0 };
+const calls = { gm: 0, scribe: 0, ooc: 0, interp: 0 };
 const jevQuestions: string[][] = []; // perguntas de cada decisão do turno
 let events: TurnEvent[] = [];
 const sse = (text: string) =>
@@ -54,7 +56,6 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (url.endsWith("/decisions")) {
     const qs = body.questions as Record<string, { type: string; criteria: Record<string, unknown> }>;
     // só a decisão do turno (tem perguntas de turno ou nenhuma de pós-narração); relógio, local e elenco falham
-    if (qs.moved || qs.elapsed || qs.n0) return new Response("fora do roteiro", { status: 500 });
     jevQuestions.push(Object.keys(qs));
     if (jevMeta === "falha") return new Response("fora do roteiro", { status: 500 });
     const answers = Object.fromEntries(
@@ -69,8 +70,10 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     if (oocFails) return new Response("fora do ar", { status: 500 });
     return Response.json({ choices: [{ message: { content: "Foi engano do registro: a tigela não devia estar aí." } }], usage: { prompt_tokens: 10, completion_tokens: 5 } });
   }
-  if (tools.includes("note_objective")) return calls.gm++, sse("Você olha em volta.");
-  if (tools.includes("update_resource")) return calls.scribe++, Response.json({ choices: [{ message: { content: "" } }] });
+  if (tools.includes("search_lore"))
+    return calls.gm++, sse('Você olha em volta.\n```efeitos\n{"time":"minutes","options":[{"label":"Espero o vento passar","approach":"wait","steps":[]}]}\n```');
+  if (String(body.messages?.[0]?.content).startsWith("Você traduz")) calls.interp++;
+  if (String(body.messages?.[0]?.content).includes("Anotador")) return calls.scribe++, Response.json({ choices: [{ message: { content: "" } }] });
   return Response.json({ choices: [{ message: { content: "?" } }] });
 }) as typeof fetch;
 
@@ -94,12 +97,12 @@ async function main() {
     await real.query(`INSERT INTO characters (campaign_id, kind, name, sheet) VALUES ($1, 'player', 'Hugo', $2)`, [id, JSON.stringify(blankSheet(rs))]);
 
     // turno normal antes: a foto dele tem que sobreviver à fala fora do jogo
-    assert.deepEqual(await turn("olho em volta"), { gm: 1, scribe: 1, ooc: 0 });
+    assert.deepEqual(await turn("olho em volta"), { gm: 1, scribe: 0, ooc: 0 });
     assert.ok(jevQuestions.at(-1)!.includes("meta"), "ação do jogador pergunta meta");
     const msgs = await count("messages");
     assert.equal(msgs, 2);
 
-    // 1. meta sim: sem Mestre nem Escrivão, a conversa fora do jogo responde e nada fica no chat da campanha
+    // 1. meta sim: sem Narrador nem Anotador, a conversa fora do jogo responde e nada fica no chat da campanha
     jevMeta = 0.9;
     assert.deepEqual(await turn(QUESTION), { gm: 0, scribe: 0, ooc: 1 });
     assert.deepEqual(events.map((e) => e.type), ["status", "status", "ooc", "done"]);
@@ -117,7 +120,7 @@ async function main() {
       oocFails = fails;
       const before = await count("messages");
       const r = await turn("Você sabe se ele comeu?");
-      assert.deepEqual([r.gm, r.scribe], [1, 1], label);
+      assert.deepEqual([r.gm, r.scribe], [1, 0], label);
       assert.equal(r.ooc, fails ? 1 : 0, label);
       assert.equal(await count("messages"), before + 2, label);
       assert.equal(await snapshotInput(), "Você sabe se ele comeu?", label);
@@ -129,11 +132,26 @@ async function main() {
     jevMeta = 0.9;
     for (const [input, askMeta] of [[CONTINUE_INPUT, undefined], [QUESTION, false]] as const) {
       const r = await turn(input, askMeta);
-      assert.deepEqual(r, { gm: 1, scribe: 1, ooc: 0 }, input);
+      assert.deepEqual(r, { gm: 1, scribe: 0, ooc: 0 }, input);
       assert.ok(!jevQuestions.at(-1)?.includes("meta"), `${input}: sem pergunta meta`);
     }
 
-    console.log("meta-check: ok (fala sobre o registro vai à conversa fora do jogo sem Mestre, Escrivão nem mensagem salva, e a foto do turno anterior fica; abaixo do limiar, Jev ou fora do jogo falhando, Continuar e ação editada seguem o turno normal)");
+    // 7. opção escolhida (optionIndex): passos tipados, sem Intérprete nem pergunta meta; o gerar novamente refaz a mesma opção
+    const interp0 = calls.interp;
+    events = [];
+    await runTurn(id, "Espero o vento passar", (e) => events.push(e), undefined, undefined, true, true, 0);
+    assert.equal(calls.interp, interp0, "opção não passa pelo Intérprete");
+    assert.ok(!jevQuestions.at(-1)?.includes("meta") && !jevQuestions.at(-1)?.includes("talk"), "opção: sem meta nem talk");
+    const opt = await one<{ meta: { option?: number } }>(`SELECT meta FROM messages WHERE campaign_id = $1 AND role = 'player' ORDER BY id DESC LIMIT 1`);
+    assert.equal(opt.meta.option, 0, "a ação guarda a opção");
+    assert.ok(events.some((e) => e.type === "options"), "evento SSE com as opções tipadas");
+    const { restoreSnapshot } = await import("../src/lib/turnSnapshot");
+    await runTurn(id, await restoreSnapshot(id), () => {}, { feedback: "" });
+    assert.equal(calls.interp, interp0, "gerar novamente a opção também não chama o Intérprete");
+    await runTurn(id, "olho em volta", () => {}, undefined, undefined, false);
+    assert.ok(calls.interp > interp0, "texto livre chama o Intérprete");
+
+    console.log("meta-check: ok (fala sobre o registro vai à conversa fora do jogo sem Narrador, Anotador nem mensagem salva, e a foto do turno anterior fica; abaixo do limiar, Jev ou fora do jogo falhando, Continuar e ação editada seguem o turno normal)");
   } finally {
     await new Promise((r) => setTimeout(r, 300)); // o índice do histórico roda depois do done
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);

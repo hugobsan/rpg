@@ -1,8 +1,8 @@
 /**
- * "Parar o Mestre", sem IA: chama a rota do turno (POST) numa campanha temporária, com a rede falsa (o Mestre responde
- * por roteiro, em streaming; uma resposta "trava" no meio até a requisição ser abortada). Banco: o de DATABASE_URL, com
- * agentes, configurações de IA e api_logs interceptados, como no scribe-check.
- * Confere: parar no meio da narração aborta o fetch do Mestre, o turno volta à foto (o que a ferramenta gravou some), a
+ * "Parar o Mestre", sem IA: chama a rota do turno (POST) numa campanha temporária, com a rede falsa (o Intérprete pede
+ * um treino, o Narrador responde por roteiro, em streaming; uma resposta "trava" no meio até a requisição ser abortada).
+ * Banco: o de DATABASE_URL, com agentes, configurações de IA e api_logs interceptados.
+ * Confere: parar no meio da narração aborta o fetch do Narrador, o turno volta à foto (o que o Resolvedor gravou some), a
  * ação do jogador fica, o SSE acaba sem narração e o api_logs registra a chamada interrompida; parar e logo gerar de
  * novo não cruza os dois turnos (o novo espera a volta à foto).
  * Rodar: npx tsx scripts/stop-check.ts
@@ -20,7 +20,7 @@ import { POST } from "../src/app/api/campaigns/[id]/turn/route";
 // ---------- banco: o real, menos agentes, configurações de IA e api_logs ----------
 const real = new Pool({ connectionString: process.env.DATABASE_URL || "postgres://rpg:rpg@localhost:5433/rpg", max: 4 });
 const logs: unknown[][] = [];
-const scribeRow = { ...DEFAULT_AGENTS.find((a) => a.id === "scribe")!, source: "openrouter" };
+const agentRow = (id: string) => ({ ...DEFAULT_AGENTS.find((a) => a.id === id)!, source: "openrouter" });
 const g = global as unknown as { __pgPool?: unknown; __schemaReady?: Promise<boolean> };
 g.__schemaReady = Promise.resolve(true);
 g.__pgPool = {
@@ -30,7 +30,7 @@ g.__pgPool = {
     if (/SELECT source(, params)? FROM agents/.test(text)) return { rows: [{ source: "openrouter", params: {} }] };
     if (/INSERT INTO api_logs/.test(text)) return logs.push(params), { rows: [] };
     if (/^\s*(INSERT INTO|UPDATE|DELETE FROM) agents/.test(text)) return { rows: [] };
-    if (/SELECT \* FROM agents WHERE id/.test(text) && params[0] === "scribe") return { rows: [scribeRow] };
+    if (/SELECT \* FROM agents WHERE id/.test(text) && ["scribe", "interpreter"].includes(params[0] as string)) return { rows: [agentRow(params[0] as string)] };
     return real.query(text, params);
   },
   connect: () => real.connect(),
@@ -47,7 +47,10 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (!url.endsWith("/chat/completions")) return new Response("fora do roteiro", { status: 500 });
   const body = JSON.parse(String(init?.body));
   const tools: string[] = (body.tools || []).map((t: { function: { name: string } }) => t.function.name);
-  if (!tools.includes("use_ability")) return Response.json({ choices: [{ message: { content: "?" } }] }); // Escrivão, Cronista
+  // Intérprete: treino de 2 h (o Resolvedor grava o relógio durante o turno); Anotador e o resto: lixo
+  if (String(body.messages?.[0]?.content).startsWith("Você traduz"))
+    return Response.json({ choices: [{ message: { content: '{"steps":[{"kind":"train","attribute":"forca","hours":2,"intent":"treinar golpes","difficulty":"medium"}]}' } }] });
+  if (!tools.includes("search_lore")) return Response.json({ choices: [{ message: { content: "?" } }] });
   const signal = init?.signal;
   gmReqs.push({ messages: body.messages, signal });
   signal?.throwIfAborted(); // como o fetch de verdade: sinal já abortado nem sai
@@ -112,12 +115,12 @@ async function main() {
     await real.query(`INSERT INTO characters (campaign_id, kind, name, sheet) VALUES ($1, 'player', 'Hugo', $2)`, [campaignId, JSON.stringify(blankSheet(rs))]);
     await real.query(`INSERT INTO messages (campaign_id, scene_id, role, content) VALUES ($1, $2, 'gm', 'abertura')`, [campaignId, scene.id]);
 
-    // 1. parar no meio da narração, depois de uma rodada com ferramenta que gravou (set_time)
-    gmScript.push({ text: "", calls: [{ name: "set_time", args: { hour: 20 } }] }, { text: "Você avança contra o boneco", hang: true });
+    // 1. parar no meio da narração, depois de o Resolvedor gravar (treino de 2 h anda o relógio)
+    gmScript.push({ text: "Você avança contra o boneco", hang: true });
     const evs: TurnEvent[] = [];
     const reading = readTurn(await post({ input: "ataco o boneco" }), evs);
     await until(() => evs.some((e) => e.type === "narration_delta"), "a narração começar");
-    assert.equal(await clock(), 1200, "a ferramenta gravou durante o turno");
+    assert.equal(await clock(), 600, "o Resolvedor gravou durante o turno");
     const hung = gmReqs[gmReqs.length - 1].signal;
     assert.equal(hung?.aborted, false);
     const stopRes = await post({ stop: true });
@@ -139,7 +142,7 @@ async function main() {
     const evs2: TurnEvent[] = [];
     const reading2 = readTurn(await post({ regenerate: true }), evs2);
     await until(() => evs2.some((e) => e.type === "narration_delta"), "a narração do gerar novamente começar");
-    gmScript.push({ text: "", calls: [{ name: "set_time", args: { hour: 9 } }] }, { text: "Você acerta o boneco em cheio.", calls: [] });
+    gmScript.push({ text: 'Você acerta o boneco em cheio.\n```efeitos\n{"time":"hour"}\n```', calls: [] });
     const reqsBefore = gmReqs.length;
     const stopP = post({ stop: true });
     const evs3: TurnEvent[] = [];
@@ -148,11 +151,11 @@ async function main() {
     assert.ok(!evs2.some((e) => e.type === "narration"), "o turno parado não narrou");
     assert.equal(evs3.filter((e) => e.type === "narration").length, 1, "o novo turno narrou");
     assert.ok(!evs3.some((e) => e.type === "error"), JSON.stringify(evs3.find((e) => e.type === "error")));
-    assert.equal(gmReqs.length, reqsBefore + 2, "o Mestre só foi chamado pelo turno novo");
+    assert.equal(gmReqs.length, reqsBefore + 1, "o Narrador só foi chamado pelo turno novo");
     const asked = gmReqs[reqsBefore].messages.filter((m) => m.role === "user" && String(m.content).startsWith("ataco o boneco"));
     assert.equal(asked.length, 1, "a ação aparece uma vez só para o Mestre (a parada não duplicou)");
     assert.deepEqual(await msgs(), ["gm: abertura", "player: ataco o boneco", "gm: Você acerta o boneco em cheio."]);
-    assert.equal(await clock(), 540, "só a ferramenta do turno novo valeu (9h, a partir das 8h da foto)");
+    assert.equal(await clock(), 660, "só o turno novo valeu: treino de 2 h e a hora do bloco, a partir das 8h da foto");
 
     // 3. parar sem turno em andamento não faz nada
     assert.equal((await post({ stop: true })).status, 200);

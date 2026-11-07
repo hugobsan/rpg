@@ -61,8 +61,8 @@ export default function AdvancedSettings({ spec, value, onChange, onClose, onSav
         </div>
         <div className="modal-body">
           <p className={s.intro}>
-            Top-k, limiares de distância de cosseno, chunking, dimensões dos embeddings e limiares do Jev, por cenário. A janela
-            do histórico e as rodadas de ferramentas do Mestre e a compactação do Cronista ficam em <Link href="/agents">Agentes</Link>.
+            Top-k, limiares de distância de cosseno, chunking, dimensões dos embeddings e limiares do Jev, por cenário. Os agentes
+            (modelo, raciocínio, prompt) ficam em <Link href="/agents">Agentes</Link>.
           </p>
 
       <div className={s.danger} role="note">

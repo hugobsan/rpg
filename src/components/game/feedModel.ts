@@ -102,7 +102,7 @@ export const PHASES = [
 ] as const;
 export type Phase = (typeof PHASES)[number]["key"];
 
-const CONSULT_TOOLS = /search_memories|search_book|read_pages|get_script|get_npc/;
+const CONSULT_TOOLS = /search_|get_character/;
 
 /** Fase indicada por um evento do turno (null = não muda). */
 export function phaseOf(ev: { type: string; text?: string; name?: string }): Phase | null {

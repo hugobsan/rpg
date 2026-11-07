@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { pool, q } from "../src/lib/db";
-import { regenNotes, restoreSnapshot, takeSnapshot } from "../src/lib/turnSnapshot";
+import { regenNotes, restoreSnapshot, snapshotOption, takeSnapshot } from "../src/lib/turnSnapshot";
 
 async function main() {
   const [c] = await q<{ id: string }>(
@@ -28,12 +28,12 @@ async function main() {
     await takeSnapshot(id, "ataco o boneco de treino", ["com o Hokage"]);
     await takeSnapshot(id, "ataco o boneco de treino", [...(await regenNotes(id)), "sem repetir missão"]);
     assert.deepEqual(await regenNotes(id), ["com o Hokage", "sem repetir missão"], "motivos somam");
-    await takeSnapshot(id, "ataco o boneco de treino");
+    await takeSnapshot(id, "ataco o boneco de treino", [], 2);
     assert.deepEqual(await regenNotes(id), [], "ação nova zera");
+    assert.equal(await snapshotOption(id), 2, "a opção escolhida fica na foto");
 
     // o que um turno faria
     await q(`INSERT INTO messages (campaign_id, scene_id, role, content) VALUES ($1, $2, 'player', 'ataco o boneco de treino'), ($1, $2, 'gm', 'resposta')`, [id, scene.id]);
-    await q(`UPDATE messages SET compacted = TRUE WHERE campaign_id = $1`, [id]);
     // trechos do histórico vetorial (um por narração): o do turno refeito some pela FK
     await q(`INSERT INTO history_chunks (campaign_id, message_id, content) SELECT campaign_id, id, content FROM messages WHERE campaign_id = $1 AND role = 'gm'`, [id]);
     await q(`UPDATE characters SET sheet = '{"hp":12,"xp":50}', active = FALSE WHERE id = $1`, [hero.id]);
@@ -54,9 +54,8 @@ async function main() {
     const scenes = await q<{ mode: string; location: string; is_current: boolean }>(
       `SELECT mode, location, is_current FROM scenes WHERE campaign_id = $1`, [id]);
     assert.deepEqual(scenes, [{ mode: "exploration", location: "Academia", is_current: true }], "cena volta e a nova some");
-    const msgs = await q<{ content: string; compacted: boolean }>(
-      `SELECT content, compacted FROM messages WHERE campaign_id = $1 ORDER BY id`, [id]);
-    assert.deepEqual(msgs, [{ content: "abertura", compacted: false }], "mensagens do turno somem e a compactação é desfeita");
+    const msgs = await q<{ content: string }>(`SELECT content FROM messages WHERE campaign_id = $1 ORDER BY id`, [id]);
+    assert.deepEqual(msgs, [{ content: "abertura" }], "mensagens do turno somem");
     const chunks = await q<{ content: string }>(`SELECT content FROM history_chunks WHERE campaign_id = $1`, [id]);
     assert.deepEqual(chunks.map((h) => h.content), ["abertura"], "trecho do histórico do turno some");
     const mems = await q<{ content: string }>(`SELECT content FROM memories WHERE campaign_id = $1`, [id]);

@@ -1,14 +1,13 @@
 /**
  * Verificação do histórico vetorial (history_chunks / search_history): montagem dos trechos, gravação sem
  * embeddings, busca com fallback de texto, formato devolvido ao Mestre, limpeza no "gerar novamente" e ao apagar
- * a campanha, e o portão do Jev na recuperação automática. Sem IA nem rede (fetch desligado: embed() devolve null).
+ * a campanha. Sem IA nem rede (fetch desligado: embed() devolve null).
  * Rodar: npx tsx scripts/history-check.ts
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { pool, q } from "../src/lib/db";
 import { excerpt, historyChunks, indexHistory, searchHistory } from "../src/lib/retrieval";
-import { buildTurnRequest, gateTurn, HISTORY_MIN } from "../src/lib/decisions";
 import { executeGmTool, ToolContext } from "../src/lib/tools";
 import { restoreSnapshot, takeSnapshot } from "../src/lib/turnSnapshot";
 import type { Campaign, Scene } from "../src/lib/types";
@@ -56,27 +55,6 @@ async function main() {
   assert.ok(cut.includes("Sou eu sim") && cut.endsWith("…"), cut);
   assert.equal(excerpt("Mestre: curto.", "x"), "Mestre: curto.");
 
-  // portão do Jev: trecho só passa com folga; Jev falhou = nenhum trecho
-  const base = {
-    setting: { name: "X", canonBased: false },
-    scene: { mode: "exploration", location: null, title: null, summary: null },
-    activeArc: null,
-    npcsInScene: {},
-    lastGmNarration: "",
-    playerAction: "pergunto de novo ao Naruto",
-    memories: [],
-    askComplexity: false,
-    askWeb: false,
-  };
-  const req = buildTurnRequest({ ...base, history: [{ id: 7, text: "[Dia 2 · 14:00] Naruto: sou eu" }] });
-  assert.ok(req.questions.hist_7);
-  assert.deepEqual(req.state.historico, { h7: "[Dia 2 · 14:00] Naruto: sou eu" });
-  assert.equal(buildTurnRequest(base).state.historico, undefined, "sem trechos o pedido ao Jev fica igual");
-  assert.equal(gateTurn(null).keepHistory(7), false);
-  assert.equal(gateTurn({ hist_7: { type: "noul", noul: HISTORY_MIN - 0.05 } }).keepHistory(7), false);
-  assert.equal(gateTurn({ hist_7: { type: "noul", noul: HISTORY_MIN + 0.05 } }).keepHistory(7), true);
-  assert.equal(gateTurn({}).keepHistory(7), false, "sem resposta para o trecho = fora");
-
   const [c] = await q<{ id: string }>(
     `INSERT INTO campaigns (name, ruleset, state) VALUES ('[teste-historico]', '{}', '{"clock":{"minutes":2280}}') RETURNING id`
   );
@@ -119,12 +97,11 @@ async function main() {
     );
     assert.equal(rows[2].content, "Jogador: quer treinar comigo?\nNaruto Uzumaki: Bora! Mas eu ganho.");
 
-    // busca por texto (sem embeddings): qualquer termo, por relevância; npc filtra; automática só com vetor
+    // busca por texto (sem embeddings): qualquer termo, por relevância; npc filtra
     const hits = await searchHistory(id, "o que o Naruto respondeu quando perguntei se era ele");
     assert.ok(hits[0].content.startsWith("Jogador: Como um ramen"), "o turno da pergunta vem primeiro");
     assert.deepEqual((await searchHistory(id, "kunai alvo")).map((h) => h.content), ["Jogador: Treino arremesso de kunai\nMestre: A kunai acerta o alvo de madeira."]);
     assert.equal((await searchHistory(id, "treinar", { npc: "Naruto-kun" })).length, 1);
-    assert.deepEqual(await searchHistory(id, "Naruto", { auto: true }), [], "sem vetor não há recuperação automática");
 
     // o que o Mestre recebe da ferramenta
     const ctx = { campaign: { id, state: {}, ruleset: {} } as unknown as Campaign, scene, emit: () => {} } as ToolContext;

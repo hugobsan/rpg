@@ -14,16 +14,13 @@ export interface ComposerHandle {
 /**
  * Campo da ação: cresce com o texto, Enter envia, Shift+Enter quebra linha, Esc solta o foco
  * (aí as teclas 1 a 9 escolhem uma opção). O texto vive aqui: digitar não re-renderiza a tela.
- * Ações rápidas pede ao servidor opções para o momento da cena (aparecem no lugar das do Mestre).
  * Com onStop (o Mestre está gerando a narração), o botão de enviar vira o de parar; Esc também para.
  */
-export default function Composer({ ref, onSend, busy, placeholder, onSuggest, suggesting, onOoc, onStop }: {
+export default function Composer({ ref, onSend, busy, placeholder, onOoc, onStop }: {
   ref?: Ref<ComposerHandle>;
   onSend: (text: string) => boolean;
   busy: boolean;
   placeholder: string;
-  onSuggest: () => void;
-  suggesting: boolean;
   onOoc: () => void;
   onStop?: () => void;
 }) {
@@ -79,10 +76,6 @@ export default function Composer({ ref, onSend, busy, placeholder, onSuggest, su
           }}
         />
         <div className={s.bar}>
-          <button className={s.tool} onClick={onSuggest} disabled={busy || suggesting} aria-label="Ações rápidas"
-            data-tip="Sugere ações para este momento da cena">
-            {suggesting ? <Loader size={16} label="Pensando em ações" /> : <Icon name="bolt" size={16} />}<span>Ações rápidas</span>
-          </button>
           <button className={`${s.tool} ${s.ooc}`} onClick={onOoc} aria-label="Fora do jogo" title="Converse com o Mestre como jogador: nada disso entra na história">
             <Icon name="chat" size={16} /><span>Fora do jogo</span>
           </button>

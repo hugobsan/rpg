@@ -23,10 +23,11 @@ import { diceText } from "../DiceRoller";
  *                  final entra no feed e zera o rascunho.
  *                  Renderize o rascunho num componente à parte e os itens do feed com React.memo:
  *                  cada pedaço do streaming re-renderiza quem usa o hook.
- *   choices        opções do último turno (setChoices: troca pelas das Ações rápidas)
+ *   choices        rótulos das opções do último turno (send(rótulo, false, índice) manda a opção tipada)
  *   busy, status   turno em andamento e o texto da fase, vindo do servidor: "Lendo a cena...",
  *                  "O Mestre está pensando...", "Consultando memórias e livros...", "Escrevendo..."
- *   send(text)     envia a ação; devolve false se não enviou (ocupado ou texto vazio)
+ *   send(text, noTalk?, optionIndex?) envia a ação (optionIndex: a opção N das choices, resolvida sem o
+ *                  Intérprete); devolve false se não enviou (ocupado ou texto vazio)
  *   regenerate(fb) "gerar novamente" a última resposta (fb = motivo, pode ser "")
  *   edit(text)     troca a última ação do jogador por text e gera a resposta de novo
  *   canStop, stop() parar o Mestre: só enquanto a narração não chegou (depois dela o turno já está salvo e o
@@ -50,7 +51,7 @@ import { diceText } from "../DiceRoller";
  * como npc_message) chegam depois de liberados pela rolagem; status, scene, state, error e done
  * chegam na hora. Serve para a tela reagir (toast, som) sem mexer no hook.
  *
- * Registros do Escrivão (chips com `scribe`): undo(item) desfaz no servidor e marca o chip (e os do mesmo registro)
+ * Efeitos aplicados (chips com `scribe`): undo(item) desfaz no servidor e marca o chip (e os do mesmo registro)
  * como desfeito; devolve o erro ("" = ok). Só os do último turno: as etiquetas da última narração salva também voltam
  * do servidor ao carregar a página.
  *
@@ -69,13 +70,13 @@ export interface FeedItem {
   // só nos eventos ao vivo (mensagens salvas não têm): a rolagem inteira e o nome da ferramenta
   dice?: DiceResult;
   name?: string;
-  scribe?: { messageId: number; index: number; undone?: boolean }; // registro do Escrivão que dá para desfazer
+  scribe?: { messageId: number; index: number; undone?: boolean }; // efeito aplicado que dá para desfazer
 }
 
 // eventos que nunca ficam retidos pela rolagem
 const IMMEDIATE = new Set(["status", "scene", "state", "error", "done"]);
 
-// scribe: as etiquetas do Escrivão da última narração (só elas se desfazem) vêm junto
+// scribe: as etiquetas dos efeitos da última narração (só elas se desfazem) vêm junto
 const toFeed = (messages: ChatLine[], scribe = false): FeedItem[] => {
   const last = scribe ? messages.findLast((m) => m.role === "gm") : undefined;
   return messages.flatMap((m): FeedItem[] => [
@@ -279,7 +280,7 @@ export function useTurn(
 
   // regen: gera de novo a resposta do último turno (o servidor volta o estado de antes dele);
   // com edit, a ação do jogador também é trocada por text
-  const run = async (text: string, regen?: { feedback: string; edit?: boolean }, noTalk?: boolean) => {
+  const run = async (text: string, regen?: { feedback: string; edit?: boolean }, noTalk?: boolean, optionIndex?: number) => {
     const before = choices; // a ação pode virar fala fora do jogo: aí as opções de antes voltam
     stick.current = true; // o jogador agiu: volta a seguir o fim
     busyRef.current = true;
@@ -307,7 +308,7 @@ export function useTurn(
       const res = await fetch(`/api/campaigns/${campaignId}/turn`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(regen ? { regenerate: true, feedback: regen.feedback, input: regen.edit ? text : undefined } : { input: text, noTalk }),
+        body: JSON.stringify(regen ? { regenerate: true, feedback: regen.feedback, input: regen.edit ? text : undefined } : { input: text, noTalk, optionIndex }),
       });
       if (!res.ok || !res.body) throw new Error(`Erro ${res.status}`);
       const reader = res.body.getReader();
@@ -386,10 +387,11 @@ export function useTurn(
   };
 
   // noTalk: a fala voltou do chat do NPC ("não era uma conversa"), o servidor não pergunta de novo se é conversa
-  const send = (text: string, noTalk?: boolean) => {
+  // optionIndex: a opção N das choices (o servidor resolve os passos tipados dela, sem o Intérprete)
+  const send = (text: string, noTalk?: boolean, optionIndex?: number) => {
     if (busyRef.current || !text.trim()) return false;
     // depois de parar, a ação parada (salva sem resposta) dá lugar à nova
-    void (stopped.current ? run(text.trim(), { feedback: "", edit: true }) : run(text, undefined, noTalk));
+    void (stopped.current ? run(text.trim(), { feedback: "", edit: true }) : run(text, undefined, noTalk, optionIndex));
     return true;
   };
 

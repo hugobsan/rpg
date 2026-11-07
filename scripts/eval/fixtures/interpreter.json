@@ -1,0 +1,79 @@
+{
+ "_sobre": "Saída do Intérprete validada contra a ficha.",
+ "ctx": {
+  "abilities": [
+   "Kage Bunshin no Jutsu",
+   "Kanchi"
+  ],
+  "attributes": [
+   "forca",
+   "velocidade",
+   "inteligencia"
+  ],
+  "items": [
+   "Kunai",
+   "Papel-bomba"
+  ],
+  "npcs": [
+   "Javali",
+   "Tenten"
+  ]
+ },
+ "cases": [
+  {
+   "id": "javali",
+   "nota": "#3651: kunai + papel-bomba + 2 clones",
+   "raw": "```json\n{\"steps\":[{\"kind\":\"item\",\"item\":\"kunai\",\"target\":\"javali\",\"intent\":\"preparar a kunai com papel-bomba\",\"difficulty\":\"easy\"},{\"kind\":\"ability\",\"ability\":\"Kage Bunshin\",\"target\":\"Javali\",\"intent\":\"dois clones seguram o javali\",\"difficulty\":\"hard\"}],\"declaresOutcome\":false}\n```",
+   "expect": {
+    "steps": 2,
+    "kinds": [
+     "item",
+     "ability"
+    ],
+    "abilities": [
+     null,
+     "Kage Bunshin no Jutsu"
+    ],
+    "items": [
+     "Kunai",
+     null
+    ]
+   }
+  },
+  {
+   "id": "tecnica_que_nao_tem",
+   "nota": "Katon na 1ª vez: o nome fica e o Resolvedor limita a parcial",
+   "raw": "{\"steps\":[{\"kind\":\"ability\",\"ability\":\"Katon: Gōkakyū no Jutsu\",\"intent\":\"cuspir fogo\",\"difficulty\":\"medium\"}],\"declaresOutcome\":true}",
+   "expect": {
+    "steps": 1,
+    "kinds": [
+     "ability"
+    ],
+    "abilities": [
+     "Katon: Gōkakyū no Jutsu"
+    ],
+    "declaresOutcome": true
+   }
+  },
+  {
+   "id": "oraculo",
+   "nota": "pergunta ao mundo com chance",
+   "raw": "{\"steps\":[{\"kind\":\"move\",\"intent\":\"ir à loja\",\"difficulty\":\"trivial\"}],\"question\":{\"text\":\"a loja ainda está aberta?\",\"likelihood\":\"likely\"}}",
+   "expect": {
+    "steps": 1,
+    "kinds": [
+     "move"
+    ],
+    "likelihood": "likely"
+   }
+  },
+  {
+   "id": "lixo",
+   "nota": "resposta sem JSON: null (o chamador tenta de novo e cai no passo genérico)",
+   "raw": "Claro! O jogador quer atacar o javali.",
+   "expect": {
+    "null": true
+   }
+  }
+ ]
+}

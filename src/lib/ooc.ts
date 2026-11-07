@@ -89,7 +89,7 @@ const TABLE_TOOL: ToolDef = {
         },
         rest: {
           type: "object",
-          description: "quanto cada recurso recupera por descanso: light = descanso leve (refeição, pausa), full = descanso completo (noite de sono); em cada um, { key do recurso: { min, max } } com inteiros de 0 a 999. Mande só os recursos que mudam; null tira a regra do recurso (sem regra, o Escrivão estima)",
+          description: "quanto cada recurso recupera por descanso: light = descanso leve (refeição, pausa), full = descanso completo (noite de sono); em cada um, { key do recurso: { min, max } } com inteiros de 0 a 999. Mande só os recursos que mudam; null tira a regra do recurso",
           properties: { light: { type: "object" }, full: { type: "object" } },
         },
         modes: {
@@ -249,7 +249,7 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
 
   const system = [
     OOC_PROMPT,
-    `\n====== CAMPANHA: ${campaign.name} (estilo ${campaign.style}) ======`,
+    `\n====== CAMPANHA: ${campaign.name} ======`,
     `--- CENA ATUAL ---\nModo: ${scene.mode} | Local: ${scene.location || "?"} | Título: ${scene.title || "-"}\nHora na história: ${
       clock ? `${formatClock(clock.minutes)} (${period(clock.minutes)})` : "ainda não definida"
     }\nNPCs em cena: ${npcs.join(", ") || "nenhum"}${scene.summary ? `\nResumo da cena: ${scene.summary}` : ""}`,
@@ -260,7 +260,7 @@ export async function oocTalk(campaignId: string, text: string): Promise<{ reply
     // o texto atual de cada modo, para reescrever a pedido (set_table_rules modes)
     `\n--- MODOS DE CENA (como o Mestre conduz cada um; ajustáveis em modes) ---\n${(Object.keys(MODE_HINTS) as SceneMode[]).map((k) => `${k}: ${modeHint(getTable(campaign.state), k)}`).join("\n")}`,
     // o que já vale de descanso e as keys dos recursos, para set_table_rules rest
-    `\n--- DESCANSO (quanto cada recurso recupera; ajustável em rest) ---\n${restRuleText(getTable(campaign.state)) || "sem regra: o Escrivão estima"}\nRecursos: ${campaign.ruleset.resources.map((r) => `${r.key} (${r.label})`).join(", ")}; tipos: ${REST_KINDS.map((k) => `${k.key} = ${k.label.toLowerCase()} (${k.when})`).join(", ")}`,
+    `\n--- DESCANSO (quanto cada recurso recupera; ajustável em rest) ---\n${restRuleText(getTable(campaign.state)) || "sem regra: leve recupera um pouco, completo enche"}\nRecursos: ${campaign.ruleset.resources.map((r) => `${r.key} (${r.label})`).join(", ")}; tipos: ${REST_KINDS.map((k) => `${k.key} = ${k.label.toLowerCase()} (${k.when})`).join(", ")}`,
     player ? `\n--- PERSONAGEM DO JOGADOR ---\n${sheetSummary(player, true, campaign.ruleset)}` : "",
     story.length
       ? `\n--- ÚLTIMOS TRECHOS DA HISTÓRIA ---\n${story

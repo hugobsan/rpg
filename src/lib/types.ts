@@ -211,7 +211,7 @@ export interface Persona {
   speech?: string; // jeito de falar: tom, vocabulário, bordões
   relationships?: string;
   quirks?: string; // manias, hábitos, gestos
-  // situação atual na história (cargo, time, o que já viveu), que o Cronista reescreve ao compactar: vale mais que o
+  // situação atual na história (cargo, time, o que já viveu), escrita pelo Cronista antigo (legado): vale mais que o
   // passado, que fica como a origem. Sem ela, NPC canônico ficava preso ao ponto da obra em que foi criado
   current?: string;
   // sexo: define a voz padrão. undefined = ainda não decidido (o Jev decide na 1ª fala); null = desconhecido
@@ -323,9 +323,9 @@ export interface TableRules {
   categories: { key: string; label: string; offset: number }[]; // ajuste da CD por tipo de ação (até 12)
   crits: boolean; // 20 natural passa, 1 natural falha (só 1d20 com CD)
   notes?: string; // orientação livre de dificuldade para o Mestre
-  xp?: { min: number; max: number; great: number }; // XP por feito, em % do que falta para o próximo nível (o Escrivão aplica)
+  xp?: { min: number; max: number; great: number }; // XP por feito, em % do que falta para o próximo nível (missão concluída aplica)
   modes?: Partial<Record<SceneMode, string>>; // como conduzir cada modo de cena (só os que diferem do padrão; vai no contexto do turno)
-  rest?: Partial<Record<RestKind, Record<string, { min: number; max: number }>>>; // quanto cada recurso (key do ruleset) recupera por descanso (o Escrivão aplica)
+  rest?: Partial<Record<RestKind, Record<string, { min: number; max: number }>>>; // quanto cada recurso (key do ruleset) recupera por descanso (o bloco de efeitos aplica)
 }
 export type RestKind = "light" | "full";
 
@@ -455,13 +455,15 @@ export interface ChatgptStatus {
 
 export type TurnEvent =
   | { type: "status"; text: string }
-  // scribe: registro do Escrivão que dá para desfazer (narração e posição em meta.scribe)
+  // scribe: efeito aplicado que dá para desfazer (narração e posição em meta.scribe)
   | { type: "tool"; name: string; summary: string; scribe?: { messageId: number; index: number } }
   | { type: "dice"; result: DiceResult }
   | { type: "narration"; content: string; messageId?: number }
   // narração em streaming: pedaços do texto enquanto o Mestre escreve. O "narration" final traz o texto inteiro
   | { type: "narration_delta"; text: string }
   | { type: "choices"; choices: string[] }
+  // opções tipadas (contracts.EffectOption); a tela usa os rótulos de "choices" e manda o índice de volta (optionIndex)
+  | { type: "options"; options: { label: string; approach: string; steps: { ability?: string; item?: string; target?: string }[] }[] }
   | { type: "scene"; scene: Partial<Scene> }
   | { type: "state" } // fichas mudaram; cliente deve recarregar
   | { type: "time"; minutes: number } // relógio da história mudou (minutos desde o Dia 1, 00:00)

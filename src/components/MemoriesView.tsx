@@ -51,7 +51,7 @@ export default function MemoriesView({ memories }: { memories: Memory[] }) {
             <path d="M6 3h9l3 3v15H6z" /><path d="M9 10h6M9 14h6M9 18h3" />
           </svg>
           <b>Nada registrado ainda</b>
-          O Cronista anota os marcos, descobertas e relações conforme você joga. O Mestre consulta tudo isso para manter a história coerente.
+          Os fatos que a história deixa (marcos, descobertas, acordos) ficam aqui conforme você joga.
         </div>
       ) : (
         <ol className={s.timeline}>

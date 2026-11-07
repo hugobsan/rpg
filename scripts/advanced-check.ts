@@ -12,7 +12,6 @@ import { chunkPage, ingestBook } from "../src/lib/books";
 import { getSetting, pool, q, setSetting } from "../src/lib/db";
 import { embed } from "../src/lib/embeddings";
 import { searchBookChunks, searchHistory, searchMemories } from "../src/lib/retrieval";
-import { HISTORY_MIN, importanceLevel, MEMORY_MIN } from "../src/lib/decisions";
 import { POST as reprocess } from "../src/app/api/embeddings/reprocess/route";
 
 const BASE = process.env.DATABASE_URL || "postgres://rpg:rpg@localhost:5433/rpg";
@@ -53,32 +52,28 @@ function oldChunkPage(text: string): string[] {
 async function main() {
   // ---------- sem banco: padrões, normalização, chunking ----------
   // padrões = os valores fixos de antes (nada muda para quem não mexer)
-  assert.deepEqual(
-    [D.memory.topK, D.memory.recentK, D.memory.maxDistance, D.memory.toolTopK, D.memory.npcTopK, D.memory.alwaysKeep],
-    [6, 8, 2, 8, 8, 5]
-  );
-  assert.deepEqual([D.history.excerptChars, D.history.toolTopK, D.history.autoTopK, D.history.autoMaxDistance, D.history.batch], [700, 4, 2, 0.45, 16]);
-  assert.deepEqual([D.books.chunkChars, D.books.overlapChars, D.books.topK, D.books.maxPages], [2400, 0, 3, 8]);
+  assert.deepEqual([D.memory.toolTopK, D.memory.npcTopK], [8, 8]);
+  assert.deepEqual([D.history.excerptChars, D.history.toolTopK, D.history.batch], [700, 4, 16]);
+  assert.deepEqual([D.books.chunkChars, D.books.overlapChars, D.books.topK], [2400, 0, 3]);
   assert.deepEqual([D.embeddings.dimensions, D.embeddings.batch], [0, 64]);
-  assert.deepEqual(D.jev, { complexMin: 0.5, webMin: 0.7, npcWillingMin: 0.4, presentMin: 0.4, movedMin: 0.5, modeMin: 0.7, mechanicMin: 0.45, metaMin: 0.6, genderMin: 0.7, talkMin: 0.75, bookMin: 0.45 });
-  assert.deepEqual([MEMORY_MIN, HISTORY_MIN], [0.55, 0.8]);
+  assert.deepEqual(D.jev, { complexMin: 0.5, webMin: 0.7, npcWillingMin: 0.4, metaMin: 0.6, genderMin: 0.7, talkMin: 0.75, bookMin: 0.45 });
 
   assert.deepEqual(normalizeAdvanced(undefined), D);
   assert.deepEqual(normalizeAdvanced("lixo"), D);
   const n = normalizeAdvanced({
-    memory: { topK: "abc", recentK: null, maxDistance: -1, jevMin: "0.123456" },
-    history: { autoMaxDistance: "0.3", autoTopK: 2.6, excerptChars: Infinity },
+    memory: { toolTopK: "abc", npcTopK: null },
+    history: { toolTopK: "3", excerptChars: Infinity, batch: 2.6 },
     books: { chunkChars: 1e9, overlapChars: 99999 },
     embeddings: { dimensions: 512.4, batch: 0 },
     jev: { complexMin: 1.7 },
     bogus: { x: 1 },
   }) as unknown as Record<string, Record<string, number>>;
-  assert.equal(n.memory.topK, 6, "lixo vira o padrão");
-  assert.equal(n.memory.recentK, 8, "null vira o padrão");
-  assert.equal(n.memory.maxDistance, 0, "abaixo da faixa prende no mínimo");
-  assert.equal(n.memory.jevMin, 0.1235, "fração com 4 casas");
-  assert.equal(n.history.autoMaxDistance, 0.3, "texto numérico vale");
-  assert.equal(n.history.autoTopK, 3, "inteiro arredonda");
+  assert.equal(n.memory.toolTopK, 8, "lixo vira o padrão");
+  assert.equal(n.memory.npcTopK, 8, "null vira o padrão");
+  assert.equal(normalizeAdvanced({ jev: { webMin: "0.123456" } }).jev.webMin, 0.1235, "fração com 4 casas");
+  assert.equal(normalizeAdvanced({ memory: { toolTopK: -3 } }).memory.toolTopK, 1, "abaixo da faixa prende no mínimo");
+  assert.equal(n.history.toolTopK, 3, "texto numérico vale");
+  assert.equal(n.history.batch, 3, "inteiro arredonda");
   assert.equal(n.history.excerptChars, 700, "infinito vira o padrão");
   assert.equal(n.books.chunkChars, 12000, "acima da faixa prende no máximo");
   assert.equal(n.books.overlapChars, 6000);
@@ -113,16 +108,16 @@ async function main() {
 
     // cache: lê uma vez; escrita por fora só aparece quando expira; salvar troca na hora e grava só o que difere
     assert.deepEqual(await getAdvanced(), D);
-    await setSetting("advanced", { memory: { topK: 9 } });
-    assert.equal((await getAdvanced()).memory.topK, 6, "dentro do TTL vale o cache");
+    await setSetting("advanced", { memory: { toolTopK: 9 } });
+    assert.equal((await getAdvanced()).memory.toolTopK, 8, "dentro do TTL vale o cache");
     expire();
-    assert.equal((await getAdvanced()).memory.topK, 9, "expirou: relê o banco");
-    const saved = await saveAdvanced({ ...D, memory: { ...D.memory, topK: 7 }, books: { ...D.books, maxPages: 999 } });
-    assert.equal(saved.books.maxPages, 50);
-    assert.equal((await getAdvanced()).memory.topK, 7, "salvar troca o cache na hora");
-    assert.deepEqual(await getSetting("advanced", {}), { memory: { topK: 7 }, books: { maxPages: 50 } }, "grava só o que difere do padrão");
+    assert.equal((await getAdvanced()).memory.toolTopK, 9, "expirou: relê o banco");
+    const saved = await saveAdvanced({ ...D, memory: { ...D.memory, toolTopK: 7 }, books: { ...D.books, topK: 999 } });
+    assert.equal(saved.books.topK, 30);
+    assert.equal((await getAdvanced()).memory.toolTopK, 7, "salvar troca o cache na hora");
+    assert.deepEqual(await getSetting("advanced", {}), { memory: { toolTopK: 7 }, books: { topK: 30 } }, "grava só o que difere do padrão");
     expire();
-    assert.equal((await getAdvanced()).memory.topK, 7);
+    assert.equal((await getAdvanced()).memory.toolTopK, 7);
 
     // dimensions: só vai no request quando > 0
     await saveAdvanced({});
@@ -163,21 +158,13 @@ async function main() {
     assert.deepEqual((await searchMemories(cid, "q", { maxDistance: 0.5 })).map((m) => m.content), ["perto"], "limiar de distância");
     assert.deepEqual((await searchBookChunks(cid, "q", 5)).map((c) => c.content), ["c3"]);
     assert.deepEqual((await searchHistory(cid, "q")).map((h) => h.content), ["h perto", "h longe"]);
-    assert.deepEqual((await searchHistory(cid, "q", { auto: true })).map((h) => h.content), ["h perto"], "auto: até 0,45");
-    await saveAdvanced({ history: { autoMaxDistance: 1 } });
-    assert.deepEqual((await searchHistory(cid, "q", { auto: true })).map((h) => h.content), ["h perto", "h longe"], "auto: limiar das avançadas");
     out = 4;
     assert.deepEqual((await searchMemories(cid, "q")).map((m) => m.content), ["outra dimensão"]);
     assert.deepEqual((await searchBookChunks(cid, "q", 5)).map((c) => c.content), ["c4"]);
-    assert.deepEqual((await searchHistory(cid, "q", { auto: true })).map((h) => h.content), ["h outra"]);
-    out = 7; // ninguém nessa dimensão: memórias caem no full-text, a automática não devolve nada
+    assert.deepEqual((await searchHistory(cid, "q")).map((h) => h.content), ["h outra"]);
+    out = 7; // ninguém nessa dimensão: memórias caem no full-text
     assert.deepEqual((await searchMemories(cid, "longe")).map((m) => m.content), ["longe"]);
-    // importância: Jev em dúvida (nenhum nível com P ≥ 0,5) não substitui a do Cronista
-    const score = (p: number[]) => ({ type: "score" as const, score: 0, probabilities: Object.fromEntries(p.map((v, i) => [String(i), v])) });
-    assert.equal(importanceLevel(score([0.39, 0.14, 0.25, 0.16, 0.06])), undefined, "dúvida: fica a do Cronista");
-    assert.equal(importanceLevel(score([0.83, 0, 0, 0, 0.17])), 1, "certeza: vale o Jev");
     assert.deepEqual((await searchMemories(cid, "longe", { subject: "ong" })).map((m) => m.content), ["longe"], "subject acha quem o texto cita");
-    assert.deepEqual(await searchHistory(cid, "q", { auto: true }), []);
 
     // livro indexado com os padrões; reprocessar com outro chunk size/overlap refaz os chunks a partir das páginas
     out = 3;

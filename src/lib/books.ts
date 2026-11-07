@@ -98,19 +98,6 @@ export async function ingestBook(
   return { bookId, pages: pages.length, chunks: allChunks.length };
 }
 
-export async function readPages(
-  bookId: string,
-  from: number,
-  to: number
-): Promise<{ page: number; content: string }[]> {
-  const capped = Math.min(to, from + (await getAdvanced()).books.maxPages - 1);
-  return q<{ page: number; content: string }>(
-    `SELECT page, content FROM book_pages
-     WHERE book_id = $1 AND page BETWEEN $2 AND $3 ORDER BY page`,
-    [bookId, from, capped]
-  );
-}
-
 export async function listBooks(
   campaignId: string
 ): Promise<{ id: string; title: string; pages: number }[]> {

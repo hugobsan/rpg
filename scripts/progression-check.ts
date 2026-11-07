@@ -184,7 +184,7 @@ async function dbChecks() {
     await run("use_ability", { character: "Teste", ability: "Henge no Jutsu", attribute: "selos", dc: 14 });
     assert.equal((events.find((e) => e.type === "dice") as { result: { modifier: number } }).result.modifier, 3 * 2 + 2);
     // não está na ficha
-    assert.match(await run("use_ability", { character: "Teste", ability: "Rasengan", dc: 20 }), /add_ability/);
+    assert.match(await run("use_ability", { character: "Teste", ability: "Rasengan", dc: 20 }), /não tem "Rasengan" na ficha/);
     // sem chakra: falha sem rolar
     await run("update_resource", { character: "Teste", resource: "chakra", set: 2 });
     events.length = 0;
@@ -224,9 +224,8 @@ async function dbChecks() {
     assert.ok((await prog("Bunshin no Jutsu")) > b0 && (await prog("Henge no Jutsu")) > h0 && (await prog("Katon Novo")) > k0, "cada alvo ganha");
     assert.equal((await char()).sheet.trainingLog!.hours, 2, "horas do dia contadas uma vez");
     assert.match(out, /simultâneo/);
-    // o Escrivão não repete o ganho de um alvo treinado em paralelo
-    const scribeCtx: ToolContext = { ...ctx, scribe: { briefs: 0 } };
-    assert.match(await executeGmTool("update_ability_progress", { character: "Teste", name: "Katon Novo", delta: 5 }, scribeCtx), /já/);
+    // o ganho de um alvo treinado em paralelo não se repete à mão no mesmo contexto
+    assert.match(await run("update_ability_progress", { character: "Teste", name: "Katon Novo", delta: 5 }), /já/);
     ok(`train simultâneo: recusa sem regra, alvo repetido ou inválido; relógio +2 h, três alvos sobem (${out.slice(0, 80)}...)`, () => {});
 
     // update_attribute respeita o teto

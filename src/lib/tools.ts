@@ -1,11 +1,9 @@
-import { randomUUID } from "node:crypto";
 import { q } from "./db";
 import { getAdvanced } from "./advanced";
 import { ToolDef } from "./openrouter";
 import { rollDice } from "./dice";
 import { addMemory, formatHistory, searchHistory, searchMemories, searchBookChunks } from "./retrieval";
-import { listBooks, readPages } from "./books";
-import { Ability, Campaign, Character, LibraryAbility, LibraryItem, Scene, Sheet, TableRules, TurnEvent } from "./types";
+import { Ability, Campaign, Character, DiceResult, LibraryAbility, LibraryItem, Scene, Sheet, TableRules, TurnEvent } from "./types";
 import { abilityPromptLine, blankSheet, currentMilestone, nextMilestone } from "./ruleset";
 import { dehydrateSheet, editAbility, findLibrary, hydrateSheets, itemText, libraryLine, linkAbility, listLibrary } from "./library";
 import {
@@ -17,6 +15,7 @@ import {
   COST_MULT_MIN,
   controlLabel,
   effectiveCost,
+  type EffectiveCost,
   findAbility,
   gainMastery,
   masteryBonus,
@@ -43,6 +42,7 @@ import {
 import { dcResultText, getTable, tableDc } from "./table";
 import { queueProfile } from "./characters";
 import { formatMoney, toBase } from "./money";
+import { masteryWord, resourceLevel, RESOURCE_WORDS } from "./contracts";
 
 // add_ability espera o Criador de habilidades até isto; depois registra incompleta com o que o Mestre passou
 // (se o Criador responder depois, a resposta completa a entrada: linkAbility)
@@ -69,27 +69,6 @@ const S = (props: Record<string, unknown>, required: string[]) => ({
 });
 
 export const GM_TOOLS: ToolDef[] = [
-  {
-    type: "function",
-    function: {
-      name: "roll_dice",
-      description:
-        "Rola dados em notação padrão (ex: 1d20+4, 2d6). O resultado é mostrado ao jogador.",
-      parameters: S(
-        {
-          notation: { type: "string", description: "ex: 1d20+4" },
-          reason: { type: "string", description: "o que está sendo testado" },
-          dc: {
-            type: "number",
-            description:
-              "dificuldade (CD) do teste, quando houver uma só: o resultado sai como SUCESSO/FALHA e o jogador vê verde/vermelho. Omita em disputas diretas (rolagens opostas). O servidor soma o ajuste das REGRAS DA MESA.",
-          },
-          category: { type: "string", description: "tipo de ação, uma das keys das REGRAS DA MESA (se houver): soma o ajuste dele na CD" },
-        },
-        ["notation"]
-      ),
-    },
-  },
   {
     type: "function",
     function: {
@@ -216,27 +195,6 @@ export const GM_TOOLS: ToolDef[] = [
   {
     type: "function",
     function: {
-      name: "use_ability",
-      description:
-        "Resolve o uso de uma técnica DA FICHA do personagem (o que a mecânica chama de habilidade: magia, golpe especial...). O servidor faz a conta: desconta o custo já ajustado (faixa de consumo ou rank × multiplicadores do personagem × domínio; × units se a técnica custa por unidade; falha sem rolar se não houver recurso), rola 1d20 + atributo x multiplicador + bônus do domínio contra a CD (o jogador vê a rolagem) e sobe o domínio pelo uso. Use no lugar de roll_dice + update_resource para técnicas da ficha. O dano, se houver, role à parte com roll_dice.",
-      parameters: S(
-        {
-          character: { type: "string" },
-          ability: { type: "string", description: "nome exato da técnica na ficha" },
-          attribute: { type: "string", description: "key do atributo do teste, só para trocar o padrão do tipo" },
-          dc: { type: "number", description: "dificuldade (CD). Omita só em disputa direta (rolagem oposta). O servidor soma o ajuste das REGRAS DA MESA" },
-          category: { type: "string", description: "tipo de ação, uma das keys das REGRAS DA MESA (se houver)" },
-          target: { type: "string", description: "alvo, se houver" },
-          units: { type: "number", description: "só para técnica com custo por unidade (ex.: quantas cópias, rodadas mantidas ou invocações): inteiro ≥ 1, padrão 1" },
-          note: { type: "string", description: "contexto curto do uso" },
-        },
-        ["character", "ability"]
-      ),
-    },
-  },
-  {
-    type: "function",
-    function: {
       name: "set_cost_modifier",
       description: `Ajusta quanto um personagem gasta: sem ability, o multiplicador geral de custo das técnicas dele (o nome no mundo vem na MECÂNICA; ex.: controle excelente 0,75, bom 0,9, ruim 1,25, péssimo 1,5); com ability, o multiplicador só daquela técnica para ele (ex.: técnica de linhagem usada por quem não nasceu com ela 1,5). 1 volta ao padrão. Entre ${COST_MULT_MIN} e ${COST_MULT_MAX}. Use quando a história mostra a mudança (treino de controle, uma condição) ou para corrigir; não é da técnica: para todos, use edit_ability.`,
       parameters: S(
@@ -247,28 +205,6 @@ export const GM_TOOLS: ToolDef[] = [
           reason: { type: "string", description: "por quê, em poucas palavras" },
         },
         ["character", "mult"]
-      ),
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "train",
-      description:
-        "Treino: avança o relógio pelas horas treinadas e só então aplica o ganho. Habilidade: o domínio sobe por hora (menos nos domínios altos). Atributo: as horas acumulam até o próximo +1, até o teto do nível de poder. Há limite de horas de treino por dia e de domínio ganho por habilidade por dia; acima disso o treino é recusado (exausto). Não chame advance_time para as mesmas horas.",
-      parameters: S(
-        {
-          character: { type: "string" },
-          target: { type: "string", description: "nome da habilidade da ficha ou key do atributo" },
-          hours: { type: "number", description: "horas realistas de treino (inteiras, ex: 2, 4)" },
-          parallel: {
-            type: "array",
-            items: { type: "string" },
-            description: "só se o mundo tem Treino simultâneo (veja as regras): outros alvos treinados nas mesmas horas (ex. Naruto: um por clone das sombras)",
-          },
-          note: { type: "string", description: "como treinou" },
-        },
-        ["character", "target", "hours"]
       ),
     },
   },
@@ -423,28 +359,6 @@ export const GM_TOOLS: ToolDef[] = [
   {
     type: "function",
     function: {
-      name: "npc_message",
-      description:
-        "O NPC chama o jogador para conversar em particular (caixa de entrada; o jogador decide se responde, e a conversa segue com o agente do NPC). Com parcimônia, só com motivo real (algo a contar, pedido, aviso, segredo, relação), nunca para exposição ou empurrar a trama. Meio coerente com a distância e o cenário (de lado, recado, mensageiro, rádio...). Na narração, no máximo sinalize a chegada.",
-      parameters: S(
-        {
-          npc: { type: "string", description: "nome exato do NPC registrado" },
-          message: {
-            type: "string",
-            description: "o que o jogador lê: a mensagem em personagem, curta (1 a 3 frases), com o meio de entrega se for à distância",
-          },
-          intent: {
-            type: "string",
-            description: "o motivo real, oculto do jogador: o que o NPC quer com a conversa. Vai para o agente do NPC quando o jogador responder",
-          },
-        },
-        ["npc", "message", "intent"]
-      ),
-    },
-  },
-  {
-    type: "function",
-    function: {
       name: "set_scene",
       description:
         "Atualiza a cena atual (modo/título/local) ou inicia uma nova cena (newScene=true). Modos: exploration, dialogue, battle, training, downtime. Ao abrir cena nova ou mudar o local, present é OBRIGATÓRIO: todos os NPCs que estão no novo lugar com o jogador. Quem ficar de fora sai de cena; quem estiver fora de cena e for listado volta.",
@@ -585,104 +499,26 @@ export const GM_TOOLS: ToolDef[] = [
       ),
     },
   },
+];
+
+/** Ferramentas do Narrador: só leitura. O resto (cena, elenco, tempo, itens, missões) vai no bloco de efeitos. */
+export const NARRATOR_TOOLS: ToolDef[] = [
+  GM_TOOLS.find((t) => t.function.name === "search_history")!,
   {
     type: "function",
     function: {
-      name: "get_character",
+      name: "search_lore",
       description:
-        "Lê a ficha completa e persona de um personagem (player ou NPC, ativo ou não). Recursos, atributos, XP e cargo vêm sempre; peça em sections só o que precisa (sem sections, vem tudo).",
-      parameters: S(
-        {
-          name: { type: "string" },
-          sections: {
-            type: "array",
-            items: { type: "string", enum: ["abilities", "inventory", "persona"] },
-            description: "abilities: técnicas completas (efeito, marcos); inventory: itens; persona: aparência, personalidade, passado, relações, segredos",
-          },
-        },
-        ["name"]
-      ),
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "get_script",
-      description:
-        "Lê o roteiro interno da campanha: premissa, arco ativo e o seguinte por inteiro (eventos canônicos, ganchos, notas) e o título dos outros. O contexto do turno já traz o ponto atual e o que vem a seguir.",
-      parameters: S({ full: { type: "boolean", description: "true = todos os arcos por inteiro" } }, []),
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "update_script",
-      description:
-        "Anota progresso no roteiro: adiciona nota a um arco e/ou muda seu status (pending/active/done).",
-      parameters: S(
-        {
-          arcTitle: { type: "string" },
-          note: { type: "string" },
-          status: { type: "string", enum: ["pending", "active", "done"] },
-        },
-        ["arcTitle"]
-      ),
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "search_book",
-      description:
-        "Busca trechos nos livros/materiais de referência indexados. Retorna chunks com número de página — depois você pode ler páginas inteiras com read_pages.",
+        "Busca nos livros de referência e na biblioteca do mundo (técnicas e itens): fatos da obra, como uma técnica funciona, o que um item faz.",
       parameters: S({ query: { type: "string" } }, ["query"]),
     },
   },
   {
     type: "function",
     function: {
-      name: "read_pages",
-      description:
-        "Lê páginas inteiras de um livro indexado (poucas por chamada: a resposta avisa onde parou). Use após search_book para contexto completo, página seguinte/anterior ou um intervalo específico.",
-      parameters: S(
-        {
-          bookId: { type: "string" },
-          from: { type: "number", description: "primeira página" },
-          to: { type: "number", description: "última página (opcional, default = from)" },
-        },
-        ["bookId", "from"]
-      ),
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "list_books",
-      description: "Lista os livros/materiais indexados nesta campanha.",
-      parameters: S({}, []),
-    },
-  },
-];
-
-// o Escrivão registra estas depois da narração, pelo que ela mostra: saem do turno do Mestre (o fora do jogo fica com todas)
-export const SCRIBE_TOOLS = new Set([
-  "update_resource", "update_money", "add_item", "remove_item", "add_memory", "grant_xp", "update_ability_progress", "update_extra_field",
-  "add_objective", "update_objective",
-]);
-
-// anotações cujo resultado o Mestre não precisa para narrar: rodam depois da narração, sem outra rodada do modelo
-export const DEFERRED_TOOLS = new Set(["advance_time", "set_scene", "set_npc_active", "set_rank", "update_script", "note_objective"]);
-
-/** Ferramentas do turno do Mestre: sem as do Escrivão (advance_time fica: o Mestre controla o ritmo; o Jev só cobre o esquecimento). */
-export const GM_TURN_TOOLS: ToolDef[] = [
-  ...GM_TOOLS.filter((t) => !SCRIBE_TOOLS.has(t.function.name)),
-  {
-    type: "function",
-    function: {
-      name: "note_objective",
-      description:
-        "Anota numa frase uma missão, evento marcado ou compromisso com prazo que a história criou, mudou, cumpriu ou cancelou (ex.: \"Hokage deu a missão de escoltar o Tazuna até a Vila da Névoa, prazo de 3 dias; paga 30 mil ryō à equipe, 10 mil para Hugo\", \"missão do Tazuna concluída\"). Em missão paga, diga o total e a parte do personagem do jogador. Diga o tamanho (pequena, média, grande ou excepcional) e se é só oferecida (o jogador ainda não aceitou). O Escrivão registra com o prazo em tempo do jogo depois da narração.",
-      parameters: S({ brief: { type: "string", description: "o que foi combinado, prazo, pagamento (total e parte do jogador) ou recompensa e tamanho, como a história disse" } }, ["brief"]),
+      name: "get_character",
+      description: "Lê quem é um personagem (player ou NPC, em cena ou não): perfil, técnicas e itens, em palavras.",
+      parameters: S({ name: { type: "string" } }, ["name"]),
     },
   },
 ];
@@ -691,15 +527,8 @@ export interface ToolContext {
   campaign: Campaign;
   scene: Scene;
   emit: (e: TurnEvent) => void;
-  sceneChanged?: boolean; // set_scene abriu cena nova ou mudou o local neste turno
-  castSet?: boolean; // set_scene informou present: o elenco já está certo
-  modeSet?: boolean; // set_scene trocou o modo neste turno: o modo pela narração (engine.fallbackPlace) não mexe
-  /** habilidades (personagem:ref) que já subiram de domínio neste turno por use_ability ou train: o Escrivão não repete */
+  /** habilidades (personagem:ref) que já subiram de domínio neste turno por use_ability ou train: não sobem de novo à mão */
   masteryGained?: Set<string>;
-  /** é o Escrivão (engine.runScribe); briefs = anotações de missão do Mestre neste turno */
-  scribe?: { briefs: number };
-  /** XP que missões concluídas deram neste turno: o grant_xp do Escrivão não repete pela mesma conclusão */
-  missionXp?: { charId: string; title: string; xp: number }[];
 }
 
 // "Evento: Resposta do Hokage" = "resposta do hokage": o modelo repetia missões abertas com prefixo ou pontuação diferente
@@ -843,6 +672,114 @@ async function grantXp(ctx: ToolContext, c: Character, amount: number, reason?: 
   if (pts.earned > ptsBefore)
     msg += ` +${pts.earned - ptsBefore} ponto(s) livre(s) de atributo (${pts.free} livres): o jogador distribui na ficha; não aplique por ele.`;
   return msg;
+}
+
+/** Personagem em palavras (get_character do Narrador): perfil, recursos em nível, técnicas com domínio em palavra, itens. */
+export function characterInWords(c: Character, resources: { key: string; label: string }[]): string {
+  const p = c.persona;
+  const res = resources
+    .filter((r) => c.sheet.resources[r.key])
+    .map((r) => `${r.label}: ${RESOURCE_WORDS[resourceLevel(c.sheet.resources[r.key].current, c.sheet.resources[r.key].max)]}`);
+  return [
+    `${c.name} (${c.kind === "player" ? "personagem do jogador" : "NPC"}${c.active ? ", em cena" : ", fora de cena"})`,
+    p.role && `Papel: ${p.role}`,
+    p.age && `Idade: ${p.age}`,
+    p.appearance && `Aparência: ${p.appearance}`,
+    p.personality && `Personalidade: ${p.personality}`,
+    p.speech && `Jeito de falar: ${p.speech}`,
+    p.current && `Situação atual: ${p.current}`,
+    p.backstory && `Passado: ${p.backstory}`,
+    p.goals && `Quer: ${p.goals}`,
+    p.relationships && `Relações: ${p.relationships}`,
+    c.kind === "npc" && p.secrets && `Segredos (nunca diga): ${p.secrets}`,
+    res.length ? `Condição: ${res.join(", ")}` : "",
+    c.sheet.abilities.length ? `Técnicas: ${c.sheet.abilities.map((a) => `${a.name} (${masteryWord(a.progress ?? 50)})`).join(", ")}` : "",
+    c.sheet.inventory.length ? `Itens: ${c.sheet.inventory.map((i) => `${i.qty > 1 ? `${i.qty} ` : ""}${i.name}`).join(", ")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Resultado de use_ability: o texto da ferramenta e o que o Resolvedor precisa (rolagem, custo, recurso depois). */
+export interface AbilityUse {
+  text: string;
+  ability?: Ability;
+  roll?: DiceResult;
+  cost?: EffectiveCost | null;
+  pool?: { current: number; max: number };
+  short?: boolean; // faltou recurso: nada rolado nem gasto
+}
+
+/** use_ability: paga o custo, rola 1d20 + atributo×mult + domínio contra a CD (com a mesa) e sobe o domínio pelo uso. */
+export async function useAbility(ctx: ToolContext, args: Record<string, unknown>): Promise<AbilityUse> {
+  const rs = ctx.campaign.ruleset;
+  const c = await getChar(ctx.campaign.id, String(args.character));
+  const ability = findAbility(c.sheet, String(args.ability || ""));
+  if (!ability)
+    return { text: `Erro: ${c.name} não tem "${args.ability}" na ficha. Técnicas da ficha: ${c.sheet.abilities.map((a) => a.name).join(", ") || "nenhuma"}.` };
+  const attrKey = abilityAttribute(rs, ability, args.attribute ? String(args.attribute) : undefined);
+  if (!attrKey) return { text: `Erro: atributo "${args.attribute}" não existe (${rs.attributes.map((a) => a.key).join(", ")}).` };
+  const cost = effectiveCost(rs, ability, { sheet: c.sheet, units: Number(args.units) || 1 });
+  // a conta só quando algo mudou o valor da faixa/rank (multiplicador ou unidades)
+  const how = cost && (cost.amount !== cost.base || cost.unit) ? ` (${costBreakdown(rs, ability, cost)})` : "";
+  const pool = cost && cost.amount > 0 ? c.sheet.resources[cost.resource] : undefined;
+  if (cost && cost.amount > 0) {
+    if (!pool) return { text: `Erro: recurso "${cost.resource}" não existe na ficha de ${c.name}.` };
+    if (pool.current < cost.amount) {
+      // com unidade: quantas cabem no que resta
+      let fit = cost.units - 1;
+      while (fit > 0 && effectiveCost(rs, ability, { sheet: c.sheet, units: fit })!.amount > pool.current) fit--;
+      return {
+        text: `FALHOU sem rolar: ${ability.name} custa ${cost.amount} ${cost.resource}${how} e ${c.name} tem ${pool.current}.${fit > 0 ? ` Dá para units ${fit} no máximo (por ${cost.unit}).` : ""} Nada foi gasto.`,
+        ability,
+        cost,
+        pool,
+        short: true,
+      };
+    }
+    pool.current -= cost.amount;
+  }
+  const attr = c.sheet.attributes[attrKey] ?? 0;
+  const mult = rs.attributeMultiplier ?? 1;
+  const bonus = masteryBonus(rs, ability);
+  const mod = attr * mult + bonus;
+  const table = getTable(ctx.campaign.state);
+  const adj = tableDc(table, typeof args.dc === "number" ? args.dc : undefined, args.category);
+  const attrLabel = rs.attributes.find((a) => a.key === attrKey)?.label || attrKey;
+  const result = {
+    ...rollDice(
+      `1d20${mod >= 0 ? "+" : ""}${mod}`,
+      `${ability.name}${args.target ? ` em ${args.target}` : ""} (${attrLabel} ${attr}${mult !== 1 ? `×${mult}` : ""} + domínio +${bonus})`,
+      adj.dc,
+      table.crits
+    ),
+    ...adj.dice,
+  };
+  const clock = getClock(ctx.campaign.state);
+  const g = gainMastery(rs, c.sheet, ability, useGain(rs, ability), clock ? clockParts(clock.minutes).day : 0);
+  markGained(ctx, c, ability);
+  await saveSheet(c.id, c.sheet);
+  ctx.emit({ type: "state" });
+  if (pool)
+    ctx.emit({
+      type: "tool",
+      name: "use_ability",
+      summary: `${c.name} usou ${ability.name}: −${cost!.amount} ${cost!.resource}${cost!.unit && cost!.units > 1 ? ` (${cost!.units} × ${cost!.base} por ${cost!.unit}${cost!.amount !== cost!.units * cost!.base ? ", ajustado" : ""})` : ""} (${pool.current}/${pool.max})`,
+    });
+  ctx.emit({ type: "dice", result });
+  // depois do dado: com a animação, só aparece quando o jogador rolar
+  if (g.after > g.before || g.milestone)
+    ctx.emit({
+      type: "tool",
+      name: "use_ability",
+      summary: `${ability.name}: domínio ${g.before}% → ${g.after}%${g.milestone ? ` — novo marco: ${g.milestone.description}` : ""}`,
+    });
+  let msg = `${ability.name} (${c.name}${args.target ? ` → ${args.target}` : ""}): dados [${result.rolls.join(", ")}] + ${attrLabel} ${attr}${mult !== 1 ? `×${mult}` : ""} + domínio ${bonus} = TOTAL ${result.total}`;
+  msg += result.dc !== undefined ? `${dcResultText(result, adj.note)}.` : `${adj.note} (disputa: compare com a rolagem oposta).`;
+  msg += pool ? ` Custo pago: ${cost!.amount} ${cost!.resource}${how}; resta ${pool.current}/${pool.max}.` : " Sem custo.";
+  msg += g.after > g.before ? ` Domínio ${g.before}% → ${g.after}%.` : g.capped ? ` Domínio ${g.after}% (já rendeu o máximo hoje).` : ` Domínio ${g.after}%.`;
+  if (g.milestone) msg += ` NOVO MARCO ALCANÇADO: ${g.milestone.description}.`;
+  return { text: msg, ability, roll: result, cost, pool };
 }
 
 /** Executa uma tool do Mestre. Retorna string (resultado para o modelo). */
@@ -997,71 +934,8 @@ export async function executeGmTool(
       if (upcoming) msg += ` Próximo marco aos ${upcoming.threshold}%: ${upcoming.description}.`;
       return msg;
     }
-    case "use_ability": {
-      const rs = ctx.campaign.ruleset;
-      const c = await getChar(cid, String(args.character));
-      const ability = findAbility(c.sheet, String(args.ability || ""));
-      if (!ability)
-        return `Erro: ${c.name} não tem "${args.ability}" na ficha. Se for plausível que ele saiba, registre antes com add_ability (domínio 10-25) e chame use_ability de novo; se não, a tentativa falha na narrativa. Técnicas da ficha: ${c.sheet.abilities.map((a) => a.name).join(", ") || "nenhuma"}.`;
-      const attrKey = abilityAttribute(rs, ability, args.attribute ? String(args.attribute) : undefined);
-      if (!attrKey) return `Erro: atributo "${args.attribute}" não existe (${rs.attributes.map((a) => a.key).join(", ")}).`;
-      const cost = effectiveCost(rs, ability, { sheet: c.sheet, units: Number(args.units) || 1 });
-      // a conta só quando algo mudou o valor da faixa/rank (multiplicador ou unidades)
-      const how = cost && (cost.amount !== cost.base || cost.unit) ? ` (${costBreakdown(rs, ability, cost)})` : "";
-      const pool = cost && cost.amount > 0 ? c.sheet.resources[cost.resource] : undefined;
-      if (cost && cost.amount > 0) {
-        if (!pool) return `Erro: recurso "${cost.resource}" não existe na ficha de ${c.name}.`;
-        if (pool.current < cost.amount) {
-          // com unidade: quantas cabem no que resta (para o Mestre narrar menos cópias/rodadas em vez de nada)
-          let fit = cost.units - 1;
-          while (fit > 0 && effectiveCost(rs, ability, { sheet: c.sheet, units: fit })!.amount > pool.current) fit--;
-          return `FALHOU sem rolar: ${ability.name} custa ${cost.amount} ${cost.resource}${how} e ${c.name} tem ${pool.current}.${fit > 0 ? ` Dá para units ${fit} no máximo (por ${cost.unit}).` : ""} Nada foi gasto. Narre a falta de ${cost.resource}.`;
-        }
-        pool.current -= cost.amount;
-      }
-      const attr = c.sheet.attributes[attrKey] ?? 0;
-      const mult = rs.attributeMultiplier ?? 1;
-      const bonus = masteryBonus(rs, ability);
-      const mod = attr * mult + bonus;
-      const table = getTable(ctx.campaign.state);
-      const adj = tableDc(table, typeof args.dc === "number" ? args.dc : undefined, args.category);
-      const attrLabel = rs.attributes.find((a) => a.key === attrKey)?.label || attrKey;
-      const result = {
-        ...rollDice(
-          `1d20${mod >= 0 ? "+" : ""}${mod}`,
-          `${ability.name}${args.target ? ` em ${args.target}` : ""} (${attrLabel} ${attr}${mult !== 1 ? `×${mult}` : ""} + domínio +${bonus})`,
-          adj.dc,
-          table.crits
-        ),
-        ...adj.dice,
-      };
-      const clock = getClock(ctx.campaign.state);
-      const g = gainMastery(rs, c.sheet, ability, useGain(rs, ability), clock ? clockParts(clock.minutes).day : 0);
-      markGained(ctx, c, ability);
-      await saveSheet(c.id, c.sheet);
-      ctx.emit({ type: "state" });
-      if (pool)
-        ctx.emit({
-          type: "tool",
-          name,
-          summary: `${c.name} usou ${ability.name}: −${cost!.amount} ${cost!.resource}${cost!.unit && cost!.units > 1 ? ` (${cost!.units} × ${cost!.base} por ${cost!.unit}${cost!.amount !== cost!.units * cost!.base ? ", ajustado" : ""})` : ""} (${pool.current}/${pool.max})`,
-        });
-      ctx.emit({ type: "dice", result });
-      // depois do dado: com a animação, só aparece quando o jogador rolar
-      if (g.after > g.before || g.milestone)
-        ctx.emit({
-          type: "tool",
-          name,
-          summary: `${ability.name}: domínio ${g.before}% → ${g.after}%${g.milestone ? ` — novo marco: ${g.milestone.description}` : ""}`,
-        });
-      let msg = `${ability.name} (${c.name}${args.target ? ` → ${args.target}` : ""}): dados [${result.rolls.join(", ")}] + ${attrLabel} ${attr}${mult !== 1 ? `×${mult}` : ""} + domínio ${bonus} = TOTAL ${result.total}`;
-      msg += result.dc !== undefined ? `${dcResultText(result, adj.note)}.` : `${adj.note} (disputa: compare com a rolagem oposta).`;
-      msg += pool ? ` Custo pago: ${cost!.amount} ${cost!.resource}${how}; resta ${pool.current}/${pool.max}.` : " Sem custo.";
-      msg += g.after > g.before ? ` Domínio ${g.before}% → ${g.after}%.` : g.capped ? ` Domínio ${g.after}% (já rendeu o máximo hoje).` : ` Domínio ${g.after}%.`;
-      if (g.milestone) msg += ` NOVO MARCO ALCANÇADO: ${g.milestone.description} — narre esse avanço.`;
-      if (ability.damage) msg += ` Dano registrado: ${ability.damage} (role com roll_dice se acertou).`;
-      return msg;
-    }
+    case "use_ability":
+      return (await useAbility(ctx, args)).text;
     case "set_cost_modifier": {
       const rs = ctx.campaign.ruleset;
       const c = await getChar(cid, String(args.character));
@@ -1189,10 +1063,6 @@ export async function executeGmTool(
       const c = await getChar(cid, String(args.character));
       const amount = Math.round(Number(args.amount));
       if (!Number.isFinite(amount)) return "amount precisa ser um número.";
-      // o Escrivão repetia a XP da missão que acabou de concluir (a conclusão com tamanho já deu)
-      const given = ctx.scribe ? ctx.missionXp?.filter((m) => m.charId === c.id) : undefined;
-      if (given?.length)
-        return `Nada mudou: ${given.map((m) => `a missão ${m.title} já deu ${m.xp} XP`).join("; ")} neste turno.`;
       return grantXp(ctx, c, amount, args.reason ? String(args.reason) : undefined);
     }
     case "set_rank": {
@@ -1241,7 +1111,7 @@ export async function executeGmTool(
       return hits.length ? formatHistory(hits, String(args.query), history.excerptChars) : "Nada encontrado no histórico.";
     }
     case "create_npc": {
-      // registro na hora (pelo Mestre antes de narrar ou pelo Escrivão depois); perfil e ficha vêm do Criador em segundo plano
+      // registro na hora (bloco de efeitos ou fora do jogo); perfil e ficha vêm do Criador em segundo plano
       const sheet = blankSheet(ctx.campaign.ruleset);
       const said = String(args.rank ?? "").trim().toLowerCase();
       const rank = ctx.campaign.ruleset.ranks.find((k) => said && (k.key === said || k.label.toLowerCase() === said));
@@ -1285,24 +1155,6 @@ export async function executeGmTool(
       });
       return `OK.`;
     }
-    case "npc_message": {
-      const c = await getChar(cid, String(args.npc));
-      if (c.kind !== "npc") return `Erro: ${c.name} não é NPC.`;
-      const message = String(args.message || "").trim().slice(0, 1500);
-      if (!message) return "Erro: message vazia.";
-      const [pending] = await q(`SELECT 1 FROM npc_chats WHERE npc_id = $1 AND unread LIMIT 1`, [c.id]);
-      if (pending) return `${c.name} já tem uma mensagem que o jogador ainda não leu. Nada foi enviado.`;
-      // sessão nova cujo 1º registro é do NPC; o intent só o agente do NPC vê
-      await q(
-        `INSERT INTO npc_chats (campaign_id, npc_id, session_id, role, content, unread, intent)
-         VALUES ($1, $2, $3, 'npc', $4, TRUE, $5)`,
-        [cid, c.id, randomUUID(), message, String(args.intent || "").trim().slice(0, 1000) || null]
-      );
-      await addMemory(cid, "npc", `${c.name} chamou o jogador para conversar em particular: "${message}"`, c.name, 3);
-      ctx.emit({ type: "npc_message", npcId: c.id, name: c.name, preview: message.slice(0, 140) });
-      ctx.emit({ type: "tool", name, summary: `✉️ ${c.name} quer falar com você em particular` });
-      return `Mensagem de ${c.name} entregue ao jogador em particular. Ele decide se responde; a conversa é com o agente do NPC. Não repita o conteúdo na narração.`;
-    }
     case "set_scene": {
       const moved = !!args.newScene || (args.location !== undefined && String(args.location) !== ctx.scene.location);
       if (args.newScene) {
@@ -1338,8 +1190,6 @@ export async function executeGmTool(
           summary: `🎬 ${ctx.scene.mode}${ctx.scene.location ? ` — ${ctx.scene.location}` : ""}`,
         });
       }
-      if (moved) ctx.sceneChanged = true;
-      if (args.mode) ctx.modeSet = true;
       let cast = "";
       if (Array.isArray(args.present)) {
         // elenco declarado: quem não está na lista sai, quem está volta
@@ -1357,7 +1207,6 @@ export async function executeGmTool(
         const npcs = chars.filter((c) => c.kind === "npc");
         await setNpcsActive(cid, npcs.filter((c) => c.active && !here.has(c.id)), false, ctx.emit);
         await setNpcsActive(cid, npcs.filter((c) => !c.active && here.has(c.id)), true, ctx.emit);
-        ctx.castSet = true;
         cast = ` NPCs em cena: ${npcs.filter((c) => here.has(c.id)).map((c) => c.name).join(", ") || "nenhum"}.`;
         if (unknown.length) cast += ` Sem registro: ${unknown.join(", ")} (se tem nome e está na cena, chame create_npc).`;
       } else if (moved) {
@@ -1423,11 +1272,6 @@ export async function executeGmTool(
         if (!title) return "Informe o title.";
         const same = list.find((x) => isLive(x) && titleKey(x.title) === titleKey(title));
         if (same) return `Nada mudou: já existe [${same.id}] "${same.title}" ${same.status === "oferecida" ? "oferecida" : "em aberto"}. Para mudar prazo, descrição ou status, use update_objective nele.`;
-        // o Escrivão recriava a missão que acabou de ser encerrada (por engano) em vez de deixar o Mestre corrigir
-        const closed =
-          ctx.scribe && now !== undefined && list.find((x) => !isLive(x) && titleKey(x.title) === titleKey(title) && (x.closedAt ?? -Infinity) >= now - 1440);
-        if (closed)
-          return `Nada mudou: [${closed.id}] "${closed.title}" foi encerrada há pouco (${closed.status}). Se o registro está errado, quem corrige é o Mestre (fix_objective); não crie outra igual.`;
         const kind = (["missao", "evento", "outro"].includes(String(args.kind)) ? args.kind : "outro") as ObjectiveKind;
         o = {
           id: `o${list.reduce((m, x) => Math.max(m, Number(x.id.slice(1)) || 0), 0) + 1}`,
@@ -1452,16 +1296,10 @@ export async function executeGmTool(
           list.find((x) => isLive(x) && x.title.toLowerCase() === key) ||
           list.find((x) => x.title.toLowerCase() === key);
         if (!found) return `Objetivo "${args.objective}" não existe. Abertos e oferecidos: ${list.filter(isLive).map((x) => `${x.id} ${x.title}`).join(", ") || "nenhum"}.`;
-        // perdido agora mesmo (o relógio do mesmo turno passou do prazo antes do Escrivão): a narração deste momento
+        // perdido agora mesmo (o relógio do mesmo turno passou do prazo antes dos efeitos): a narração deste momento
         // pode mostrar que foi cumprido; quando o relógio anda de novo, a perda vira definitiva
         const lostNow = found.status === "perdido" && args.status === "concluido" && now !== undefined && found.closedAt === now;
         if (!isLive(found) && !lostNow) return `"${found.title}" já está ${found.status}; não volta a ficar aberto.`;
-        // o Escrivão tirava o prazo sem a narração pedir; só com uma anotação de missão do Mestre neste turno
-        if (args.noDeadline === true && found.deadlineMinutes !== undefined && ctx.scribe && !ctx.scribe.briefs)
-          return `Nada mudou: [${found.id}] mantém o prazo. Tirar o prazo só com uma ANOTAÇÃO DE MISSÃO do Mestre neste turno.`;
-        // o Escrivão cancelava missões aceitas quando o jogador "encerrava" uma atividade; recusar oferta continua livre
-        if (args.status === "cancelado" && found.status !== "oferecida" && ctx.scribe && !ctx.scribe.briefs)
-          return `Nada mudou: [${found.id}] continua aberto. Cancelar missão aceita só com uma ANOTAÇÃO DE MISSÃO do Mestre neste turno; encerrar uma atividade não encerra missão.`;
         o = { ...found };
         const bad = setSize(o);
         if (bad) return bad;
@@ -1512,7 +1350,6 @@ export async function executeGmTool(
       ctx.emit({ type: "state" });
       const done = `${o.id} "${o.title}": ${o.status}, ${deadlineText(o.deadlineMinutes, now)}.${paid ? ` Pagamento de ${paid} na ficha de ${player!.name}: não registre de novo.` : ""}`;
       if (!player || !xp) return done;
-      if (ctx.scribe) (ctx.missionXp ??= []).push({ charId: player.id, title: o.title, xp }); // a trava é só do Escrivão
       return `${done} A missão deu ${xp} XP: ${await grantXp(ctx, player, xp, `missão: ${o.title}`)}`;
     }
     case "fix_objective": {
@@ -1554,79 +1391,27 @@ export async function executeGmTool(
       return out;
     }
     case "get_character": {
+      // em palavras, como a ficha do contexto do Narrador: nada de número de recurso ou domínio
       const c = await getChar(cid, String(args.name));
-      const want = Array.isArray(args.sections) && args.sections.length ? args.sections.map(String) : ["abilities", "inventory", "persona"];
-      // sem indentação e sem o que é da biblioteca e não deste personagem (users: quem mais usa; ref: id interno)
-      const { abilities, inventory, ...sheet } = c.sheet;
-      return JSON.stringify({
-        name: c.name,
-        kind: c.kind,
-        active: c.active,
-        canon: c.canon,
-        sheet: {
-          ...sheet,
-          ...(want.includes("abilities") ? { abilities: abilities.map(({ users: _u, ref: _r, ...a }) => a) } : {}),
-          ...(want.includes("inventory") ? { inventory } : {}),
-        },
-        ...(want.includes("persona") ? { persona: c.persona } : {}),
-      });
+      return characterInWords(c, ctx.campaign.ruleset.resources);
     }
-    case "get_script": {
-      const s = ctx.campaign.script;
-      if (!s) return "Esta campanha não tem roteiro gerado.";
-      if (String(args.full) === "true") return JSON.stringify(s, null, 1);
-      // por padrão só o arco ativo (ou o 1º não concluído) e o seguinte: o roteiro inteiro passava de 10 mil caracteres
-      const i = s.arcs.findIndex((a) => a.status === "active");
-      const from = i >= 0 ? i : Math.max(s.arcs.findIndex((a) => a.status !== "done"), 0);
-      const shown = s.arcs.slice(from, from + 2);
-      return JSON.stringify(
-        {
-          premise: s.premise,
-          arcs: shown,
-          otherArcs: s.arcs.filter((a) => !shown.includes(a)).map((a) => `${a.title} (${a.status})`),
-          note: "roteiro inteiro: get_script com full=true",
-        },
-        null,
-        1
-      );
-    }
-    case "update_script": {
-      const script = ctx.campaign.script;
-      if (!script) return "Sem roteiro para atualizar.";
-      const arc = script.arcs.find(
-        (a) => a.title.toLowerCase() === String(args.arcTitle).toLowerCase()
-      );
-      if (!arc) return `Arco "${args.arcTitle}" não encontrado. Arcos: ${script.arcs.map((a) => a.title).join("; ")}`;
-      if (args.note) arc.notes.push(String(args.note));
-      if (args.status) arc.status = args.status as "pending" | "active" | "done";
-      await q(`UPDATE campaigns SET script = $1, updated_at = now() WHERE id = $2`, [
-        JSON.stringify(script),
-        cid,
+    case "search_lore": {
+      const query = String(args.query || "").trim();
+      if (!query) return "Erro: informe query.";
+      const [hits, abilities, items] = await Promise.all([
+        searchBookChunks(cid, query, (await getAdvanced()).books.topK),
+        listLibrary(ctx.campaign, "ability", { query, limit: 5 }),
+        listLibrary(ctx.campaign, "item", { query, limit: 3 }),
       ]);
-      ctx.emit({ type: "tool", name, summary: `📜 roteiro: ${arc.title} (${arc.status})` });
-      return "Roteiro atualizado.";
-    }
-    case "search_book": {
-      const hits = await searchBookChunks(cid, String(args.query), (await getAdvanced()).books.topK);
-      if (!hits.length) return "Nada encontrado nos livros indexados.";
-      return hits
-        .map((h) => `[${h.title} | bookId=${h.book_id} | pág. ${h.page}]\n${h.content}`)
-        .join("\n---\n");
-    }
-    case "read_pages": {
-      const from = Number(args.from);
-      const to = Number(args.to ?? from);
-      const pages = await readPages(String(args.bookId), from, to);
-      if (!pages.length) return "Páginas não encontradas (verifique bookId e intervalo).";
-      const max = (await getAdvanced()).books.maxPages; // o corte do intervalo (readPages)
-      const cut = to >= from + max && pages[pages.length - 1].page === from + max - 1;
-      const rest = cut ? `\n\n(limite de ${max} páginas por chamada: continue com read_pages from=${from + max})` : "";
-      return pages.map((p) => `=== Página ${p.page} ===\n${p.content}`).join("\n\n") + rest;
-    }
-    case "list_books": {
-      const books = await listBooks(cid);
-      if (!books.length) return "Nenhum livro indexado nesta campanha.";
-      return books.map((b) => `${b.title} — bookId=${b.id}, ${b.pages} páginas`).join("\n");
+      const lib = [...abilities, ...items].map((e) => {
+        const d = e.data as LibraryAbility & LibraryItem;
+        return `- ${e.name}${d.translation ? ` (${d.translation})` : ""}: ${[d.description, d.effect].filter(Boolean).join(" ")}`;
+      });
+      const out = [
+        hits.length ? `LIVROS:\n${hits.map((h) => `[${h.title}, pág. ${h.page}]\n${h.content}`).join("\n---\n")}` : "",
+        lib.length ? `BIBLIOTECA DO MUNDO:\n${lib.join("\n")}` : "",
+      ].filter(Boolean);
+      return out.join("\n\n") || "Nada encontrado nos livros nem na biblioteca.";
     }
     default:
       return `Ferramenta desconhecida: ${name}`;

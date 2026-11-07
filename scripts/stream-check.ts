@@ -72,9 +72,9 @@ async function main() {
   const died = await readStream(dying, () => {});
   assert.strictEqual((died.error as { message: string }).message, "socket hang up");
 
-  // visibleNarration: em qualquer corte do texto, o que já foi mostrado nunca inclui o bloco de opções
+  // visibleNarration: em qualquer corte do texto, o que já foi mostrado nunca inclui o bloco de efeitos (nem o antigo de opções)
   const narr = "Você vê `marcas` no chão.\n\n**Iruka:** \"Cuidado.\"\n\n";
-  const full = narr + '```choices\n["Seguir", "Voltar"]\n```';
+  for (const full of [narr + '```efeitos\n{"options":[{"label":"Seguir"}],"time":"minutes"}\n```', narr + '```choices\n["Seguir", "Voltar"]\n```'])
   for (let step = 1; step <= 12; step++) {
     let acc = "";
     let shown = "";

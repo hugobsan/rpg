@@ -100,38 +100,6 @@ export async function searchMemories(
 }
 
 /**
- * Memórias dos NPCs ativos: por NPC, as marcadas com o primeiro nome dele e depois as que o citam, das mais importantes
- * para as mais novas. Um NPC que volta à cena lembra do jogador mesmo quando a ação não diz o nome dele.
- */
-export async function sceneNpcMemories(campaignId: string, perNpc = 3): Promise<MemoryHit[]> {
-  return q<MemoryHit>(
-    `SELECT DISTINCT ON (m.id) m.id, m.kind, m.subject, m.content, m.importance, m.created_at::text
-     FROM characters c CROSS JOIN LATERAL (
-       SELECT * FROM memories m
-       WHERE m.campaign_id = c.campaign_id AND m.kind <> 'directive'
-         AND (m.subject ~* ('\\m' || split_part(c.name, ' ', 1) || '\\M') OR m.content ~* ('\\m' || split_part(c.name, ' ', 1) || '\\M'))
-       ORDER BY (m.subject ~* ('\\m' || split_part(c.name, ' ', 1) || '\\M')) DESC, m.importance DESC, m.id DESC
-       LIMIT $2
-     ) m
-     WHERE c.campaign_id = $1 AND c.kind = 'npc' AND c.active`,
-    [campaignId, perNpc]
-  );
-}
-
-/** Memórias recentes/importantes independentes de query (contexto base do turno). */
-export async function recentMemories(
-  campaignId: string,
-  limit = 8
-): Promise<MemoryHit[]> {
-  return q<MemoryHit>(
-    `SELECT id, kind, subject, content, importance, created_at::text
-     FROM memories WHERE campaign_id = $1 AND kind <> 'directive'
-     ORDER BY importance DESC, id DESC LIMIT $2`,
-    [campaignId, limit]
-  );
-}
-
-/**
  * Diretrizes do jogador (conversa fora do jogo) que valem agora: memórias kind 'directive',
  * subject = escopo. "proxima_cena" vale na cena em que foi dada e na seguinte (sai quando
  * set_scene cria a 2ª cena depois dela). Derivado das cenas, então o "gerar novamente" acompanha.
@@ -277,13 +245,12 @@ const queryTerms = (query: string) => [...new Set((query.toLowerCase().match(/[\
 
 /**
  * Busca no histórico: vetorial quando há embeddings, senão full-text (qualquer termo, por relevância). npc = só trechos
- * com ele (conversa particular ou turno que o cita). auto = recuperação automática do turno: só vetorial, só os muito
- * parecidos e só fora da janela recente (narração já compactada ou conversa com NPC, que o Mestre não vê).
+ * com ele (conversa particular ou turno que o cita).
  */
 export async function searchHistory(
   campaignId: string,
   query: string,
-  opts: { npc?: string; limit?: number; auto?: boolean } = {}
+  opts: { npc?: string; limit?: number } = {}
 ): Promise<HistoryHit[]> {
   const cols = `h.id, h.npc, h.clock, h.location, h.content`;
   const params: unknown[] = [campaignId, opts.limit ?? 4];
@@ -293,27 +260,22 @@ export async function searchHistory(
     params.push(name);
     where += ` AND (h.npc ILIKE '%' || $3 || '%' OR h.content ILIKE '%' || $3 || '%')`;
   }
-  if (opts.auto) where += ` AND (h.npc_chat_id IS NOT NULL OR (SELECT compacted FROM messages m WHERE m.id = h.message_id))`;
 
   if (await hasVector()) {
     const vecs = await embed([query]);
     if (vecs?.[0]) {
-      // recuperação automática: só até a distância de cosseno das Configurações avançadas; depois o Jev filtra
-      const max = opts.auto ? (await getAdvanced()).history.autoMaxDistance : 2;
       const n = params.length;
-      params.push(toVectorLiteral(vecs[0]), vecs[0].length, max);
-      // CASE: o <=> só roda com a dimensão igual (a ordem do AND no WHERE não é garantida)
+      params.push(toVectorLiteral(vecs[0]), vecs[0].length);
+      // só a mesma dimensão (o <=> com outra dimensão dá erro)
       const rows = await q<HistoryHit>(
-        `SELECT ${cols} FROM history_chunks h WHERE ${where}
-           AND CASE WHEN vector_dims(h.embedding) = $${n + 2} THEN h.embedding <=> $${n + 1} <= $${n + 3} END
+        `SELECT ${cols} FROM history_chunks h WHERE ${where} AND vector_dims(h.embedding) = $${n + 2}
          ORDER BY h.embedding <=> $${n + 1} LIMIT $2`,
         params
       );
-      if (rows.length || opts.auto) return rows;
+      if (rows.length) return rows;
       params.splice(n); // sem embeddings gravados ainda (ou de outra dimensão): cai para FTS
     }
   }
-  if (opts.auto) return []; // sem vetor não dá para medir "muito parecido"
   const terms = queryTerms(query);
   if (!terms.length) return [];
   params.push(terms.map((t) => `${t}:*`).join(" | "));

@@ -12,7 +12,7 @@ export interface ChatLine {
   role: string;
   content: string;
   speaker?: string | null;
-  // scribe: registros do Escrivão depois desta narração; farewell: fala de encerramento do NPC (conversa particular)
+  // scribe: efeitos aplicados depois desta narração; farewell: fala de encerramento do NPC (conversa particular)
   meta: { choices?: string[]; scribe?: ScribeEntry[]; farewell?: string };
 }
 

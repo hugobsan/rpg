@@ -8,8 +8,9 @@ import s from "./usage.module.css";
 
 // cor fixa por agente (paleta categórica validada no fundo escuro: scripts/validate_palette da skill dataviz);
 // a ordem é a do empilhamento e não muda com os filtros
-const AGENT_ORDER = ["gm", "npc", "chronicler", "scriptwriter", "decider", "image", "voice", "pixel", "scribe", "referee", "characters", "abilities", "items", "adventure", "suggest"];
-// 7 cores da paleta + 1 extra para o Pixel artista (aposentado; fica pelo histórico de custo) + 1 do Escrivão + 1 do Árbitro;
+const AGENT_ORDER = ["gm", "npc", "chronicler", "scriptwriter", "decider", "image", "voice", "pixel", "scribe", "interpreter", "characters", "abilities", "items", "adventure", "suggest", "referee"];
+// 7 cores da paleta + 1 extra para o Pixel artista (aposentado; fica pelo histórico de custo, como Cronista, Árbitro e Ações
+// rápidas) + 1 do Anotador + 1 do Intérprete;
 // os criadores grátis ficam no cinza de "outros"
 const COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#a8875c", "#7fb3a0", "#22b0c8"];
 const colorOf = (id: string | null) => COLORS[AGENT_ORDER.indexOf(id ?? "")] ?? "#898781";

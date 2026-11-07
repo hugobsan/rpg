@@ -20,7 +20,6 @@ const COLOR = {
   code: "#6b6880",
   gm: "#d4a24e",
   npc: "#a78bfa",
-  chron: "#fbbf24",
   writer: "#3fb8af",
   img: "#66bb6a",
   jev: "#60a5fa",
@@ -31,8 +30,7 @@ const COLOR = {
   items: "#f59e6b",
   adv: "#e879f9",
   scribe: "#a3e635",
-  referee: "#f97316",
-  suggest: "#818cf8",
+  interp: "#f97316",
   voice: "#f9a8d4",
 } as const;
 type Who = keyof typeof COLOR;
@@ -40,9 +38,8 @@ type Who = keyof typeof COLOR;
 const KIND_LABEL: Record<Who, string> = {
   player: "Jogador",
   code: "Código (sem IA)",
-  gm: "Mestre",
+  gm: "Narrador",
   npc: "NPC",
-  chron: "Cronista",
   writer: "Roteirista",
   img: "Ilustrador",
   jev: "Jev",
@@ -52,9 +49,8 @@ const KIND_LABEL: Record<Who, string> = {
   abil: "Criador de habilidades",
   items: "Criador de itens",
   adv: "Criador de aventuras",
-  scribe: "Escrivão",
-  referee: "Árbitro",
-  suggest: "Ações rápidas",
+  scribe: "Anotador",
+  interp: "Intérprete",
   voice: "Voz",
 };
 
@@ -177,80 +173,59 @@ const NODES: (FlowNode | LaneNode)[] = [
 
   // --- turno ---
   n("t_player", X[0], 60, "player", "Ação do jogador", "texto, opção ou Continuar", {
-    oque: "O jogador digita uma ação, clica numa opção (do Mestre ou das Ações rápidas) ou aperta Continuar, que manda “(continuar a cena)”: essa ação fica salva mas não aparece no chat, e o Mestre a recebe trocada por uma nota de sistema. Antes de qualquer IA rodar, o código tira uma foto do estado e salva a mensagem no histórico da cena. Gerar novamente (com motivo opcional) e o lápis na última ação voltam à foto e rodam o turno de novo, com a mesma ação ou com o texto editado.",
+    oque: "O jogador digita uma ação, clica numa opção do Narrador (vai tipada, com o índice) ou aperta Continuar, que manda “(continuar a cena)”. Antes de qualquer IA além do Jev, o código tira uma foto do estado e salva a ação. Gerar novamente (com motivo opcional) e o lápis na última ação voltam à foto e rodam o turno de novo; a opção escolhida fica na foto.",
     quando: "A cada turno.",
   }),
-  n("t_suggest", X[0], 230, "suggest", "Ações rápidas", "4 a 5 ações para o momento", {
-    oque: "Propõe de 4 a 5 ações curtas, em primeira pessoa, a partir do cenário, da cena (modo, local, título, fim do resumo), da ficha do jogador (recursos, técnicas com o custo, itens), dos NPCs em cena, das opções que o Mestre já ofereceu (para não repetir) e das últimas 6 mensagens. Não narra nem muda nada: as opções aparecem no lugar das do Mestre; clicar envia como ação, o lápis edita antes.",
-    quando: "Só quando o jogador clica em Ações rápidas, no campo da ação.",
-    freq: "1 chamada por clique.",
-    custo: "Baixo: modelo barato e rápido (Gemini Flash, raciocínio baixo), saída de até 1,5 mil tokens.",
-    fallback: "Erro ou resposta fora do formato: aviso na tela e as opções do Mestre continuam.",
+  n("t_jev", X[1], 60, "jev", "Jev: decide o turno", "modelo, web, livros, fora do jogo, NPC", {
+    oque: "Uma única chamada devolve probabilidades: turno complexo (modelo caro do Narrador, se configurado), busca web (:online), trechos dos livros, fala fora do jogo sobre o registro (vai à conversa fora do jogo, sem turno) e fala só com um NPC em cena (vira conversa particular). Opção escolhida não pergunta fora do jogo nem conversa.",
+    quando: "No início de cada turno.",
+    freq: "1 request por turno.",
+    custo: "Mínimo: cerca de US$ 0,00005 e ≈0,4 s por chamada.",
+    fallback: "Timeout de 7 s. Qualquer falha: modelo padrão, web conforme o agente, sem livros, turno normal.",
   }),
-  n("t_mem", X[1], 60, "code", "Memórias candidatas", "6 parecidas + 8 importantes", {
-    oque: "Sem IA: busca no Postgres as 6 memórias mais parecidas com a ação (vetorial no pgvector, ou por texto se não houver embeddings) e junta as 8 de maior importância e mais recentes, sem repetir. Com embeddings, junta também até 2 trechos antigos do chat (fora da janela recente) muito parecidos com a ação, que só entram se o Jev aprovar com folga. Também lê o histórico recente não compactado (janela de ≈9 mil tokens, cujo começo anda em saltos de 1/4 dela, para o cache valer de um turno para o outro).",
-    quando: "No início do turno, antes de a ação ser salva (o Jev ainda decide se é turno).",
-    custo: "Dois embeddings da ação (baratos) e consultas SQL.",
+  n("t_interp", X[2], 230, "interp", "Intérprete", "texto livre → até 3 passos", {
+    oque: "Traduz a ação escrita em até 3 passos tipados (técnica, atributo, item, treino, fala, movimento) com a dificuldade pela ficção; marca se o jogador declarou o desfecho e se a ação depende de um fato incerto (oráculo). Não decide nada. Opção escolhida não passa por ele.",
+    quando: "Em todo turno com texto livre.",
+    freq: "1 chamada (2 se a 1ª não for JSON válido).",
+    custo: "Baixo: modelo barato, raciocínio baixo, entrada pequena.",
+    fallback: "Falhou: um passo genérico de dificuldade média com a ação inteira.",
   }),
-  n("t_jev", X[2], 60, "jev", "Jev: decide o turno", "modelo, web, memórias, Árbitro, fora do jogo, NPC", {
-    oque: "Uma única chamada devolve probabilidades, não texto: (1) turno complexo? Escolhe entre o modelo do Mestre e o caro de turnos complexos (se configurado). (2) Precisa de busca web (:online)? Só quando o turno depende de um fato do cânone que não está no contexto. (3) Cada memória candidata é relevante? As de importância 5 entram sem perguntar. (4) A ação usa uma técnica da ficha do jogador ou é treino? Se sim, o Árbitro resolve antes do Mestre. (5) É o jogador perguntando ou reclamando do registro (ficha, itens, missões, XP, relógio, regras), não uma ação do personagem? Se sim, não há turno: a fala vai ao Mestre fora do jogo, que responde (e corrige) na conversa fora do jogo, e nada entra no chat da história. (6) É só o personagem falando com um NPC em cena (não em batalha)? Se sim, também não há turno: a fala vira a 1ª mensagem da conversa particular com ele e a tela abre o modal do NPC. Os limiares ficam nas Configurações avançadas.",
-    quando: "No início de cada turno, depois das candidatas. No Continuar sem nada a perguntar (sem modelo caro, sem web, sem memórias), nem é chamado.",
-    freq: "No máximo 1 request por turno para esta decisão (depois da narração há outras: relógio, local e elenco).",
-    custo: "Mínimo: cerca de US$ 0,00005 e ≈0,4 s por chamada; saída só em probabilidades.",
-    fallback: "Timeout de 7 s. Qualquer falha: modelo padrão do Mestre, web conforme a configuração dele, todas as memórias entram e o turno segue normal.",
+  n("t_res", X[2], 60, "code", "Resolvedor", "regras por código", {
+    oque: "Sem IA: resolve os passos em ordem (uma falha interrompe os seguintes). Técnica da ficha: custo, 1d20 + atributo×mult + domínio contra a tabela única de dificuldade, domínio sobe. Técnica fora da ficha: no máximo parcial. Treino: o train de sempre. Atributo: 1d20 contra a mesma tabela. Oráculo: d100 na tabela fixa do Mythic. Dano no alvo e no jogador pelo resultado. Devolve cada passo em palavras (deu certo, pela metade, falhou; custou pouco ou caro; recurso cheio, firme, baixo, esgotado).",
+    quando: "Antes do Narrador, em todo turno com ação.",
+    custo: "Sem IA: só SQL.",
   }),
-  n("t_referee", X[2], 230, "referee", "Árbitro", "técnica da ficha ou treino", {
-    oque: "Quando o Jev diz que a ação é usar uma técnica da ficha ou treinar, resolve antes do Mestre, sempre para o personagem do jogador: use_ability com a CD escolhida pela ficção, train com horas realistas e roll_dice para o dano de técnica que passou no teste. Vê a ficha do jogador, os NPCs em cena, as regras da mesa (escala de CD), as regras de treino, a hora, a última narração e a ação. As ferramentas rodam no mesmo contexto do turno: dados, chips e domínio saem iguais aos do Mestre. O resultado entra no contexto do turno (JÁ RESOLVIDO NESTE TURNO) e o Mestre narra numa chamada só; se ele chamar de novo a mesma técnica ou treino, recebe o resultado pronto sem executar. Técnica fora da ficha, ação ambígua ou que depende de decisão do Mestre: não chama nada.",
-    quando: "Antes do Mestre, só nos turnos em que o Jev aprovou (técnica da ficha ou treino).",
-    freq: "No máximo 1 chamada por turno.",
-    custo: "Baixo: modelo barato, raciocínio baixo, ≈2 mil tokens de entrada. Economiza a 2ª rodada do Mestre (≈20 mil tokens) que use_ability e train forçavam.",
-    fallback: "Jev falhou ou disse não: o Árbitro não roda e o Mestre resolve como antes. Ferramenta com erro fica para o Mestre.",
+  n("t_ctx", X[3], 60, "code", "Contexto do Narrador", "ficha em palavras, cena, NPCs", {
+    oque: "Sem IA, na ordem que aproveita o cache: (1) o fixo da campanha: prompt do Narrador e o cenário; (2) as 6 últimas trocas; (3) o contexto do turno: cena e hora, ficha do jogador em níveis (recursos cheio/firme/baixo/esgotado, técnicas iniciante/praticando/sólido/mestre, itens, dinheiro), NPCs em cena (quem é, o que quer, como fala), missões, arco ativo, diretrizes, o resultado do turno em palavras. Nenhum número de mecânica.",
+    quando: "Antes de cada turno do Narrador.",
   }),
-  n("t_ctx", X[3], 60, "code", "Montagem do contexto", "ficha, cena, NPCs, roteiro", {
-    oque: "Sem IA, em três partes, na ordem que aproveita o cache: (1) o fixo da campanha: prompt do Mestre, estilo e mecânica (com o padrão de nomes das técnicas do mundo); (2) o histórico recente; (3) o contexto do turno, numa mensagem logo antes da ação: regras da mesa, cena atual com hora e MODO DA CENA (o texto do modo, ajustável na Mesa), resumo compactado (na cena nova ainda sem resumo, o fim do da anterior), missões e prazos, ficha do jogador e dos NPCs em cena (técnicas completadas pela biblioteca, com o custo calculado e a marca de INCOMPLETA ou de fora da biblioteca; efeito e requisito cortados em 160 caracteres e o passado em 300; o completo sai no get_character), arco ativo do roteiro, só as memórias e trechos antigos aprovados pelo Jev, o que o Escrivão registrou depois da narração anterior e as diretrizes do jogador.",
-    quando: "Antes de cada turno do Mestre.",
+  n("t_gm", X[4], 60, "gm", "Narrador", "conta a história + bloco de efeitos", {
+    oque: "Escreve a cena a partir do resultado já decidido (em streaming) e termina com o bloco ```efeitos (opções tipadas, tempo, cena e elenco, NPC novo, fatos, itens, compra, descanso, missão). Pode ler com search_history, search_lore e get_character em até 2 rodadas. Prosa com número de regra volta 1 vez com a crítica.",
+    quando: "Em cada turno do jogador.",
+    freq: "1 a 3 chamadas (+1 se a prosa tiver número de regra).",
+    custo: "O principal do turno: system curto, ficha em palavras e 6 trocas.",
   }),
-  n("t_gm", X[4], 60, "gm", "Mestre", "narra e arbitra", {
-    oque: "Narra o mundo, arbitra as regras, controla o relógio e altera o jogo por ferramentas. Usa o modelo escolhido pelo Jev, mantido em todas as rodadas do turno. A narração vai ao jogador em streaming. No Continuar, segue a cena sem o personagem agir (ou, se a narração anterior esperava algo dele, responde só com uma linha curta de que a cena aguarda).",
-    quando: "Em cada turno do jogador, em loop com as ferramentas.",
-    freq: "1 a 9 chamadas por turno. Termina quando responde só com texto, ou com a narração e só anotações (relógio, cena, elenco, cargo, roteiro, missão), que rodam depois dela sem outra chamada.",
-    custo: "O mais caro: cada rodada reenvia prompt, ficha, memórias, histórico (até ≈9 mil tokens) e as definições das ferramentas. A busca web (:online) vale só na 1ª rodada e é cobrada por busca.",
+  n("t_tools", X[5], 60, "code", "Leitura", "histórico, livros e biblioteca, ficha", {
+    oque: "Só leitura: search_history (chat inteiro da campanha), search_lore (livros indexados e biblioteca do mundo) e get_character (perfil em palavras). Nada grava.",
+    custo: "Sem IA: SQL e embeddings da busca.",
   }),
-  n("t_tools", X[5], 60, "code", "Ferramentas", "dados, ficha, cena, delegações", {
-    oque: "Executadas pelo código a pedido do Mestre: rolar dados, resolver (cobrando o custo calculado) e treinar técnicas, atributos, ligar técnica na ficha pela biblioteca (add_ability) e corrigir a técnica na biblioteca do mundo (edit_ability), criar NPC, mensagem de NPC ao jogador (npc_message), relógio (advance_time, set_time), buscar memórias, buscar no chat inteiro da campanha (search_history: trechos curtos com dia, hora e local), consultar livros, ficha, roteiro e biblioteca. Dano, itens, XP, memórias e missões não estão aqui: ficam com o Escrivão. As escritas vão direto ao Postgres; criar NPC e técnica nova são delegados (lane 4). As anotações (advance_time, set_scene, set_npc_active, set_rank, update_script, note_objective) respondem \"Anotado\" na hora e só rodam depois da narração.",
-    quando: "Sempre que o Mestre pedir, em qualquer rodada.",
-    custo: "Sem IA: só SQL (e embeddings ao gravar ou buscar memórias e histórico).",
+  n("t_fx", X[4], 230, "code", "Efeitos aplicados", "validados campo a campo", {
+    oque: "Sem IA: valida o bloco (técnica e item na ficha, alvo e elenco registrados, missão existente, compra até o saldo, fato sem número) e aplica o que passou pelas ferramentas de sempre: NPC novo, cena e elenco, missão (pagamento e XP por código), itens, compra, descanso pela regra da mesa, relógio pela faixa de tempo, fatos como memória. Cada efeito vira uma etiqueta que o jogador desfaz no chat. A narração sai com as opções tipadas (meta.options).",
+    quando: "Depois da narração, antes do fim do turno.",
   }),
-  n("t_fx", X[4], 230, "code", "Efeitos persistidos", "narração e opções salvas", {
-    oque: "A narração e o bloco de opções são salvos e enviados ao jogador. Depois, antes do fim do turno: primeiro as anotações do Mestre (só SQL); então, em paralelo, a compactação (Cronista, se estourou o limite), o relógio seguido do Escrivão e o local seguido do elenco. Relógio: só se o Mestre não chamou advance_time, set_time nem train, o Jev estima o tempo que passou. Local e modo: se o Mestre não abriu cena nem trocou o local, o Jev julga numa chamada se o jogador mudou de lugar e que modo a narração mostra; mudou, o Cronista dá o nome e abre cena nova ali, já no modo novo; ficou, só o modo muda (se o Mestre não o trocou). Elenco: o Jev diz quem dos NPCs calados ainda está na cena. Por fim, o turno entra no histórico vetorial (search_history).",
-    quando: "Quando o Mestre responde só com texto, ou com texto e só anotações (ou estoura as rodadas).",
-  }),
-  n("t_chron", X[3], 230, "chron", "Cronista: compacta", "só se estourar o limite", {
-    oque: "Resume as mensagens antigas ainda não compactadas (todas menos as 12 mais recentes) num resumo acumulado na cena, marca-as como compactadas e extrai memórias estruturadas: evento, NPC, descoberta, marco, relação.",
-    quando: "Depois da narração, se as mensagens não compactadas passam de ≈11 mil tokens.",
-    freq: "De vez em quando (estimativa: 1 a cada 10 a 15 turnos). Também roda 1 vez por conversa com NPC.",
-    custo: "Baixo: modelo barato, mas lê de uma vez todo o trecho antigo (≈11 mil tokens de entrada).",
-  }),
-  n("t_scribe", X[1], 230, "scribe", "Escrivão", "registra o que a narração mostrou", {
-    oque: "Lê a ação, a narração, o que as ferramentas do Árbitro e do Mestre já fizeram, as fichas, as diretrizes do jogador (segue as de registro), a hora, as missões e a regra de XP da mesa (Mesa > Ganho de XP), e registra só o que a narração estabeleceu: dano, cura e gasto, itens, XP (técnica nova aprendida também dá), domínio por evento, campos da ficha, memórias e missões (as anotações de missão do Mestre viram objetivos com o prazo certo). Quem fala na narração (**Nome:**) sem estar registrado chega a ele numa lista: registra com create_npc quem é personagem com nome e ignora título, cabeçalho ou cargo genérico; a narração nunca volta ao Mestre. Uma chamada com as ferramentas em paralelo. O que gravou fica junto da narração (meta.notes) e entra no contexto do turno seguinte, para o Mestre reconhecer na história o que for marcante (marco de domínio, nível novo); o “gerar novamente” apaga junto.",
-    quando: "Depois de cada narração, logo depois do relógio (do Jev, quando é ele quem anda com o tempo), antes do fim do turno.",
-    freq: "1 chamada por turno (2 se alguma ferramenta deu erro).",
-    custo: "Baixo: modelo barato e rápido, ≈3 mil tokens de entrada; ~US$ 0,001 e 1 a 3 s.",
-    fallback: "Se falhar, nada é registrado; o jogador corrige pedindo ao Mestre fora do jogo.",
-  }),
-  n("t_imp", X[3], 400, "jev", "Jev: nota de importância", "1 a 5, em lote", {
-    oque: "Dá a nota de 1 a 5 de todas as memórias extraídas numa única chamada. Nota 5 entra sempre no contexto; as demais disputam as vagas por importância.",
-    quando: "Logo depois que o Cronista extrai memórias (compactação ou fim de conversa com NPC).",
-    freq: "1 request por lote de memórias.",
-    custo: "Mínimo: cerca de US$ 0,00005 e ≈0,4 s por chamada; saída só em probabilidades.",
-    fallback: "Se falhar, vale a nota que o Cronista escreveu.",
+  n("t_scribe", X[3], 230, "scribe", "Anotador", "só se faltou o bloco", {
+    oque: "Lê a narração e devolve só o bloco de efeitos, quando o Narrador não mandou o bloco ou ele não dá para ler.",
+    quando: "Raramente: bloco ausente ou ilegível; e no fim de toda conversa particular.",
+    freq: "1 chamada (2 se a 1ª não for JSON).",
+    custo: "Baixo: modelo barato.",
+    fallback: "Falhou: nenhum efeito (nada inventado) e sem opções.",
   }),
   n("pg", X[5], 230, "db", "Postgres + pgvector", "memórias, fichas, mensagens", {
     oque: "Guarda tudo: campanhas, cenas, fichas, mensagens, memórias (com embeddings para busca por similaridade), roteiro, conversas de NPC, imagens e o log de cada chamada de IA (tokens, custo, duração).",
     custo: "Local (Docker). Nenhuma chamada paga; só os embeddings das memórias passam pelo OpenRouter.",
   }),
   n("or", X[5], -250, "infra", "OpenRouter e outras fontes", "toda IA passa por aqui", {
-    oque: "Todas as chamadas de IA (Jev, Mestre, Escrivão, Ações rápidas, NPC, Cronista, Roteirista, Ilustrador, Voz e os criadores) saem pela fonte de modelos do agente: o OpenRouter (padrão) ou outra fonte cadastrada em Fontes de modelos (OpenAI, Anthropic, Gemini, OpenCode, outra API compatível com a da OpenAI ou o Login com ChatGPT). Cada chamada vira uma linha no histórico do agente: fonte, tokens, duração, custo, request e resposta. O Jev usa a Decisions API (probabilidades), a Voz o endpoint de fala (audio/speech) e os demais, chat completions (modelo que só gera imagem vai pelo endpoint de imagens).",
+    oque: "Todas as chamadas de IA (Jev, Narrador, Intérprete, Anotador, NPC, Roteirista, Ilustrador, Voz e os criadores) saem pela fonte de modelos do agente: o OpenRouter (padrão) ou outra fonte cadastrada em Fontes de modelos (OpenAI, Anthropic, Gemini, OpenCode, outra API compatível com a da OpenAI ou o Login com ChatGPT). Cada chamada vira uma linha no histórico do agente: fonte, tokens, duração, custo, request e resposta. O Jev usa a Decisions API (probabilidades), a Voz o endpoint de fala (audio/speech) e os demais, chat completions (modelo que só gera imagem vai pelo endpoint de imagens).",
     custo: "Você paga o preço do modelo escolhido em cada agente, direto à fonte. Só o OpenRouter informa o custo de cada chamada; das outras ficam os tokens.",
   }),
 
@@ -278,26 +253,13 @@ const NODES: (FlowNode | LaneNode)[] = [
     custo: "O mesmo de uma resposta normal do NPC.",
   }),
   n("n_end", X[3], 600, "player", "Encerrar a conversa", "botão de encerrar", {
-    oque: "Ao encerrar, antes de o modal fechar: o Jev estima o tempo da conversa e o relógio anda, e o Escrivão registra numa chamada, com a conversa inteira no lugar da narração, o que ela estabeleceu (item comprado ou recebido, missão oferecida ou aceita). Uma linha discreta entra no chat da campanha, e o fim da conversa (até 1.500 caracteres) e o que o Escrivão gravou vão uma vez ao contexto do próximo turno do Mestre, que retoma a cena dali. Depois, em segundo plano, a conversa vira memória da campanha: o Mestre passa a saber o essencial, e o NPC continua lembrando de tudo.",
-  }),
-  n("n_chron", X[4], 600, "chron", "Cronista: extrai memórias", "1 vez por conversa", {
-    oque: "Lê a conversa inteira e guarda só o que o Mestre precisa saber (revelações, acordos, mudanças de relação) como memórias de tipo npc ou relationship. Só roda se houve ao menos uma troca.",
-    quando: "Ao encerrar a conversa com o NPC, em segundo plano (o modal fecha na hora e o cabeçalho mostra a tarefa).",
-    freq: "1 chamada por conversa.",
-    custo: "Baixo: modelo barato; a entrada é a conversa toda.",
-  }),
-  n("n_imp", X[5], 600, "jev", "Jev: nota de importância", "1 a 5, em lote", {
-    oque: "Dá a nota de 1 a 5 das memórias extraídas da conversa, numa única chamada.",
-    quando: "Logo depois que o Cronista extrai as memórias.",
-    freq: "1 request por conversa.",
-    custo: "Mínimo: cerca de US$ 0,00005 e ≈0,4 s por chamada; saída só em probabilidades.",
-    fallback: "Se falhar, vale a nota que o Cronista escreveu.",
+    oque: "Ao encerrar, antes de o modal fechar: o Anotador lê a conversa inteira e os efeitos dela entram como num turno (tempo, item comprado ou recebido, missão oferecida ou aceita, fatos, que viram memórias com o NPC de assunto). Uma linha discreta entra no chat da campanha, e o fim da conversa vai ao histórico do Narrador, que retoma a cena dali.",
   }),
 
   // --- criação em segundo plano ---
-  n("c_gm", X[0], 930, "gm", "Mestre: create_npc", "nome, sexo, canon e brief", {
-    oque: "O Mestre só registra quem entrou na história (se esquecer, o Escrivão registra depois da narração): nome, sexo, se é do cânone e um brief (quem é, papel, o que já foi narrado). Não escreve a ficha.",
-    quando: "Antes de narrar, quando um personagem com nome aparece pela primeira vez.",
+  n("c_gm", X[0], 930, "gm", "Narrador: newNpcs", "nome, sexo e brief", {
+    oque: "O bloco de efeitos traz quem entrou na história pela primeira vez: nome, sexo e um brief (quem é, o que já foi narrado). O código registra com create_npc; o Narrador não escreve a ficha.",
+    quando: "Depois da narração, quando um personagem com nome aparece pela primeira vez.",
   }),
   n("c_reg", X[1], 930, "code", "NPC registrado na hora", "ativo na cena, o turno segue", {
     oque: "Sem IA: grava o NPC ativo na cena (o brief vira o passado provisório) e responde ao Mestre na hora, para a checagem de quem fala passar. Abre uma tarefa em segundo plano, que aparece no cabeçalho do jogo e avisa quando termina.",
@@ -324,7 +286,7 @@ const NODES: (FlowNode | LaneNode)[] = [
     oque: "O retrato fica no Postgres com versão (cache longo no navegador) e aparece nos cartões de NPC, no modal, na ficha do jogador e ao lado das falas no chat.",
   }),
 
-  n("b_gm", X[0], 1050, "gm", "Mestre: add_ability", "nome e brief → ref na ficha", {
+  n("b_gm", X[0], 1050, "gm", "Fora do jogo: add_ability", "nome e brief → ref na ficha", {
     oque: "Quando o personagem aprende ou usa uma técnica que ainda não está na ficha, o Mestre só passa o nome e um brief (tipo, rank e costFree só como dica). O código procura no mundo pelo nome (sem diferenciar maiúsculas e acentos, sem as excluídas); se não acha, chama o Criador de habilidades; se ele falha ou passa do prazo, grava na biblioteca o que o Mestre passou, marcada como incompleta. A ficha sempre recebe a ref; se a técnica já estava nela, só ajusta o domínio. Antes de inventar, pode consultar a biblioteca (search_library). add_item completa a descrição pelo item da biblioteca.",
     quando: "No turno, antes de resolver uma técnica que não está na ficha; também no fora do jogo.",
     fallback: "A incompleta aparece ao Mestre marcada (na ficha e no search_library) para ele completar com edit_ability.",
@@ -354,7 +316,7 @@ const NODES: (FlowNode | LaneNode)[] = [
     fallback: "Se o servidor reinicia no meio, a tarefa vira erro depois de 15 min sem sinal.",
   }),
 
-  n("b_edit", X[0], 1210, "gm", "Mestre: edit_ability", "no turno e fora do jogo", {
+  n("b_edit", X[0], 1210, "gm", "Fora do jogo: edit_ability", "a pedido do jogador", {
     oque: "Corrige a técnica na biblioteca do mundo (tipo, rank, efeito, dano, marcos, quem usa, costFree, tradução ou o nome, no padrão do mundo), mandando só o que muda. Como as fichas apontam pela ref, vale na hora para todos que a têm, em todas as campanhas do mesmo mundo. Completar uma incompleta é editá-la (sai a marca). O que é de um personagem só não passa por aqui: domínio é update_ability_progress, gastar mais ou menos é set_cost_modifier e tirar da ficha é remove_ability (fora do jogo).",
     quando: "Técnica incompleta ou errada: o Mestre no turno, ou o Mestre fora do jogo a pedido do jogador.",
     custo: "Sem IA: só SQL.",
@@ -404,35 +366,26 @@ function e(
 
 const EDGES: Edge[] = [
   // turno
-  e("t_player", "sr", "t_mem", "tl"),
-  e("t_mem", "sr", "t_jev", "tl", "candidatas"),
-  e("t_jev", "sr", "t_ctx", "tl", "aprovadas"),
-  e("t_jev", "sb", "t_referee", "tt", "técnica ou treino"),
-e("t_jev", "st", "o_gm", "tb", "pergunta sobre o registro", { dashed: true }),
-  e("t_referee", "sr", "t_ctx", "tb", "já resolvido"),
+  e("t_player", "sr", "t_jev", "tl"),
+  e("t_jev", "sr", "t_res", "tl", "turno"),
+  e("t_jev", "sb", "t_interp", "tl", "texto livre"),
+  e("t_interp", "st", "t_res", "tb", "passos"),
+  e("t_jev", "st", "o_gm", "tb", "pergunta sobre o registro", { dashed: true }),
+  e("t_res", "sr", "t_ctx", "tl", "resultado em palavras"),
   e("t_ctx", "sr", "t_gm", "tl"),
-  e("t_gm", "sr", "t_tools", "tl", "ferramentas ⇄", { both: true }),
-  e("t_gm", "sb", "t_fx", "tt", "só texto"),
-  e("t_fx", "sl", "t_chron", "tr", "estourou o limite"),
-  e("t_fx", "sb", "t_scribe", "tb", "depois da narração"),
-  e("t_scribe", "sb", "pg", "tb", "grava fichas e missões"),
-  e("t_chron", "sb", "t_imp", "tt", "memórias"),
-  e("t_imp", "sr", "pg", "tb", "grava memórias"),
-  e("t_tools", "sb", "pg", "tt", "grava ficha, cena, memórias"),
-  e("t_fx", "sr", "pg", "tl", "grava narração"),
+  e("t_gm", "sr", "t_tools", "tl", "leitura ⇄", { both: true }),
+  e("t_gm", "sb", "t_fx", "tt", "prosa + bloco"),
+  e("t_fx", "sl", "t_scribe", "tr", "sem bloco"),
+  e("t_fx", "sr", "pg", "tl", "grava narração e efeitos"),
+  e("t_res", "sb", "pg", "tb", "custo, domínio, dano", { dashed: true }),
   e("t_gm", "st", "or", "tb", "toda IA", { dashed: true }),
-  e("t_suggest", "st", "t_player", "tb", "opções"),
-  e("t_scribe", "st", "t_ctx", "tb", "o que gravou, no próximo turno", { dashed: true }),
   // NPC
   e("n_player", "sr", "n_jev", "tl"),
   e("n_jev", "sr", "n_npc", "tl", "topa"),
   e("n_jev", "sb", "n_no", "tl", "não topa"),
   e("n_npc", "sr", "n_end", "tl", "até encerrar"),
-  e("n_end", "sr", "n_chron", "tl"),
-  e("n_chron", "sr", "n_imp", "tl", "memórias"),
   e("t_jev", "sb", "n_player", "tt", "fala só com um NPC em cena", { dashed: true }),
-  e("n_end", "st", "t_scribe", "tb", "registra a conversa", { dashed: true }),
-  e("n_imp", "st", "pg", "tb", "grava memórias"),
+  e("n_end", "st", "t_scribe", "tb", "Anotador lê a conversa", { dashed: true }),
   // sob demanda
   e("s_btn1", "sr", "s_writer", "tl"),
   e("s_writer", "sr", "s_script", "tl", "JSON"),

@@ -1,0 +1,149 @@
+{
+ "_sobre": "Bloco de efeitos: narração com o bloco no fim, validada contra ctx (ficha, NPCs, missões, saldo).",
+ "ctx": {
+  "player": "Hugo",
+  "abilities": [
+   "Kage Bunshin no Jutsu",
+   "Kanchi",
+   "Katon: Gōkakyū no Jutsu",
+   "Katon: Hōsenka no Jutsu"
+  ],
+  "items": [
+   "Kunai",
+   "Papel-bomba"
+  ],
+  "npcs": [
+   "Genma Shiranui",
+   "Tenten",
+   "Lojista"
+  ],
+  "missions": [
+   {
+    "id": "o3",
+    "title": "Vigiar a faixa da direita",
+    "status": "aberto"
+   }
+  ],
+  "money": 12000,
+  "resourceWords": [
+   "hp",
+   "Saúde",
+   "chakra",
+   "Chakra",
+   "stamina",
+   "Fôlego"
+  ]
+ },
+ "cases": [
+  {
+   "id": "bom",
+   "nota": "bloco completo e válido; técnica e alvo por nome curto",
+   "text": "Genma não responde logo. O senbon corre de um canto da boca ao outro.\n\n**Genma:** \"Curto e sobre a faixa.\" Ele se encosta no batente.\n```efeitos\n{\"options\": [{\"label\": \"Faço dois clones vigiarem o pátio\", \"approach\": \"sense\", \"steps\": [{\"ability\": \"Kage Bunshin\"}]}, {\"label\": \"Pergunto ao Genma quem fechou a porta\", \"approach\": \"talk\", \"steps\": [{\"target\": \"Genma\"}]}, {\"label\": \"Vou até o pátio\", \"approach\": \"move\", \"steps\": []}], \"time\": \"minutes\", \"scene\": {\"present\": [\"Genma\"]}, \"facts\": [{\"text\": \"Genma combinou vigiar a faixa da direita com Hugo durante a noite\"}]}\n```",
+   "expect": {
+    "prose": "Genma não responde logo. O senbon corre de um canto da boca ao outro.\n\n**Genma:** \"Curto e sobre a faixa.\" Ele se encosta no batente.",
+    "options": 3,
+    "firstStepAbility": "Kage Bunshin no Jutsu",
+    "time": "minutes",
+    "present": [
+     "Genma Shiranui"
+    ],
+    "facts": 1,
+    "dropped": 0
+   }
+  },
+  {
+   "id": "tecnica_fora_da_ficha",
+   "nota": "passo com técnica que o jogador não tem é descartado; o resto da opção fica",
+   "text": "Genma não responde logo. O senbon corre de um canto da boca ao outro.\n\n**Genma:** \"Curto e sobre a faixa.\" Ele se encosta no batente.\n```efeitos\n{\"options\": [{\"label\": \"Chidori na Tenten e kunai em seguida\", \"approach\": \"force\", \"steps\": [{\"ability\": \"Chidori\"}, {\"item\": \"Kunai\", \"target\": \"Tenten\"}]}], \"time\": \"minutes\"}\n```",
+   "expect": {
+    "options": 1,
+    "firstOptionSteps": 1,
+    "droppedHas": "técnica fora da ficha: Chidori"
+   }
+  },
+  {
+   "id": "katon_nao_confunde",
+   "nota": "dois Katon na ficha: o nome depois de ':' acha o certo, o prefixo sozinho não acha nenhum",
+   "text": "Genma não responde logo. O senbon corre de um canto da boca ao outro.\n\n**Genma:** \"Curto e sobre a faixa.\" Ele se encosta no batente.\n```efeitos\n{\"options\": [{\"label\": \"Gōkakyū no tronco\", \"approach\": \"force\", \"steps\": [{\"ability\": \"Gokakyu no Jutsu\"}]}, {\"label\": \"Katon qualquer\", \"approach\": \"force\", \"steps\": [{\"ability\": \"Katon\"}]}]}\n```",
+   "expect": {
+    "options": 2,
+    "firstStepAbility": "Katon: Gōkakyū no Jutsu",
+    "droppedHas": "técnica fora da ficha: Katon"
+   }
+  },
+  {
+   "id": "quebrado",
+   "nota": "bloco cortado no meio: ilegível, vai ao Anotador (sem IA: efeitos vazios)",
+   "text": "Genma não responde logo. O senbon corre de um canto da boca ao outro.\n\n**Genma:** \"Curto e sobre a faixa.\" Ele se encosta no batente.\n```efeitos\n{\"options\": [{\"label\": \"Ataco\", \"approach\": ",
+   "expect": {
+    "prose": "Genma não responde logo. O senbon corre de um canto da boca ao outro.\n\n**Genma:** \"Curto e sobre a faixa.\" Ele se encosta no batente.",
+    "unreadable": true
+   }
+  },
+  {
+   "id": "tolerante",
+   "nota": "cerca json, aspas curvas, vírgula sobrando",
+   "text": "Genma não responde logo. O senbon corre de um canto da boca ao outro.\n\n**Genma:** \"Curto e sobre a faixa.\" Ele se encosta no batente.\n```json\n{“time”: “hour”, “rest”: “light”, “items”: [{“name”: “Kunai”, “qty”: 2,},],}\n```",
+   "expect": {
+    "time": "hour",
+    "rest": "light",
+    "items": [
+     {
+      "name": "Kunai",
+      "qty": 2
+     }
+    ],
+    "dropped": 0
+   }
+  },
+  {
+   "id": "choices_antigo",
+   "nota": "bloco antigo ```choices vira opções só com rótulo",
+   "text": "Genma não responde logo. O senbon corre de um canto da boca ao outro.\n\n**Genma:** \"Curto e sobre a faixa.\" Ele se encosta no batente.\n```choices\n[\"Sigo o Genma\", \"Fico na porta\"]\n```",
+   "expect": {
+    "options": 2,
+    "firstLabel": "Sigo o Genma"
+   }
+  },
+  {
+   "id": "sem_cerca",
+   "nota": "JSON solto no fim, sem cerca",
+   "text": "Genma não responde logo. O senbon corre de um canto da boca ao outro.\n\n**Genma:** \"Curto e sobre a faixa.\" Ele se encosta no batente.\n\n{\"time\": \"quarter\", \"scene\": {\"present\": [\"Tenten\"]}}",
+   "expect": {
+    "prose": "Genma não responde logo. O senbon corre de um canto da boca ao outro.\n\n**Genma:** \"Curto e sobre a faixa.\" Ele se encosta no batente.",
+    "time": "quarter",
+    "present": [
+     "Tenten"
+    ]
+   }
+  },
+  {
+   "id": "campos_invalidos",
+   "nota": "cada campo ruim sai sozinho: compra acima do saldo, missão que não existe, fato com número, item que não tem, presente desconhecido",
+   "text": "Genma não responde logo. O senbon corre de um canto da boca ao outro.\n\n**Genma:** \"Curto e sobre a faixa.\" Ele se encosta no batente.\n```efeitos\n{\"time\": \"hour\", \"purchase\": {\"item\": \"Tantō\", \"qty\": 1, \"price\": 25000}, \"mission\": {\"op\": \"complete\", \"id\": \"o9\"}, \"facts\": [{\"text\": \"Hugo gastou quinze de chakra no treino\"}, {\"text\": \"Tenten ofereceu ajuda para a vigília\"}], \"items\": [{\"name\": \"Shuriken\", \"qty\": -1}], \"newNpcs\": [{\"name\": \"Viajante\", \"gender\": \"m\", \"brief\": \"homem que ajudou com a carroça\"}], \"scene\": {\"present\": [\"Viajante\", \"Fulano\", \"Tenten\"]}, \"told\": [{\"fact\": \"o javali foi caçado com papel-bomba\", \"by\": \"Hugo\", \"to\": [\"Tenten\"]}]}\n```",
+   "expect": {
+    "time": "hour",
+    "purchase": null,
+    "mission": null,
+    "facts": 1,
+    "items": [],
+    "newNpcs": 1,
+    "present": [
+     "Viajante",
+     "Tenten"
+    ],
+    "told": 1,
+    "droppedHas": "compra acima do saldo"
+   }
+  },
+  {
+   "id": "missao",
+   "nota": "oferta com título e conclusão pela id",
+   "text": "Genma não responde logo. O senbon corre de um canto da boca ao outro.\n\n**Genma:** \"Curto e sobre a faixa.\" Ele se encosta no batente.\n```efeitos\n{\"mission\": {\"op\": \"complete\", \"id\": \"O3\"}}\n```",
+   "expect": {
+    "missionId": "o3",
+    "dropped": 0
+   }
+  }
+ ]
+}

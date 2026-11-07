@@ -1,0 +1,67 @@
+{
+ "_sobre": "Trechos reais da campanha (scratchpad/data/transcript.md, ids #N). expect: fail = o validador de prosa acha número ou termo de regra; pass = nada.",
+ "resourceWords": [
+  "hp",
+  "Saúde",
+  "chakra",
+  "Chakra",
+  "stamina",
+  "Fôlego"
+ ],
+ "cases": [
+  {
+   "id": "3873",
+   "nota": "Genma conta chakra em rodadas e pontos; o jogador reclamou em #3874",
+   "text": "Você fala baixo, sem tirar os olhos da faixa da direita. Diz que o Kanchi custa chakra a cada rodada, que a noite tem umas dez horas pela frente e que, no ritmo que ele pediu, você chega às três da manhã raspando o fundo da reserva.\n\nGenma não responde de imediato. O senbon corre de um canto da boca ao outro, e ele olha para o alto, como quem faz a conta de cabeça.\n\n**Genma:** \"Boa conta, e é melhor você dizer agora do que calar e apagar às duas.\" Ele indica o chão do alpendre com o queixo. \"Mas olha os números. Uma rodada de Kanchi custa um ponto. Quatro checagens por hora são quatro pontos, e você recupera mais que isso parado, de pé, só respirando. Há uma hora você subiu de 41 para uns 45 sem fazer nada. A conta fecha.\" Ele ergue um dedo. \"Desde que seja uma rodada curta, sobre a faixa e só. Dois pulsos, uns vinte e cinco segundos, e você solta. O que gasta é ficar com o Kanchi aberto no pátio inteiro, olhando tudo.\"\n\nEle cruza os braços e se encosta no batente, ao lado da porta.\n\n**Genma:** \"Divido o trabalho: a cada quinze minutos, eu ponho a palma na faixa e confiro o calor, que não custa nada, e você faz o Kanchi só nas horas cheias e nos quartos de hora ímpares, para ter o ritmo por dentro. Se a reserva cair abaixo de vinte e cinco, você para e me diz. Prefiro uma checagem a menos do que você sem chakra se o pátio resolver ficar interessante.\" O olhar dele volta à faixa da direita, parada sob a luz da lanterna. \"E se o pulso mudar enquanto eu estiver com a mão nela, você sabe antes de qualquer sino.\"\n\nO grilo na erva do canto continua o mesmo ritmo de antes. Passa um pouco das oito e meia, e o sino distante ainda não marcou o quarto de hora.",
+   "expect": "fail"
+  },
+  {
+   "id": "3615",
+   "nota": "Genma: 'nove pontos mais seis: quinze de chakra'",
+   "text": "Genma faz um aceno e examina os limites da faixa de terra nua.\n\n**Genma Shiranui:** “Boa ideia. Um alvo vai nos dizer mais do que olhar para a chama. Mas usamos um tronco de treino, não uma árvore em pé. Madeira velha pode continuar queimando por dentro depois que a chama desaparece.”\n\nEle indica os postes na lateral da clareira, fora da linha usada na primeira tentativa, e se aproxima para conferir o estado da madeira.\n\n**Genma Shiranui:** “Escolhemos duas faces semelhantes, sem marcas de queimadura. Você aplica um Katon curto numa delas. Na outra, repete à mesma distância, com a mesma duração, e o clone acrescenta o Sopro. Depois apagamos as brasas e comparamos a área queimada e a profundidade da carbonização. Se mudar só o alcance ou espalhar mais o fogo, isso também é um resultado. Perfurar é outra coisa; não vamos presumir que o vento dará essa propriedade.”\n\nEle retorna até você, mantendo o clone fora da futura linha de fogo.\n\n**Genma Shiranui:** “E você tem razão sobre a reserva. Dois Katon e um Sopro custam nove pontos mais seis: quinze de chakra. Você ficaria com onze. Cabe uma comparação hoje, sem repetições para perseguir o resultado que queremos. Depois encerramos a parte de fogo e examinamos o alvo. Serve?”",
+   "expect": "fail"
+  },
+  {
+   "id": "672",
+   "nota": "relatório em negrito com x/y",
+   "text": "**Chakra gasto: 9 — atual: 28/50.**",
+   "expect": "fail"
+  },
+  {
+   "id": "2730",
+   "nota": "'3 pontos de chakra; você fica com 28/50'",
+   "text": "Depois disso, o resultado deixa de melhorar. Você reconhece a sensação que procura, porém sustentá-la continua difícil; insistir já não produz cortes maiores. **A folha ainda não se divide.** A última tentativa efetiva consome **3 pontos de chakra; você fica com 28/50**.",
+   "expect": "fail"
+  },
+  {
+   "id": "389",
+   "nota": "Sonnet, Naruto no Ichiraku, sem número de regra",
+   "text": "Naruto quase derruba o palito. O queixo sobe, o peito estufa, e o protetor de testa dele, preso na testa sobre a franja loira, brilha sob a luz que entra pela cortina do quiosque.\n\n**Naruto Uzumaki:** \"Hã? Eu? Treino pesado?! Hehe... quem foi que te disse isso? Ah, deve ter sido o Iruka-sensei, né? Ou alguém da vila que viu eu treinando!\"\n\nEle solta uma risada alta, coça a nuca e se vira de frente para você, empurrando a tigela vazia para o lado.\n\n**Naruto Uzumaki:** \"Mas é verdade! Eu treino todo santo dia! Vou ser o maior Hokage de todos os tempos, dattebayo! Então não posso ficar atrás de ninguém!\"\n\nEle aponta o próprio protetor de testa com o polegar, orgulhoso, e depois olha o seu com um brilho curioso.\n\n**Naruto Uzumaki:** \"Então você se formou hoje, Hugo? Eu também me formei faz pouco tempo! Já fui colocado no Time 7, com o Sasuke e a Sakura. Só falta conhecer o sensei que vai cuidar da gente... dizem que é um tal de Kakashi.\"\n\nEle faz uma careta rápida ao falar do Sasuke, mas logo sorri de novo e cutuca o balcão com o palito.\n\n**Naruto Uzumaki:** \"E aí, em que time você ficou? Ou ainda não saiu a lista?\"\n\nTeuchi se apoia no balcão, enxugando as mãos no avental, com um sorriso discreto de quem escuta a conversa.\n\n**Teuchi:** \"Mais um genin novo no Ichiraku! Pode pedir à vontade, rapaz. O Naruto ensina o caminho para quem é de casa.\"",
+   "expect": "pass"
+  },
+  {
+   "id": "674",
+   "nota": "hora no texto ('passa das sete e meia')",
+   "text": "O pátio da Academia está banhado pela luz clara da manhã. Passa das sete e meia. O campo de treinamento fica logo a oeste, a poucos minutos a pé.",
+   "expect": "pass"
+  },
+  {
+   "id": "1346",
+   "nota": "quantidade de clones",
+   "text": "Do outro lado, Naruto faz três clones e grita ordens.",
+   "expect": "pass"
+  },
+  {
+   "id": "3779",
+   "nota": "preço por extenso ('vinte e cinco mil')",
+   "text": "**Lojista:** \"Corpo a corpo, então.\" Ele empurra as duas kunai de cabo escuro para o canto do pano e se abaixa atrás do balcão. Volta com o tantō numa bainha de madeira lisa, sem adorno, e o põe diante de você. \"Vinte e cinco mil. Fio de aço comum, o rolo é oitocentos. Treze mil e oitocentos a menos que o total que você estava pensando, se tirar o tantō da conta. Mas pelo jeito você não vai tirar.\"",
+   "expect": "pass"
+  },
+  {
+   "id": "10",
+   "nota": "distância ('a quinze metros') e 'três shurikens'",
+   "text": "O sol da manhã atinge o campo de treinamento da Academia de Konoha, refletindo no metal das shurikens cravadas nos troncos de madeira. O ar está carregado com o cheiro de terra batida e o som repetitivo de pés atingindo o solo. Você está no centro do pátio, cercado por outros estudantes que, assim como você, esperam o dia da graduação para finalmente se tornarem Genin.\n\nApesar de ser um órfão resgatado de ruínas, sua postura não é de gratidão submissa. Você observa os outros alunos com um sorriso de canto, uma mistura de tédio e confiança que beira o desdém. Para você, os movimentos que eles tentam decorar parecem... óbvios demais. Lentos.\n\nÀ sua frente, **Daiki-sensei** caminha com as mãos nas costas, os olhos estreitos avaliando cada postura. Ele para diante de você, ajustando a prancheta sob o braço.\n\n**Daiki-sensei:** \"Hugo. Vejo que está aproveitando o tempo para observar os outros em vez de praticar seu arremesso. A gratidão que você diz ter por Konoha deve ser demonstrada com esforço, não apenas com esse sorriso presunçoso. O Exame de Graduação está próximo, e não aceitaremos ninguém que não domine o básico.\"\n\nEle aponta para um alvo a quinze metros de distância, que balança levemente com o vento.\n\n**Daiki-sensei:** \"Mostre-me. Três shurikens. Se você é tão bom estrategista quanto diz ser, o vento não será um problema, certo?\"\n\nVocê sente o peso das shurikens na sua bolsa lateral. Ao longe, você vê alguns alunos pararem para observar. Você sabe que o homem de pele branca e cabelos negros dos seus lampejos não aprovaria a mediocridade.",
+   "expect": "pass"
+  }
+ ]
+}

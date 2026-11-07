@@ -5,7 +5,6 @@
 import assert from "node:assert";
 import { catalogCost, catalogMatch, chat, chatRequest, mergeSystem, moderationError, type ChatOptions, type Source } from "../src/lib/openrouter";
 import { anthropicParams, toChatJson } from "../src/lib/anthropicApi";
-import { windowStart } from "../src/lib/engine";
 import { imageFromDataUrl, imagePrompt } from "../src/lib/portrait";
 import type Anthropic from "@anthropic-ai/sdk";
 
@@ -273,19 +272,6 @@ async function main() {
   const rw2 = sent.at(-1)!.body.messages as { role: string; content: string }[];
   assert.match(rw2[0].content, /Comece por uma frase de estilo completa/);
   assert.match(rw2[1].content, /^ilustração em estilo anime/, "sem estilo fixo, o padrão vai para o reescritor detalhar");
-
-  // 9. janela do histórico: começo estável por vários turnos, cabe no orçamento e anda em saltos
-  const lens = [400, 300, 500, 200, 600, 300, 400];
-  for (let n = 1; n <= lens.length; n++) {
-    const part = lens.slice(0, n);
-    const i = windowStart(part, 1000);
-    const tail = part.slice(i).reduce((a, x) => a + x, 0);
-    assert.ok(tail <= 1000, `janela cabe no orçamento (${tail})`);
-  }
-  assert.equal(windowStart([400, 300], 1000), 0, "cabe tudo: começa do início");
-  assert.equal(windowStart([400, 300, 500], 1000), 1, "passou: pula 1/4 do orçamento");
-  assert.equal(windowStart([400, 300, 500, 50], 1000), 1, "o começo fica no turno seguinte");
-  assert.equal(windowStart([400, 300, 500, 50, 200], 1000), 2, "passou de novo: outro salto");
 
   console.log("cache-check ok");
 }

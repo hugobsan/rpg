@@ -91,7 +91,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
 
   const {
     state, setState, reload: reloadState, error, setError, talked,
-    feed, draft, choices, setChoices, busy, status, send, regenerate, edit, canStop, stop, undo,
+    feed, draft, choices, busy, status, send, regenerate, edit, canStop, stop, undo,
     pendingDice, rolling, roll, releaseDice,
     feedRef, hasMore, loadingOlder, loadOlder,
   } = useTurn(campaignId, { initial, onEvent });
@@ -212,7 +212,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
     reloadState();
   };
   const idle = !busy && !pendingDice;
-  // etiquetas do Escrivão depois da última narração: só elas se desfazem (o servidor confere)
+  // etiquetas dos efeitos da última narração: só elas se desfazem (o servidor confere)
   const undoFrom = useMemo(() => feed.slice(feed.findLastIndex((i) => i.kind === "gm" && !i.name) + 1).find((i) => i.scribe)?.scribe?.messageId, [feed]);
   // estável entre os pedaços do streaming: os itens do feed (memo) não re-renderizam
   const cast = useMemo<Cast>(
@@ -229,17 +229,6 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
   const groups = useMemo(() => groupFeed(feed), [feed]);
   // sua última mensagem: só ela pode ser editada (o servidor só desfaz o último turno; depois de um Continuar, nenhuma)
   const lastPlayer = useMemo(() => feed.findLast((i) => i.kind === "player"), [feed]);
-  // Ações rápidas: opções para o momento da cena, no lugar das do Mestre (mesmos cartões: clicar envia, lápis edita)
-  const [suggesting, setSuggesting] = useState(false);
-  const suggest = async () => {
-    setSuggesting(true);
-    const res = await fetch(`/api/campaigns/${campaignId}/suggest`, { method: "POST" }).catch(() => null);
-    const data = await res?.json().catch(() => null);
-    setSuggesting(false);
-    if (!res?.ok || !data?.choices?.length) return toast(data?.error || "Não deu para sugerir ações agora.", { kind: "alerta", title: "Ações rápidas" });
-    setChoices(data.choices);
-    requestAnimationFrame(() => feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight }));
-  };
   // jutsu ou item pelo card da lateral: vai para o campo da ação (no celular a folha fecha)
   const putOnComposer = (name: string) => {
     composer.current?.use(name);
@@ -251,8 +240,9 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
     setPhases([]);
     if (recap) closeRecap();
   };
-  const sendTurn = (text: string) => {
-    const ok = send(text);
+  // index: a opção escolhida nos cartões (vai tipada ao servidor)
+  const sendTurn = (text: string, index?: number) => {
+    const ok = send(text, false, index);
     if (ok) turnStarted();
     return ok;
   };
@@ -466,8 +456,6 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
           onSend={sendTurn}
           busy={busy}
           placeholder={placeholder}
-          onSuggest={suggest}
-          suggesting={suggesting}
           onOoc={() => setOocOpen(true)}
           onStop={canStop ? stop : undefined}
         />

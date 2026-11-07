@@ -8,7 +8,7 @@ import type { Ability, Campaign, Character, Scene, Sheet } from "./types";
 
 /**
  * Correções do registro pelo jogador, como numa mesa de verdade: edição manual da ficha (recursos, itens, domínio, XP,
- * status de missão) e desfazer um registro do Escrivão pela etiqueta no chat. A edição passa pelas ferramentas do jogo
+ * status de missão) e desfazer um efeito aplicado (bloco de efeitos do Narrador) pela etiqueta no chat. A edição passa pelas ferramentas do jogo
  * (as regras continuam valendo: XP sobe nível, missão concluída dá a XP uma vez só), vira uma linha para o Mestre no
  * próximo turno (state.playerFixes, consumida depois da narração, como o decidedAt das missões) e uma linha na tabela
  * corrections, para medir quantos registros dos agentes estavam errados.
@@ -23,7 +23,7 @@ export const turns: Map<string, { stop: AbortController; done: Promise<void> }> 
 
 export class FixError extends Error {}
 
-// ---------- registro do Escrivão e o desfazer ----------
+// ---------- efeitos aplicados e o desfazer ----------
 
 type CharUndo = {
   id: string;
@@ -40,7 +40,7 @@ export interface ScribeUndo {
   objectives?: { id: string; before: Objective | null }[]; // null = criada pelo registro
   memory?: number;
 }
-/** Registro do Escrivão guardado na narração (meta.scribe); note é a linha de meta.notes. */
+/** Efeito aplicado guardado na narração (meta.scribe); note é a linha de meta.notes. */
 export interface ScribeEntry {
   tool: string;
   args: Record<string, unknown>;
@@ -70,7 +70,7 @@ export async function scribeState(campaignId: string, args: Record<string, unkno
 
 const abilityKey = (a: Pick<Ability, "ref" | "name">) => String(a.ref ?? a.name);
 
-/** Diferença entre duas fichas (formato gravado ou hidratado); null = igual no que o Escrivão mexe. */
+/** Diferença entre duas fichas (formato gravado ou hidratado); null = igual no que os efeitos mexem. */
 export function sheetDiff(a: Sheet, b: Sheet): Omit<CharUndo, "id"> | null {
   const d: Omit<CharUndo, "id"> = {};
   if ((b.xp ?? 0) !== (a.xp ?? 0)) d.xp = (b.xp ?? 0) - (a.xp ?? 0);
@@ -169,7 +169,7 @@ async function applyUndo(campaignId: string, u: ScribeUndo): Promise<void> {
 }
 
 /**
- * Desfaz o registro `index` do Escrivão na narração `messageId`. Só o do último turno: o "gerar novamente" volta à foto
+ * Desfaz o efeito `index` aplicado depois da narração `messageId`. Só o do último turno: o "gerar novamente" volta à foto
  * de antes dele e apaga a narração junto com a marca de desfeito. A marca é posta antes, numa gravação só: dois
  * cliques não desfazem duas vezes.
  */
@@ -198,7 +198,7 @@ export async function undoScribe(campaignId: string, messageId: number, index: n
     await q(`UPDATE messages SET meta = jsonb_set(meta, ARRAY['scribe', $2, 'undone'], 'false') WHERE id = $1`, [messageId, String(index)]);
     throw e;
   }
-  // o que o Mestre lê como "o Escrivão registrou" (meta.notes) perde o desfeito
+  // o que ficou registrado (meta.notes) perde o desfeito
   await q(
     `UPDATE messages SET meta = jsonb_set(meta, '{notes}', COALESCE((SELECT jsonb_agg(e->'note') FROM jsonb_array_elements(meta->'scribe') e
        WHERE NOT COALESCE((e->>'undone')::boolean, false)), '[]'::jsonb)) WHERE id = $1`,
@@ -350,7 +350,7 @@ async function record(campaignId: string, source: "manual" | "desfazer", kind: s
   await q(`INSERT INTO corrections (campaign_id, source, agent, kind, summary, message_id) VALUES ($1, $2, $3, $4, $5, $6)`, [
     campaignId, source, agent, kind, summary, messageId,
   ]);
-  const text = (source === "desfazer" ? `desfez o registro do Escrivão: ${summary}` : summary).slice(0, 200);
+  const text = (source === "desfazer" ? `desfez o registro: ${summary}` : summary).slice(0, 200);
   await q(`UPDATE campaigns SET state = jsonb_set(state, '{playerFixes}', COALESCE(state->'playerFixes', '[]'::jsonb) || $2::jsonb) WHERE id = $1`, [
     campaignId,
     JSON.stringify([{ at: Date.now(), text }]),

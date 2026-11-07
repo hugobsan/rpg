@@ -4,7 +4,7 @@ import { discardNpcChat, endNpcChat } from "@/lib/npc";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-/** POST { sessionId, discard: true } → apaga a conversa sem registrar nada. POST { sessionId, fromCampaign? } → relógio e Escrivão pela conversa, linha dela no chat da campanha (com a fala de encerramento do NPC se a conversa nasceu de uma ação na campanha) e, em segundo plano, o Cronista com os pontos importantes. */
+/** POST { sessionId, discard: true } → apaga a conversa sem registrar nada. POST { sessionId, fromCampaign? } → o Anotador lê a conversa e os efeitos dela entram (tempo, itens, missão, fatos), e a linha dela vai ao chat da campanha (com a fala de encerramento do NPC se a conversa nasceu de uma ação na campanha). */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; npcId: string }> }

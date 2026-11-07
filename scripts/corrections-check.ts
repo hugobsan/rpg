@@ -1,8 +1,8 @@
 /**
- * Correções do registro pelo jogador, sem IA (src/lib/corrections.ts): roda o runTurn com a rede falsa do
- * scribe-check (Mestre e Escrivão por roteiro; Jev e embeddings falham) numa campanha temporária.
- * Confere: o Escrivão guarda o que aplicou (meta.scribe) e as etiquetas levam { messageId, index }; desfazer item,
- * recurso, XP, memória, missão criada e status de missão (com a XP da conclusão); desfazer duas vezes não duplica;
+ * Correções do registro pelo jogador, sem IA (src/lib/corrections.ts): roda o runTurn com a rede falsa (o Narrador
+ * responde por roteiro com o bloco de efeitos; Jev, Intérprete e embeddings falham) numa campanha temporária.
+ * Confere: os efeitos aplicados ficam em meta.scribe e as etiquetas levam { messageId, index }; desfazer item,
+ * dinheiro, memória, missão criada e status de missão (com a XP da conclusão); desfazer duas vezes não duplica;
  * registro de turno anterior não se desfaz; edição manual (XP sobe nível, recurso, item, domínio, missão perdida que
  * foi cumprida dá a XP uma vez só); a linha no contexto do Mestre e o consumo dela; gerar novamente coerente; a rota
  * recusa durante o turno; a tabela corrections.
@@ -41,27 +41,20 @@ g.__pgPool = {
   end: () => real.end(),
 };
 
-// ---------- rede: Mestre e Escrivão por roteiro ----------
-type Call = { name: string; args: Record<string, unknown> };
+// ---------- rede: o Narrador por roteiro, com o bloco de efeitos ----------
 const gmScript: string[] = [];
-const scribeScript: Call[][] = [];
-const gmCtx: string[] = []; // contexto do turno que o Mestre recebeu
+const gmCtx: string[] = []; // contexto do turno que o Narrador recebeu
 let events: TurnEvent[] = [];
-const toolCalls = (calls: Call[]) => calls.map((c, i) => ({ id: `c${i}`, type: "function", function: { name: c.name, arguments: JSON.stringify(c.args) } }));
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   if (!String(input).endsWith("/chat/completions")) return new Response("fora do roteiro", { status: 500 });
   const body = JSON.parse(String(init?.body));
   const tools: string[] = (body.tools || []).map((t: { function: { name: string } }) => t.function.name);
-  if (tools.includes("use_ability")) {
+  if (tools.includes("search_lore")) {
     const text = gmScript.shift();
-    assert.ok(text, "Mestre chamado além do roteiro");
+    assert.ok(text, "Narrador chamado além do roteiro");
     gmCtx.push(body.messages.map((m: { content: unknown }) => String(m.content ?? "")).join("\n"));
     const chunks = [{ choices: [{ delta: { content: text } }] }, { choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1 } }];
     return new Response(chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("") + "data: [DONE]\n\n");
-  }
-  if (tools.includes("update_resource")) {
-    const calls = scribeScript.shift() ?? [];
-    return Response.json({ choices: [{ message: { content: "", tool_calls: calls.length ? toolCalls(calls) : undefined } }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
   }
   return Response.json({ choices: [{ message: { content: "?" } }] });
 }) as typeof fetch;
@@ -96,6 +89,7 @@ async function main() {
   const id: string = c.id;
   const sheet0 = blankSheet(rs);
   sheet0.inventory = [{ name: "Shuriken", qty: 3 }];
+  sheet0.money = 1000;
   const sheetOf = async () =>
     (await real.query(`SELECT sheet FROM characters WHERE campaign_id = $1 AND kind = 'player'`, [id])).rows[0].sheet as Sheet;
   const stateOf = async () => (await real.query(`SELECT state FROM campaigns WHERE id = $1`, [id])).rows[0].state as Record<string, unknown>;
@@ -103,9 +97,8 @@ async function main() {
     (await real.query(`SELECT id::int AS id, meta FROM messages WHERE campaign_id = $1 AND role = 'gm' ORDER BY id DESC LIMIT 1`, [id])).rows[0] as {
       id: number; meta: { notes: string[]; scribe: ScribeEntry[] };
     };
-  const turn = async (input: string, narration: string, scribe: Call[]) => {
-    gmScript.push(narration);
-    scribeScript.push(scribe);
+  const turn = async (input: string, narration: string, effects: object) => {
+    gmScript.push(`${narration}\n\`\`\`efeitos\n${JSON.stringify(effects)}\n\`\`\``);
     events = [];
     const started = Date.now();
     await runTurn(id, input, (e) => events.push(e));
@@ -115,18 +108,16 @@ async function main() {
   try {
     await real.query(`INSERT INTO scenes (campaign_id, seq, mode, location) VALUES ($1, 1, 'exploration', 'Academia')`, [id]);
     await real.query(`INSERT INTO characters (campaign_id, kind, name, sheet) VALUES ($1, 'player', 'Hugo', $2)`, [id, JSON.stringify(sheet0)]);
-    const hp0 = sheet0.resources.hp.current;
 
-    // 1. turno: o Escrivão erra (tigela como item, dano, XP) e registra memória e missão
-    await turn("como no Ichiraku", "Você come uma tigela de lámen e esbarra na mesa.", [
-      { name: "add_item", args: { character: "Hugo", name: "Tigela", qty: 1 } },
-      { name: "update_resource", args: { character: "Hugo", resource: "hp", delta: -3 } },
-      { name: "grant_xp", args: { character: "Hugo", amount: 10, reason: "comeu" } },
-      { name: "add_memory", args: { kind: "event", content: "Hugo comeu no Ichiraku.", importance: 2 } },
-      { name: "add_objective", args: { title: "Pagar o Teuchi", kind: "outro" } },
-    ]);
+    // 1. turno: o bloco erra (tigela como item) e registra compra, fato e missão oferecida
+    await turn("como no Ichiraku", "Você come uma tigela de lámen e esbarra na mesa.", {
+      items: [{ name: "Tigela", qty: 1 }],
+      purchase: { item: "Lámen", qty: 1, price: 300 },
+      facts: [{ text: "Hugo comeu no Ichiraku." }],
+      mission: { op: "offer", title: "Pagar o Teuchi" },
+    });
     let m1 = await lastGm();
-    const idx = (tool: string, m = m1) => m.meta.scribe.findIndex((e) => e.tool === tool);
+    const idx = (tool: string, m = m1, name?: string) => m.meta.scribe.findIndex((e) => e.tool === tool && (!name || e.args.name === name));
     assert.equal(m1.meta.scribe.length, 5, "cada registro fica em meta.scribe");
     assert.ok(m1.meta.scribe.every((e) => e.undo && e.note), "com o que desfazer e a linha das notas");
     assert.deepEqual(m1.meta.notes, m1.meta.scribe.map((e) => e.note));
@@ -134,32 +125,31 @@ async function main() {
     assert.deepEqual(chip.scribe, { messageId: m1.id, index: idx("add_item") }, "a etiqueta sabe qual registro é");
     let s = await sheetOf();
     assert.ok(s.inventory.some((i) => i.name === "Tigela"));
-    assert.equal(s.resources.hp.current, hp0 - 3);
-    assert.equal(s.xp, 10);
+    assert.equal(s.money, 700, "compra paga");
 
-    // 2. desfazer: item, recurso, XP, memória e missão criada
+    // 2. desfazer: item, dinheiro, item da compra, memória e missão criada
     const memBefore = (await real.query(`SELECT count(*)::int AS n FROM memories WHERE campaign_id = $1`, [id])).rows[0].n;
     assert.match(await undoScribe(id, m1.id, idx("add_item")), /Hugo \+1x Tigela/);
     await fails(undoScribe(id, m1.id, idx("add_item")), /já foi desfeito/);
-    await undoScribe(id, m1.id, idx("update_resource"));
-    await undoScribe(id, m1.id, idx("grant_xp"));
+    await undoScribe(id, m1.id, idx("update_money"));
+    await undoScribe(id, m1.id, idx("add_item", m1, "Lámen"));
     await undoScribe(id, m1.id, idx("add_memory"));
     await undoScribe(id, m1.id, idx("add_objective"));
     s = await sheetOf();
     assert.ok(!s.inventory.some((i) => i.name === "Tigela"), "item sai");
     assert.equal(s.inventory.find((i) => i.name === "Shuriken")?.qty, 3, "desfazer duas vezes não mexe em mais nada");
-    assert.equal(s.resources.hp.current, hp0, "dano volta");
-    assert.equal(s.xp, 0, "XP volta");
+    assert.ok(!s.inventory.some((i) => i.name === "Lámen"), "item da compra sai");
+    assert.equal(s.money, 1000, "dinheiro volta");
     assert.equal((await real.query(`SELECT count(*)::int AS n FROM memories WHERE campaign_id = $1`, [id])).rows[0].n, memBefore - 1, "memória criada sai");
     assert.ok(!getObjectives(await stateOf()).some((o) => o.title === "Pagar o Teuchi"), "missão criada sai");
     m1 = await lastGm();
     assert.ok(m1.meta.scribe.every((e) => e.undone), "todos marcados como desfeitos");
-    assert.deepEqual(m1.meta.notes, [], "o Mestre não lê mais o que foi desfeito como registro");
+    assert.deepEqual(m1.meta.notes, [], "o que foi desfeito não fica como registro");
     assert.equal(((await stateOf()).playerFixes as unknown[]).length, 5);
 
-    // 3. próximo turno: o Mestre lê as correções numa linha e ela é consumida; o Escrivão conclui a missão com tamanho
-    await turn("vou treinar o Konohamaru", "O Konohamaru acerta o alvo.", [{ name: "update_objective", args: { objective: "o9", status: "concluido" } }]);
-    assert.match(gmCtx.at(-1)!, /O JOGADOR CORRIGIU A FICHA desde o seu último turno[^\n]*\ndesfez o registro do Escrivão: Hugo \+1x Tigela; desfez/);
+    // 3. próximo turno: o Narrador lê as correções numa linha e ela é consumida; o bloco conclui a missão com tamanho
+    await turn("vou treinar o Konohamaru", "O Konohamaru acerta o alvo.", { mission: { op: "complete", id: "o9" } });
+    assert.match(gmCtx.at(-1)!, /O JOGADOR CORRIGIU A FICHA desde o seu último turno[^\n]*\ndesfez o registro: Hugo \+1x Tigela; desfez/);
     assert.deepEqual((await stateOf()).playerFixes, [], "consumida depois da narração");
     await fails(undoScribe(id, m1.id, 0), /último turno/);
     const m2 = await lastGm();
@@ -182,7 +172,7 @@ async function main() {
     assert.equal(again.length, 5);
     assert.ok(!again.some((f) => /Konohamaru/.test(f.text)));
     // de novo, e agora o turno fica
-    await turn("vou treinar o Konohamaru", "O Konohamaru acerta o alvo.", [{ name: "update_objective", args: { objective: "o9", status: "concluido" } }]);
+    await turn("vou treinar o Konohamaru", "O Konohamaru acerta o alvo.", { mission: { op: "complete", id: "o9" } });
     assert.equal((await sheetOf()).xp, xpMission);
 
     // 5. edição manual: XP sobe nível pela regra, recurso, item, domínio, missão perdida que foi cumprida
@@ -233,7 +223,7 @@ async function main() {
     const fixes = (await stateOf()).playerFixes as { text: string }[];
     assert.ok(fixes.some((f) => /removeu 1x Shuriken/.test(f.text)), "a próxima narração vai ler as correções manuais");
 
-    console.log("corrections-check: ok (meta.scribe e etiquetas, desfazer item/recurso/XP/memória/missão/status uma vez só, só o último turno, linha ao Mestre consumida, gerar novamente coerente, edição manual pelas regras, rota bloqueada no turno, tabela corrections)");
+    console.log("corrections-check: ok (meta.scribe e etiquetas, desfazer item/dinheiro/memória/missão/status uma vez só, só o último turno, linha ao Mestre consumida, gerar novamente coerente, edição manual pelas regras, rota bloqueada no turno, tabela corrections)");
   } finally {
     await new Promise((r) => setTimeout(r, 300)); // o índice do histórico roda depois do done
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);

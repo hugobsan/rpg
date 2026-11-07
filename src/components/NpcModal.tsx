@@ -332,7 +332,7 @@ export default function NpcModal({
                 <p className={s.intro}>
                   <b>Conversa particular com {npc.name}</b>
                   Fora da narração do Mestre. Dependendo da cena, o personagem pode recusar parar para conversar.
-                  Ao encerrar, o que ela mudou (itens, missões) é registrado, o Cronista guarda os pontos importantes para o Mestre, e {npc.name} lembra de tudo.
+                  Ao encerrar, o que ela mudou (itens, missões, fatos importantes) é registrado, e {npc.name} lembra de tudo.
                 </p>
               )}
               {msgs.map((m, i) => (

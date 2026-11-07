@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { pool, q } from "../src/lib/db";
-import { executeGmTool, GM_TOOLS, SCRIBE_TOOLS, ToolContext } from "../src/lib/tools";
+import { executeGmTool, GM_TOOLS, ToolContext } from "../src/lib/tools";
 import { formatRemaining, getObjectives, Objective, objectivesPromptBlock, objectiveXp } from "../src/lib/objectives";
 import { DEFAULT_TABLE } from "../src/lib/table";
 import { restoreSnapshot, takeSnapshot } from "../src/lib/turnSnapshot";
@@ -46,15 +46,8 @@ async function main() {
     assert.match(await run("add_objective", { title: "Escolta", kind: "missao", description: "dup" }), /já existe \[o2\]/);
     // a mesma missão com prefixo de tipo ou pontuação diferente também é repetida (o Escrivão criava "Evento: X" ao lado de "X")
     assert.match(await run("add_objective", { title: "Missão: escolta!", kind: "missao", description: "dup" }), /já existe \[o2\]/);
-    // o Escrivão não tira prazo sem anotação de missão do Mestre no turno; com anotação, ou o Mestre fora do jogo, tira
-    const scribe = (briefs: number) => (n: string, a: Record<string, unknown>) => executeGmTool(n, a, { ...ctx, scribe: { briefs } });
-    assert.match(await scribe(0)("update_objective", { objective: "o2", noDeadline: true }), /^Nada mudou/);
-    assert.equal((await byTitle("Escolta")).deadlineMinutes, 480 + 180, "prazo mantido");
-    // nem cancela missão aceita sem anotação (cancelava ao jogador "encerrar o treino"); recusar oferta continua livre
-    assert.match(await scribe(0)("update_objective", { objective: "o2", status: "cancelado" }), /^Nada mudou.*continua aberto/);
-    assert.equal((await byTitle("Escolta")).status, "aberto", "missão aceita mantida");
     await run("add_objective", { title: "Favor do vizinho", kind: "outro", description: "levar recado", status: "oferecida" });
-    assert.match(await scribe(0)("update_objective", { objective: "Favor do vizinho", status: "cancelado" }), /cancelado/);
+    assert.match(await run("update_objective", { objective: "Favor do vizinho", status: "cancelado" }), /cancelado/);
 
     const block = objectivesPromptBlock(getObjectives(await state()), 480);
     assert.match(block, /\[o2\] Missão: Escolta — levar o Tazuna \| prazo: Dia 1 · 11:00 \(faltam 3 h\)/);
@@ -97,16 +90,15 @@ async function main() {
     assert.equal((await byTitle("Encontro")).status, "aberto", "gerar novamente devolve o objetivo aberto");
     ctx.campaign = { ...ctx.campaign, state: await state() };
 
-    // perdido no mesmo turno em que foi cumprido: o advance_time (anotação) roda antes do Escrivão e passa do prazo;
-    // o Escrivão ainda conclui, porque a perda é do instante atual
+    // perdido no mesmo turno em que foi cumprido: o relógio passa do prazo antes da conclusão; ainda conclui,
+    // porque a perda é do instante atual
     await run("add_objective", { title: "Ajudar no fechamento", kind: "outro", description: "limpar os bancos", inMinutes: 15 });
     out = await run("advance_time", { minutes: 45, reason: "limpeza" });
     assert.match(out, /PRAZO PERDIDO: "Ajudar no fechamento"/);
     assert.match(await run("update_objective", { objective: "Ajudar no fechamento", status: "concluido" }), /concluido/);
     assert.equal((await byTitle("Ajudar no fechamento")).status, "concluido", "cumprido no mesmo turno vale");
-
-    // treino longo (ferramenta train do outro agente, se já existir) passa do prazo
-    if (GM_TOOLS.some((t) => t.function.name === "train")) {
+    // treino longo (train do Resolvedor) passa do prazo
+    {
       const { blankSheet, normalizeRuleset } = await import("../src/lib/ruleset");
       const fs = await import("node:fs");
       const rs = normalizeRuleset(JSON.parse(fs.readFileSync("naruto-ruleset.json", "utf8")));
@@ -117,7 +109,7 @@ async function main() {
       out = await run("train", { character: "Hugo", target: rs.attributes[0].key, hours: 4, note: "treino pesado" });
       assert.match(out, /PRAZO PERDIDO: "Recado"/, out);
       assert.equal((await byTitle("Recado")).status, "perdido", "treino longo perde o prazo");
-    } else console.log("(train ainda não existe: caso do treino pulado)");
+    }
 
     // ---- XP pelo tamanho da missão e missão oferecida ----
     const { blankSheet, normalizeRuleset } = await import("../src/lib/ruleset");
@@ -162,15 +154,11 @@ async function main() {
     assert.ok(events.some((e) => e.type === "tool" && e.summary === "✅ Concluído: Entregar a carta (+5 XP)"));
     assert.ok(events.some((e) => e.type === "tool" && e.summary.includes("+5 XP (total 5) — missão: Entregar a carta")));
 
-    // conclusão com tamanho pelo Escrivão: o grant_xp no mesmo turno é recusado; em outro turno vale
-    const sctx: ToolContext = { ...ctx, scribe: { briefs: 0 } };
-    out = await executeGmTool("update_objective", { objective: "Caçar o gato Tora", status: "concluido" }, sctx);
+    // conclusão com tamanho: a XP vem da missão, por código
+    out = await run("update_objective", { objective: "Caçar o gato Tora", status: "concluido" });
     assert.match(out, /deu 10 XP/, out); // 10% dos 95 que faltam = 9,5 → 10
     assert.equal(await playerXp(), 15);
-    assert.match(await executeGmTool("grant_xp", { character: "Hugo", amount: 10, reason: "missão" }, sctx), /^Nada mudou: a missão Caçar o gato Tora já deu 10 XP neste turno/);
-    assert.equal(await playerXp(), 15, "sem XP em dobro");
-    assert.match(await executeGmTool("grant_xp", { character: "Hugo", amount: 3 }, { ...ctx, scribe: { briefs: 0 } }), /18 XP/, "outro turno vale");
-    assert.match(await run("grant_xp", { character: "Hugo", amount: 2 }), /20 XP/, "fora do jogo vale");
+    assert.match(await run("grant_xp", { character: "Hugo", amount: 5 }), /20 XP/, "fora do jogo vale");
 
     // excepcional: xp livre; mudar o tamanho pelo update; perdido no instante atual concluído também dá a XP
     await run("add_objective", { title: "Derrotar o Zabuza", kind: "missao", description: "na ponte", xpSize: "pequena", inMinutes: 10 });
@@ -184,18 +172,17 @@ async function main() {
     // ---- registro errado: aceitar oferecida com prazo vencido, recriar encerrada, fix_objective do Mestre ----
     {
       ctx.campaign = { ...ctx.campaign, state: await state() };
-      const sc = (n: string, a: Record<string, unknown>) => executeGmTool(n, a, { ...ctx, scribe: { briefs: 0 } });
-      // a oferta era o próprio bloco de treino: prazo = fim do bloco; o relógio passa e o Escrivão aceita depois
+      const sc = (n: string, a: Record<string, unknown>) => executeGmTool(n, a, ctx);
+      // a oferta era o próprio bloco de treino: prazo = fim do bloco; o relógio passa e o aceite vem depois
       await run("add_objective", { title: "Bloco de treino", kind: "evento", description: "uma hora", status: "oferecida", inMinutes: 60 });
       await run("advance_time", { minutes: 61, reason: "treino" });
       assert.match(await sc("update_objective", { objective: "Bloco de treino", status: "aberto" }), /^Nada mudou: o prazo/, "aceitar com prazo vencido é recusado");
       assert.equal((await byTitle("Bloco de treino")).status, "oferecida");
       assert.match(await sc("update_objective", { objective: "Bloco de treino", status: "concluido" }), /concluido/, "mas concluir vale");
-      // o Escrivão concluiu por engano e tenta recriar: recusado, o Mestre corrige
+      // concluída por engano: o fora do jogo corrige com fix_objective
       await run("add_objective", { title: "Resposta do chefe", kind: "evento", description: "aguardar", inDays: 1 });
       const resp = await byTitle("Resposta do chefe");
       await sc("update_objective", { objective: resp.id, status: "concluido" });
-      assert.match(await sc("add_objective", { title: "Evento: Resposta do chefe", kind: "evento", description: "de novo", inDays: 1 }), /encerrada há pouco/);
       assert.match(await run("fix_objective", { objective: resp.id }), /reason/, "sem motivo não corrige");
       assert.match(await run("fix_objective", { objective: resp.id, reason: "não respondeu ainda", status: "aberto" }), /corrigido: aberto/);
       assert.equal((await byTitle("Resposta do chefe")).status, "aberto");
@@ -206,7 +193,7 @@ async function main() {
       await run("add_objective", { title: "Duplicada por engano", kind: "outro", description: "x" });
       assert.match(await run("fix_objective", { objective: "Duplicada por engano", reason: "duplicada", remove: true }), /removido/);
       assert.equal(getObjectives(await state()).some((o) => o.title === "Duplicada por engano"), false);
-      assert.ok(GM_TOOLS.some((t) => t.function.name === "fix_objective") && !SCRIBE_TOOLS.has("fix_objective"), "fix_objective é do Mestre, não do Escrivão");
+      assert.ok(GM_TOOLS.some((t) => t.function.name === "fix_objective"), "fix_objective fica no fora do jogo");
     }
     // ---- aceitar e recusar pelo painel (rota, sem IA), o aviso no contexto do Mestre e quando ele some ----
     {
