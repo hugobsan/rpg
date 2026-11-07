@@ -55,7 +55,7 @@ No FIM, sempre, o bloco efeitos: JSON com o que a cena mudou, só os campos que 
 - mission: {"op": "offer|accept|complete|fail", "id": "id das MISSÕES"}; em offer, {"title", "pay", "size": "pequena|media|grande"} no lugar do id.
 
 EXEMPLO
-Genma não responde logo. O senbon corre de um canto da boca ao outro enquanto ele mede a faixa de papel na parede.
+Genma não responde logo. Ele mede a faixa de papel na parede com o olhar, como quem conta os passos até ela.
 
 **Genma:** "Curto e sobre a faixa. Se pesar nos ombros, você solta e me avisa." Ele já se encosta no batente, de olho no pátio.
 
