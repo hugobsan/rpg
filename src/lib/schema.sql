@@ -346,3 +346,30 @@ CREATE TABLE IF NOT EXISTS hooks (
   last_touched_scene INT NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS hooks_campaign_idx ON hooks (campaign_id);
+
+-- memória por testemunha (lib/knowledge.ts): fatos atômicos (sem resumo em prosa) e quem sabe cada um. witnessed = estava
+-- na cena no fim do turno (código); told = alguém contou (from_name); public = anúncio ou boato (events.public: vale
+-- também para quem entrar depois, sem linha em knowledge). message_id com CASCADE some junto com a narração; o id de
+-- knowledge serve à foto do turno e ao desfazer (as linhas só entram, nunca mudam).
+CREATE TABLE IF NOT EXISTS events (
+  id BIGSERIAL PRIMARY KEY,
+  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  scene_id UUID REFERENCES scenes(id) ON DELETE SET NULL,
+  message_id BIGINT REFERENCES messages(id) ON DELETE CASCADE,
+  minute INT,                               -- relógio do jogo (lib/clock.ts); NULL = sem relógio
+  text TEXT NOT NULL,
+  public BOOLEAN NOT NULL DEFAULT FALSE,
+  tsv TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple', text)) STORED,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS events_campaign_idx ON events (campaign_id, id);
+CREATE INDEX IF NOT EXISTS events_tsv_idx ON events USING GIN (tsv);
+CREATE TABLE IF NOT EXISTS knowledge (
+  id BIGSERIAL,
+  event_id BIGINT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  character_id UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  access TEXT NOT NULL DEFAULT 'witnessed', -- witnessed | told | public
+  from_name TEXT,                           -- quem contou (told)
+  PRIMARY KEY (event_id, character_id)
+);
+CREATE INDEX IF NOT EXISTS knowledge_character_idx ON knowledge (character_id);

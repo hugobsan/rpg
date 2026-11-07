@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { knownLine, knowsOf } from "./knowledge";
 import { db, q } from "./db";
 import { getAgent } from "./agents";
 import { chat } from "./openrouter";
@@ -247,10 +248,7 @@ async function createProfile(
       `SELECT name, kind, persona->>'role' AS role FROM characters WHERE campaign_id = $1 AND id <> $2 ORDER BY kind DESC, name LIMIT 60`,
       [cid, npc.id]
     ),
-    q<{ content: string }>(
-      `SELECT content FROM memories WHERE campaign_id = $1 AND lower(subject) = lower($2) ORDER BY importance DESC, id DESC LIMIT 20`,
-      [cid, npc.name]
-    ),
+    knowsOf(cid, npc.id, "", 20), // o que ele sabe da história (fatos que viu, contaram ou são públicos)
     hydrateSheet(base.sheet), // a foto pode vir crua (só ref): o Refazer precisa dos nomes
   ]);
   const r = campaign.ruleset;
@@ -277,7 +275,7 @@ async function createProfile(
     redo
       ? `PERFIL E FICHA ATUAIS (o personagem já está na história: mantenha cargo, habilidades, itens e fatos; corrija só o que contradiz a obra; enriqueça o que estiver vazio ou raso)\n${JSON.stringify({ persona: known, sheet: sheetNow })}`
       : `Já definido pelo Mestre (expanda sem contradizer): ${JSON.stringify({ ...known, backstory: undefined })}${fixedRank ? ` | cargo FIXO: ${base.sheet.rank}` : ""}`, // backstory = o brief
-    memories.length && `MEMÓRIAS DA CAMPANHA SOBRE ${npc.name}\n${memories.map((m) => `- ${m.content}`).join("\n")}`,
+    memories.length && `O QUE ${npc.name} JÁ VIU OU SOUBE NA CAMPANHA\n${memories.map(knownLine).join("\n")}`,
   ]
     .filter(Boolean)
     .join("\n\n");

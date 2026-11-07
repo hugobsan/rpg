@@ -38,7 +38,8 @@ type CharUndo = {
 export interface ScribeUndo {
   chars?: CharUndo[];
   objectives?: { id: string; before: Objective | null }[]; // null = criada pelo registro
-  memory?: number;
+  events?: number[]; // fato criado (add_fact, tell_fact)
+  knowledge?: number[]; // quem ficou sabendo (tell_fact de um fato que já existia)
 }
 /** Efeito aplicado guardado na narração (meta.scribe); note é a linha de meta.notes. */
 export interface ScribeEntry {
@@ -51,21 +52,21 @@ export interface ScribeEntry {
 }
 
 type Raw = { id: string; sheet: Sheet };
-export type ScribeBefore = { chars: Raw[]; objectives: Objective[]; mem: number };
+export type ScribeBefore = { chars: Raw[]; objectives: Objective[]; ev: number; kn: number };
 
-/** O que um registro pode mudar: o jogador e o personagem citado, as missões e a última memória. */
+/** O que um registro pode mudar: o jogador e o personagem citado, as missões e os fatos (últimos ids de events e knowledge). */
 export async function scribeState(campaignId: string, args: Record<string, unknown>): Promise<ScribeBefore> {
   const [chars, [row]] = await Promise.all([
     q<Raw>(`SELECT id, sheet FROM characters WHERE campaign_id = $1 AND (kind = 'player' OR lower(name) = lower($2))`, [
       campaignId,
       String(args.character ?? ""),
     ]),
-    q<{ state: Record<string, unknown>; mem: string | null }>(
-      `SELECT state, (SELECT MAX(id) FROM memories WHERE campaign_id = $1) AS mem FROM campaigns WHERE id = $1`,
+    q<{ state: Record<string, unknown>; ev: string | null; kn: string | null }>(
+      `SELECT state, (SELECT MAX(id) FROM events) AS ev, (SELECT MAX(id) FROM knowledge) AS kn FROM campaigns WHERE id = $1`,
       [campaignId]
     ),
   ]);
-  return { chars, objectives: getObjectives(row?.state), mem: Number(row?.mem ?? 0) };
+  return { chars, objectives: getObjectives(row?.state), ev: Number(row?.ev ?? 0), kn: Number(row?.kn ?? 0) };
 }
 
 const abilityKey = (a: Pick<Ability, "ref" | "name">) => String(a.ref ?? a.name);
@@ -136,12 +137,14 @@ export async function scribeUndo(
     const was = before.objectives.find((x) => x.id === o.id) ?? null;
     if (JSON.stringify(was) !== JSON.stringify(o)) (u.objectives ??= []).push({ id: o.id, before: was });
   }
-  if (tool === "add_memory") {
-    const [m] = await q<{ id: string }>(
-      `SELECT id FROM memories WHERE campaign_id = $1 AND id > $2 AND right(content, length($3)) = $3 ORDER BY id DESC LIMIT 1`,
-      [campaignId, before.mem, String(args.content ?? "")]
+  if (tool === "add_fact" || tool === "tell_fact") {
+    const [ids] = await q<{ ev: string[] | null; kn: string[] | null }>(
+      `SELECT (SELECT array_agg(id) FROM events WHERE campaign_id = $1 AND id > $2) AS ev,
+              (SELECT array_agg(k.id) FROM knowledge k JOIN events e ON e.id = k.event_id WHERE e.campaign_id = $1 AND k.id > $3) AS kn`,
+      [campaignId, before.ev, before.kn]
     );
-    if (m) u.memory = Number(m.id);
+    if (ids.ev?.length) u.events = ids.ev.map(Number);
+    else if (ids.kn?.length) u.knowledge = ids.kn.map(Number);
   }
   return Object.keys(u).length ? u : undefined;
 }
@@ -165,7 +168,8 @@ async function applyUndo(campaignId: string, u: ScribeUndo): Promise<void> {
       list = !before ? list.filter((o) => o.id !== id) : list.some((o) => o.id === id) ? list.map((o) => (o.id === id ? before : o)) : [...list, before];
     await saveObjectives(campaignId, list);
   }
-  if (u.memory) await q(`DELETE FROM memories WHERE id = $1 AND campaign_id = $2`, [u.memory, campaignId]);
+  if (u.events?.length) await q(`DELETE FROM events WHERE id = ANY($1::bigint[]) AND campaign_id = $2`, [u.events, campaignId]);
+  if (u.knowledge?.length) await q(`DELETE FROM knowledge WHERE id = ANY($1::bigint[])`, [u.knowledge]);
 }
 
 /**

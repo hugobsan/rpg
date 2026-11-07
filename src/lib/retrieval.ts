@@ -3,15 +3,6 @@ import { hasVector, q } from "./db";
 import { embed, toVectorLiteral } from "./embeddings";
 import { formatClock } from "./clock";
 
-export interface MemoryHit {
-  id: number;
-  kind: string;
-  subject: string | null;
-  content: string;
-  importance: number;
-  created_at: string;
-}
-
 export interface ChunkHit {
   book_id: string;
   title: string;
@@ -19,84 +10,13 @@ export interface ChunkHit {
   content: string;
 }
 
-/** Grava memória com embedding (quando disponível). */
-export async function addMemory(
-  campaignId: string,
-  kind: string,
-  content: string,
-  subject?: string | null,
-  importance = 3
-): Promise<number> {
+/** Grava uma diretriz do jogador (memories só guarda diretrizes; os fatos da história ficam em events, lib/knowledge). */
+export async function addMemory(campaignId: string, kind: string, content: string, subject?: string | null, importance = 3): Promise<number> {
   const rows = await q<{ id: number }>(
-    `INSERT INTO memories (campaign_id, kind, subject, content, importance)
-     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    `INSERT INTO memories (campaign_id, kind, subject, content, importance) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
     [campaignId, kind, subject || null, content, importance]
   );
-  const id = rows[0].id;
-  if (await hasVector()) {
-    const vecs = await embed([content]);
-    if (vecs?.[0])
-      await q(`UPDATE memories SET embedding = $1 WHERE id = $2`, [
-        toVectorLiteral(vecs[0]),
-        id,
-      ]).catch(() => {});
-  }
-  return id;
-}
-
-/**
- * Busca memórias: vetorial (pgvector, cosseno) quando há embeddings;
- * fallback para full-text search + ILIKE do Postgres. maxDistance = corte de distância de cosseno (2 = sem corte).
- * Só compara vetores da dimensão da consulta: trocar modelo/dimensões sem reprocessar não quebra a busca.
- */
-export async function searchMemories(
-  campaignId: string,
-  query: string,
-  opts: { kind?: string; subject?: string; limit?: number; maxDistance?: number } = {}
-): Promise<MemoryHit[]> {
-  const limit = opts.limit ?? 6;
-  // diretrizes do jogador entram sempre por activeDirectives, não pela busca
-  const filters: string[] = ["campaign_id = $1", "kind <> 'directive'"];
-  const params: unknown[] = [campaignId];
-  if (opts.kind) {
-    params.push(opts.kind);
-    filters.push(`kind = $${params.length}`);
-  }
-  // sobre quem: marcada com o nome ou que o cita ("Time 7" com Naruto no texto também é do Naruto)
-  if (opts.subject) {
-    params.push(opts.subject);
-    filters.push(`(subject ILIKE '%' || $${params.length} || '%' OR content ILIKE '%' || $${params.length} || '%')`);
-  }
-  const where = filters.join(" AND ");
-
-  if (await hasVector()) {
-    const vecs = await embed([query]);
-    if (vecs?.[0]) {
-      const n = params.length;
-      params.push(toVectorLiteral(vecs[0]), vecs[0].length, opts.maxDistance ?? 2, limit);
-      // CASE: o <=> só roda com a dimensão igual (a ordem do AND no WHERE não é garantida)
-      const rows = await q<MemoryHit>(
-        `SELECT id, kind, subject, content, importance, created_at::text
-         FROM memories WHERE ${where}
-           AND CASE WHEN vector_dims(embedding) = $${n + 2} THEN embedding <=> $${n + 1} <= $${n + 3} END
-         ORDER BY embedding <=> $${n + 1} LIMIT $${n + 4}`,
-        params
-      );
-      if (rows.length) return rows;
-      params.splice(n); // sem embeddings gravados ainda (ou de outra dimensão): cai para FTS
-    }
-  }
-  params.push(query, limit);
-  return q<MemoryHit>(
-    `SELECT id, kind, subject, content, importance, created_at::text
-     FROM memories
-     WHERE ${where} AND (
-       to_tsvector('simple', content) @@ websearch_to_tsquery('simple', $${params.length - 1})
-       OR content ILIKE '%' || $${params.length - 1} || '%'
-     )
-     ORDER BY importance DESC, id DESC LIMIT $${params.length}`,
-    params
-  );
+  return rows[0].id;
 }
 
 /**
@@ -241,7 +161,7 @@ export async function indexHistory(campaignId: string, now = true): Promise<numb
 }
 
 /** Prefixos (5 letras) das palavras de 4+ letras da busca: "perguntei" acha "pergunta". */
-const queryTerms = (query: string) => [...new Set((query.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || []).map((w) => w.slice(0, 5)))];
+export const queryTerms = (query: string) => [...new Set((query.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || []).map((w) => w.slice(0, 5)))];
 
 /**
  * Busca no histórico: vetorial quando há embeddings, senão full-text (qualquer termo, por relevância). npc = só trechos
@@ -323,7 +243,7 @@ export function historyLine(h: HistoryHit, query: string, max?: number): string 
 /** O que vai ao Mestre (search_history e trechos lembrados no turno). */
 export function formatHistory(hits: HistoryHit[], query: string, max?: number): string {
   return [
-    "Trechos do chat: é o que aconteceu naquele momento; se discordarem da ficha ou das memórias atuais, valem a ficha e as memórias.",
+    "Trechos do chat: é o que aconteceu naquele momento; se discordarem da ficha ou dos fatos atuais, valem a ficha e os fatos.",
     ...hits.map((h) => historyLine(h, query, max)),
   ].join("\n---\n");
 }

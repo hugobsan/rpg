@@ -106,7 +106,7 @@ async function main() {
     // o que o Mestre recebe da ferramenta
     const ctx = { campaign: { id, state: {}, ruleset: {} } as unknown as Campaign, scene, emit: () => {} } as ToolContext;
     const out = await executeGmTool("search_history", { query: "o que o Naruto respondeu quando perguntei" }, ctx);
-    assert.ok(out.startsWith("Trechos do chat: é o que aconteceu naquele momento; se discordarem da ficha ou das memórias atuais, valem a ficha e as memórias."), out);
+    assert.ok(out.startsWith("Trechos do chat: é o que aconteceu naquele momento; se discordarem da ficha ou dos fatos atuais, valem a ficha e os fatos."), out);
     assert.ok(out.includes("[Dia 2 · 14:00, Quiosque de ramen, Konoha]\nJogador: Como um ramen"), out);
     assert.ok(out.includes("Sou eu sim") && out.length < 2500, `curto: ${out.length}`);
     const npcOut = await executeGmTool("search_history", { query: "treinar", npc: "Naruto" }, ctx);

@@ -4,6 +4,8 @@ import { chat, ChatMessage } from "./openrouter";
 import { clockParts, getClock } from "./clock";
 import { getTable } from "./table";
 import { executeGmTool, loadObjectives, saveObjectives, type ToolContext } from "./tools";
+import { getObjectives } from "./objectives";
+import { recordFact } from "./knowledge";
 import { scribeState, scribeUndo, type ScribeEntry } from "./corrections";
 import { emptyEffects, type Effects, type EffectsCtx, parseLooseJson, splitNarration, TIME_SPANS, validateEffects } from "./contracts";
 import type { Character, TurnEvent } from "./types";
@@ -17,9 +19,12 @@ import type { Character, TurnEvent } from "./types";
 export async function applyEffects(
   ctx: ToolContext,
   fx: Effects,
-  opts: { player: Character; messageId: number; subject?: string }
+  opts: { player: Character; messageId: number; audience?: string[] }
 ): Promise<ScribeEntry[]> {
   const applied: ScribeEntry[] = [];
+  // fatos: com a narração (gerar novamente apaga) e, na conversa particular, só o jogador e o NPC ficam sabendo
+  ctx.messageId = opts.messageId || undefined;
+  ctx.audience = opts.audience;
   const emit = ctx.emit;
   const run = async (name: string, args: Record<string, unknown>) => {
     const chips: Extract<TurnEvent, { type: "tool" }>[] = [];
@@ -82,9 +87,18 @@ export async function applyEffects(
   if (span > 0) await run("advance_time", { minutes: span });
   else if (span < 0) await run("set_time", { day: clockParts(getClock(ctx.campaign.state)?.minutes ?? 0).day + 1, hour: 7 });
 
-  // TODO(F3): fatos viram events com testemunhas (elenco presente) e told vira knowledge; por ora, memória simples
-  for (const f of fx.facts) await run("add_memory", { kind: "event", content: f.text, subject: opts.subject ?? null, importance: f.public ? 3 : 2 });
-  for (const t of fx.told) await run("add_memory", { kind: "event", content: `${t.by} contou a ${t.to.join(", ")}: ${t.fact}`, subject: t.by, importance: 2 });
+  // fatos e "contou" por último: testemunha = quem está na cena no fim do turno (depois de cena e elenco)
+  for (const f of fx.facts) await run("add_fact", { text: f.text, public: f.public });
+  for (const t of fx.told) await run("tell_fact", { fact: t.fact, by: t.by, to: t.to });
+  // o que mais a cena viu, sem etiqueta: a compra (o vendedor lembra) e a missão aceita ou cumprida
+  const seen: string[] = [];
+  if (fx.purchase && applied.some((e) => e.tool === "update_money")) seen.push(`${opts.player.name} comprou ${fx.purchase.qty}x ${fx.purchase.item}`);
+  const mission = m && (m.op === "accept" || m.op === "complete") ? getObjectives(ctx.campaign.state).find((o) => o.id === m.id) : undefined;
+  if (mission) seen.push(`${opts.player.name} ${m!.op === "accept" ? "aceitou" : "cumpriu"} a missão "${mission.title}"`);
+  for (const text of seen)
+    await recordFact(ctx.campaign.id, text, { sceneId: ctx.scene.id, messageId: ctx.messageId, minute: getClock(ctx.campaign.state)?.minutes ?? null, witnesses: ctx.audience }).catch((e) =>
+      console.warn("[fatos]", e)
+    );
   return applied;
 }
 

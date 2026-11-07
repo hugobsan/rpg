@@ -42,6 +42,12 @@ export const NARRATIVE_MIN = 0.7;
 // Roteirista: beat cuja situation só acontece por ato do personagem do jogador sai do plano se P >= limiar. Sem probe
 // medido (seção 14); alto porque o falso positivo mata o mistério ("o selo reage ao chakra dele" é o mundo agindo).
 export const PC_ACT_MIN = 0.8;
+// Pós-checagem da narração (lib/engine): a fala do NPC cita algo fora do SABE dele se P >= limiar → refaz 1 vez. Probe
+// (2026-11-07, 3 rodadas, seção 15 do jev-check): vazamento 0.63-0.86 (Asuma "o Genma te espera às duas" 0.63-0.64, Tenten e o
+// javali 0.83-0.86, recibo 0.70-0.73, promessa do Naruto 0.72-0.77; na cena de grupo 0.67-0.77); não vazamento 0.04-0.50
+// (o que viu 0.24-0.33, "contaram" 0.07, ofício 0.05, a própria cena 0.48-0.50). No meio do vão: falso positivo custa
+// uma narração a mais; falso negativo deixa passar (o filtro de entrada, o bloco SABE, é a defesa principal).
+export const LEAK_MIN = 0.6;
 
 // ---------- tipos da API ----------
 
@@ -362,4 +368,43 @@ export async function decideGender(g: GenderInput, campaignId: string): Promise<
   for (const k of ["male", "female"] as const)
     if ((a.probabilities?.[k] ?? (a.choice === k ? 1 : 0)) >= min) return k;
   return null;
+}
+
+// ---------- 7: pós-checagem da narração (o NPC falou do que não sabe?) ----------
+
+export interface LeakInput {
+  name: string;
+  knows: string[]; // o bloco SABE dele, em linhas
+  lines: string[]; // as falas dele na narração
+}
+
+/** Uma pergunta por NPC que falou, numa chamada; a cena recente conta como vista por quem está nela. */
+export function buildLeakRequest(scene: { recent: string; narration: string }, npcs: LeakInput[]): DecisionRequest {
+  const state: Record<string, unknown> = { cena_recente: scene.recent || null, narracao: scene.narration };
+  const questions: Record<string, Question> = {};
+  npcs.forEach((n, i) => {
+    state[`npc_${i}`] = { nome: n.name, sabe: n.knows.length ? n.knows : ["(nada registrado)"], falas: n.lines };
+    questions[`leak_${i}`] = {
+      type: "noul",
+      instructions: `As \`falas\` de \`npc_${i}\` afirmam ou dão a entender que ele conhece um acontecimento da história (algo que alguém fez ou disse, um compromisso, uma promessa, uma conversa) que NÃO está em \`sabe\` dele e não acontece em \`cena_recente\` nem na \`narracao\`?`,
+      criteria: {
+        true: "Sim: ele cita ou insinua um acontecimento que não viu, não ouviu e ninguém contou a ele.",
+        false:
+          "Não: ele só usa o que está em `sabe`, o que acontece na cena, conhecimento geral do mundo ou do ofício dele (técnicas, preços, lugares, costumes), ou pergunta sem afirmar.",
+      },
+    };
+  });
+  return { state, questions };
+}
+
+/** Nomes dos NPCs cuja fala passou do que sabem. Falha do Jev = nenhum (aceita a narração). */
+export async function decideLeaks(scene: { recent: string; narration: string }, npcs: LeakInput[], campaignId: string): Promise<{ flagged: string[]; p: Record<string, number> }> {
+  if (!npcs.length) return { flagged: [], p: {} };
+  const answers = await decide(buildLeakRequest(scene, npcs), { campaignId, purpose: `fala fora do SABE? (${npcs.map((n) => n.name).join(", ")})` });
+  const p: Record<string, number> = {};
+  npcs.forEach((n, i) => {
+    const v = answers ? noulOf(answers, `leak_${i}`) : undefined;
+    if (v !== undefined) p[n.name] = v;
+  });
+  return { flagged: npcs.filter((n) => (p[n.name] ?? 0) >= LEAK_MIN).map((n) => n.name), p };
 }

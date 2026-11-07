@@ -127,20 +127,22 @@ async function main() {
     assert.ok(s.inventory.some((i) => i.name === "Tigela"));
     assert.equal(s.money, 700, "compra paga");
 
-    // 2. desfazer: item, dinheiro, item da compra, memória e missão criada
-    const memBefore = (await real.query(`SELECT count(*)::int AS n FROM memories WHERE campaign_id = $1`, [id])).rows[0].n;
+    // 2. desfazer: item, dinheiro, item da compra, fato e missão criada
+    const evBefore = (await real.query(`SELECT count(*)::int AS n FROM events WHERE campaign_id = $1`, [id])).rows[0].n;
     assert.match(await undoScribe(id, m1.id, idx("add_item")), /Hugo \+1x Tigela/);
     await fails(undoScribe(id, m1.id, idx("add_item")), /já foi desfeito/);
     await undoScribe(id, m1.id, idx("update_money"));
     await undoScribe(id, m1.id, idx("add_item", m1, "Lámen"));
-    await undoScribe(id, m1.id, idx("add_memory"));
+    await undoScribe(id, m1.id, idx("add_fact"));
     await undoScribe(id, m1.id, idx("add_objective"));
     s = await sheetOf();
     assert.ok(!s.inventory.some((i) => i.name === "Tigela"), "item sai");
     assert.equal(s.inventory.find((i) => i.name === "Shuriken")?.qty, 3, "desfazer duas vezes não mexe em mais nada");
     assert.ok(!s.inventory.some((i) => i.name === "Lámen"), "item da compra sai");
     assert.equal(s.money, 1000, "dinheiro volta");
-    assert.equal((await real.query(`SELECT count(*)::int AS n FROM memories WHERE campaign_id = $1`, [id])).rows[0].n, memBefore - 1, "memória criada sai");
+    const evs = (await real.query(`SELECT text FROM events WHERE campaign_id = $1`, [id])).rows.map((r) => r.text);
+    assert.equal(evs.length, evBefore - 1, "fato criado sai");
+    assert.deepEqual(evs, ["Hugo comprou 1x Lámen"], "o da compra (sem etiqueta) fica");
     assert.ok(!getObjectives(await stateOf()).some((o) => o.title === "Pagar o Teuchi"), "missão criada sai");
     m1 = await lastGm();
     assert.ok(m1.meta.scribe.every((e) => e.undone), "todos marcados como desfeitos");
@@ -223,7 +225,7 @@ async function main() {
     const fixes = (await stateOf()).playerFixes as { text: string }[];
     assert.ok(fixes.some((f) => /removeu 1x Shuriken/.test(f.text)), "a próxima narração vai ler as correções manuais");
 
-    console.log("corrections-check: ok (meta.scribe e etiquetas, desfazer item/dinheiro/memória/missão/status uma vez só, só o último turno, linha ao Mestre consumida, gerar novamente coerente, edição manual pelas regras, rota bloqueada no turno, tabela corrections)");
+    console.log("corrections-check: ok (meta.scribe e etiquetas, desfazer item/dinheiro/fato/missão/status uma vez só, só o último turno, linha ao Mestre consumida, gerar novamente coerente, edição manual pelas regras, rota bloqueada no turno, tabela corrections)");
   } finally {
     await new Promise((r) => setTimeout(r, 300)); // o índice do histórico roda depois do done
     await real.query(`DELETE FROM campaigns WHERE id = $1`, [id]);

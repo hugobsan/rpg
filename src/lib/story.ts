@@ -6,7 +6,8 @@ import { getAgent } from "./agents";
 import { chat, type ChatMessage } from "./openrouter";
 import { clockParts, formatClock, getClock, toMinutes } from "./clock";
 import { decide, PC_ACT_MIN } from "./decisions";
-import { activeDirectives, addMemory } from "./retrieval";
+import { activeDirectives } from "./retrieval";
+import { addEvent } from "./knowledge";
 import { executeGmTool, loadObjectives, type ToolContext } from "./tools";
 import { fold, matchName, parseLooseJson } from "./contracts";
 import type { Campaign, Character, Scene } from "./types";
@@ -628,7 +629,7 @@ async function activateBeat(ctx: ToolContext, b: BeatRow) {
 
 /**
  * Avança a história por código: relógios pelos dias e cenas desde a última vez (marcas em campaigns.state), vencidos,
- * prontos, arco seguinte. Obrigatório vencido = notícia pública (memória e state.news para o próximo Narrador).
+ * prontos, arco seguinte. Obrigatório vencido = notícia pública (evento público e state.news para o próximo Narrador).
  * clearNews: depois da narração (as notícias já foram contadas). Devolve o passo (para o Diretor saber se rodar).
  */
 export async function advanceStory(ctx: ToolContext, o: { narrativeYes?: Set<string>; clearNews?: boolean } = {}): Promise<StepResult> {
@@ -639,7 +640,8 @@ export async function advanceStory(ctx: ToolContext, o: { narrativeYes?: Set<str
   const scenes = mark?.scene !== undefined ? Math.max(0, ctx.scene.seq - mark.scene) : 0;
   const step = stepStory(before, { now, days: Math.max(0, days), scenes, narrativeYes: o.narrativeYes });
   await saveDiff(before, step.story);
-  for (const b of step.missed) await addMemory(ctx.campaign.id, "event", `Fora de cena: ${b.fallback}`, null, 3).catch((e) => console.warn("[história]", e));
+  // beat perdido: notícia pública (todos sabem, inclusive quem entrar depois)
+  for (const b of step.missed) await addEvent(ctx.campaign.id, b.fallback, { public: true, minute: now }).catch((e) => console.warn("[história]", e));
   const play = getPlay(ctx.campaign.state);
   const closedPlay = play.beatId && step.closed.some((b) => b.id === play.beatId);
   const old = o.clearNews ? [] : (ctx.campaign.state.news as string[] | undefined) ?? [];
@@ -733,7 +735,7 @@ async function runDirector(ctx: ToolContext, chars: Character[], s: Story, turn:
   const arc = activeArc(s);
   const clock = getClock(ctx.campaign.state);
   const [facts, [last]] = await Promise.all([
-    q<{ content: string }>(`SELECT content FROM memories WHERE campaign_id = $1 AND kind = 'event' ORDER BY id DESC LIMIT 5`, [ctx.campaign.id]),
+    q<{ content: string }>(`SELECT text AS content FROM events WHERE campaign_id = $1 ORDER BY id DESC LIMIT 5`, [ctx.campaign.id]),
     q<{ content: string }>(`SELECT content FROM messages WHERE campaign_id = $1 AND role = 'gm' ORDER BY id DESC LIMIT 1`, [ctx.campaign.id]),
   ]);
   const user = [
@@ -780,10 +782,7 @@ async function runDirector(ctx: ToolContext, chars: Character[], s: Story, turn:
 /** O que já aconteceu, curto: hora, beats fechados, fatos importantes, onde a história parou, diretrizes. */
 async function storySoFar(campaignId: string, s: Story): Promise<string> {
   const [mems, [last], directives] = await Promise.all([
-    q<{ content: string }>(
-      `SELECT content FROM memories WHERE campaign_id = $1 AND kind <> 'directive' AND (kind = 'milestone' OR importance >= 3) ORDER BY id DESC LIMIT 25`,
-      [campaignId]
-    ),
+    q<{ content: string }>(`SELECT text AS content FROM events WHERE campaign_id = $1 ORDER BY id DESC LIMIT 25`, [campaignId]),
     q<{ content: string }>(`SELECT content FROM messages WHERE campaign_id = $1 AND role = 'gm' ORDER BY id DESC LIMIT 1`, [campaignId]),
     activeDirectives(campaignId),
   ]);

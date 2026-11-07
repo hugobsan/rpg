@@ -72,6 +72,7 @@ export interface EffectsCtx {
   money: number | null; // saldo; null = mundo sem dinheiro
   resourceWords: string[]; // keys e rótulos dos recursos (validador de prosa nos fatos)
   activeBeat?: string | null; // id do beat em jogo (lib/story.ts); o "beat" do bloco só vale para ele
+  location?: string; // local da cena antes do turno (NPC genérico ganha o local no nome)
 }
 
 // ---------- nomes ----------
@@ -88,6 +89,20 @@ export function matchName(list: string[], said: string): string | undefined {
   const f = fold(said);
   if (!f) return undefined;
   return list.find((n) => fold(n) === f) ?? list.find((n) => firstKey(n) === firstKey(said) || fold(n).split(" ").includes(f));
+}
+
+// NPC genérico (função, não nome): um por lugar, com o local no nome ("Lojista (Loja de armas)"), para duas lojas não
+// dividirem o mesmo NPC e o que ele sabe
+const GENERIC_NPC = /^(o |a )?(lojista|vendedora?|recepcionista|atendente|balconista|caixeiro|guarda|sentinela|porteiro|taberneir[oa]|garcom|garconete|cozinheir[oa]|ferreiro|mercador|comerciante|don[oa] da loja|estalajadeir[oa]|enfermeir[oa]|medic[oa])$/;
+const baseGeneric = (name: string) => GENERIC_NPC.test(fold(name.replace(/\(.*?\)/g, "")));
+export const isGenericName = (name: string) => !name.includes("(") && baseGeneric(name);
+export const localName = (name: string, location?: string) =>
+  isGenericName(name) && location?.trim() ? `${name.trim()} (${location.trim().slice(0, 50)})` : name.trim();
+/** matchName, mas nome genérico só casa com o NPC daquele lugar (ou com o nome já com o local), nunca pelo 1º nome. */
+export function resolveName(list: string[], said: string, location?: string): string | undefined {
+  if (!baseGeneric(said)) return matchName(list, said);
+  const f = fold(localName(said, location));
+  return list.find((n) => fold(n) === f);
 }
 
 /**
@@ -168,12 +183,14 @@ export function validateEffects(raw: unknown, ctx: EffectsCtx): { effects: Effec
   const dropped: string[] = [];
   const drop = (why: string) => dropped.push(why);
 
-  // NPCs novos primeiro: valem como alvo e present
+  // NPCs novos primeiro: valem como alvo e present. Genérico ganha o local de onde a cena termina
+  const loc = str(obj(r.scene).location, 80) || ctx.location;
+  const who = (list: string[], said: string) => resolveName(list, said, loc);
   for (const n of arr(r.newNpcs).slice(0, 4)) {
     const o = obj(n);
-    const name = str(o.name, 40);
+    const name = localName(str(o.name, 40), loc);
     if (!name) continue;
-    if (matchName(ctx.npcs, name) || fold(name) === fold(ctx.player)) continue; // já registrado: não é novo
+    if (who(ctx.npcs, name) || fold(name) === fold(ctx.player)) continue; // já registrado: não é novo
     const g = str(o.gender, 1).toLowerCase();
     fx.newNpcs.push({ name, gender: g === "m" || g === "f" ? g : "?", brief: words(str(o.brief, 400), 30) });
   }
@@ -209,7 +226,7 @@ export function validateEffects(raw: unknown, ctx: EffectsCtx): { effects: Effec
         step.item = it;
       }
       if (so.target) {
-        const t = matchName(people, str(so.target, 60));
+        const t = who(people, str(so.target, 60));
         if (t) step.target = t;
         else drop(`alvo desconhecido: ${str(so.target, 60)}`);
       }
@@ -228,7 +245,7 @@ export function validateEffects(raw: unknown, ctx: EffectsCtx): { effects: Effec
   if (Array.isArray(sc.present)) {
     fx.scene.present = [];
     for (const p of sc.present) {
-      const n = matchName(people, str(p, 60));
+      const n = who(people, str(p, 60));
       if (n) fx.scene.present.includes(n) || fx.scene.present.push(n);
       else if (str(p, 60) && fold(str(p, 60)) !== fold(ctx.player) && !matchName([ctx.player], str(p, 60))) drop(`present desconhecido: ${str(p, 60)}`);
     }
@@ -246,8 +263,8 @@ export function validateEffects(raw: unknown, ctx: EffectsCtx): { effects: Effec
   for (const t of arr(r.told).slice(0, 3)) {
     const o = obj(t);
     const fact = words(str(o.fact, 300), 25);
-    const by = matchName(known, str(o.by, 60));
-    const to = arr(o.to).map((x) => matchName(known, str(x, 60))).filter((x): x is string => !!x && x !== by);
+    const by = who(known, str(o.by, 60));
+    const to = arr(o.to).map((x) => who(known, str(x, 60))).filter((x): x is string => !!x && x !== by);
     if (!fact || !by || !to.length) {
       if (fact) drop(`told sem quem contou ou para quem: ${fact}`);
       continue;
@@ -430,6 +447,7 @@ export interface StepResult {
   resource: ResourceLevel | null; // nível do recurso tocado, depois do passo
   resourceLabel?: string;
   note?: string; // em palavras, para o Narrador
+  fact?: string; // marco que a cena viu (domínio da técnica subiu de faixa): vira fato com testemunhas
 }
 
 // tabela única de dificuldade: base + 4 por ponto de multiplicador acima de 1 (Naruto ×2: 10/14/18/22/26)

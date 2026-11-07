@@ -11,7 +11,8 @@ import { ADVANCED_DEFAULTS as D, getAdvanced, normalizeAdvanced, saveAdvanced } 
 import { chunkPage, ingestBook } from "../src/lib/books";
 import { getSetting, pool, q, setSetting } from "../src/lib/db";
 import { embed } from "../src/lib/embeddings";
-import { searchBookChunks, searchHistory, searchMemories } from "../src/lib/retrieval";
+import { searchBookChunks, searchHistory } from "../src/lib/retrieval";
+import { knowsOf } from "../src/lib/knowledge";
 import { POST as reprocess } from "../src/app/api/embeddings/reprocess/route";
 
 const BASE = process.env.DATABASE_URL || "postgres://rpg:rpg@localhost:5433/rpg";
@@ -52,7 +53,7 @@ function oldChunkPage(text: string): string[] {
 async function main() {
   // ---------- sem banco: padrões, normalização, chunking ----------
   // padrões = os valores fixos de antes (nada muda para quem não mexer)
-  assert.deepEqual([D.memory.toolTopK, D.memory.npcTopK], [8, 8]);
+  assert.equal(D.memory.knowsTopK, 8);
   assert.deepEqual([D.history.excerptChars, D.history.toolTopK, D.history.batch], [700, 4, 16]);
   assert.deepEqual([D.books.chunkChars, D.books.overlapChars, D.books.topK], [2400, 0, 3]);
   assert.deepEqual([D.embeddings.dimensions, D.embeddings.batch], [0, 64]);
@@ -61,17 +62,17 @@ async function main() {
   assert.deepEqual(normalizeAdvanced(undefined), D);
   assert.deepEqual(normalizeAdvanced("lixo"), D);
   const n = normalizeAdvanced({
-    memory: { toolTopK: "abc", npcTopK: null },
+    memory: { knowsTopK: "abc" },
     history: { toolTopK: "3", excerptChars: Infinity, batch: 2.6 },
     books: { chunkChars: 1e9, overlapChars: 99999 },
     embeddings: { dimensions: 512.4, batch: 0 },
     jev: { complexMin: 1.7 },
     bogus: { x: 1 },
   }) as unknown as Record<string, Record<string, number>>;
-  assert.equal(n.memory.toolTopK, 8, "lixo vira o padrão");
-  assert.equal(n.memory.npcTopK, 8, "null vira o padrão");
+  assert.equal(n.memory.knowsTopK, 8, "lixo vira o padrão");
+  assert.equal(normalizeAdvanced({ memory: { knowsTopK: null } }).memory.knowsTopK, 8, "null vira o padrão");
   assert.equal(normalizeAdvanced({ jev: { webMin: "0.123456" } }).jev.webMin, 0.1235, "fração com 4 casas");
-  assert.equal(normalizeAdvanced({ memory: { toolTopK: -3 } }).memory.toolTopK, 1, "abaixo da faixa prende no mínimo");
+  assert.equal(normalizeAdvanced({ memory: { knowsTopK: -3 } }).memory.knowsTopK, 3, "abaixo da faixa prende no mínimo");
   assert.equal(n.history.toolTopK, 3, "texto numérico vale");
   assert.equal(n.history.batch, 3, "inteiro arredonda");
   assert.equal(n.history.excerptChars, 700, "infinito vira o padrão");
@@ -108,16 +109,16 @@ async function main() {
 
     // cache: lê uma vez; escrita por fora só aparece quando expira; salvar troca na hora e grava só o que difere
     assert.deepEqual(await getAdvanced(), D);
-    await setSetting("advanced", { memory: { toolTopK: 9 } });
-    assert.equal((await getAdvanced()).memory.toolTopK, 8, "dentro do TTL vale o cache");
+    await setSetting("advanced", { memory: { knowsTopK: 9 } });
+    assert.equal((await getAdvanced()).memory.knowsTopK, 8, "dentro do TTL vale o cache");
     expire();
-    assert.equal((await getAdvanced()).memory.toolTopK, 9, "expirou: relê o banco");
-    const saved = await saveAdvanced({ ...D, memory: { ...D.memory, toolTopK: 7 }, books: { ...D.books, topK: 999 } });
+    assert.equal((await getAdvanced()).memory.knowsTopK, 9, "expirou: relê o banco");
+    const saved = await saveAdvanced({ ...D, memory: { ...D.memory, knowsTopK: 7 }, books: { ...D.books, topK: 999 } });
     assert.equal(saved.books.topK, 30);
-    assert.equal((await getAdvanced()).memory.toolTopK, 7, "salvar troca o cache na hora");
-    assert.deepEqual(await getSetting("advanced", {}), { memory: { toolTopK: 7 }, books: { topK: 30 } }, "grava só o que difere do padrão");
+    assert.equal((await getAdvanced()).memory.knowsTopK, 7, "salvar troca o cache na hora");
+    assert.deepEqual(await getSetting("advanced", {}), { memory: { knowsTopK: 7 }, books: { topK: 30 } }, "grava só o que difere do padrão");
     expire();
-    assert.equal((await getAdvanced()).memory.toolTopK, 7);
+    assert.equal((await getAdvanced()).memory.knowsTopK, 7);
 
     // dimensions: só vai no request quando > 0
     await saveAdvanced({});
@@ -133,7 +134,7 @@ async function main() {
     // busca com dimensões misturadas (trocou modelo/dimensões e ainda não reprocessou): só compara as da consulta
     const [{ id: cid }] = await q<{ id: string }>(`INSERT INTO campaigns (name, ruleset) VALUES ('[teste-avancadas]', '{}') RETURNING id`);
     const mem = (content: string, v: string) =>
-      q(`INSERT INTO memories (campaign_id, kind, content, embedding) VALUES ($1, 'event', $2, $3)`, [cid, content, v]);
+      q(`INSERT INTO events (campaign_id, text, public, embedding) VALUES ($1, $2, TRUE, $3)`, [cid, content, v]);
     await mem("perto", "[1,0,0]");
     await mem("longe", "[0,1,0]");
     await mem("outra dimensão", "[1,0,0,0]");
@@ -154,17 +155,16 @@ async function main() {
       ]);
 
     out = 3;
-    assert.deepEqual((await searchMemories(cid, "q")).map((m) => m.content), ["perto", "longe"]);
-    assert.deepEqual((await searchMemories(cid, "q", { maxDistance: 0.5 })).map((m) => m.content), ["perto"], "limiar de distância");
+    // fatos (SABE com teto 1 = só o mais relevante): fato público, todos sabem
+    assert.deepEqual((await knowsOf(cid, npc.id, "q", 1)).map((m) => m.text), ["perto"]);
     assert.deepEqual((await searchBookChunks(cid, "q", 5)).map((c) => c.content), ["c3"]);
     assert.deepEqual((await searchHistory(cid, "q")).map((h) => h.content), ["h perto", "h longe"]);
     out = 4;
-    assert.deepEqual((await searchMemories(cid, "q")).map((m) => m.content), ["outra dimensão"]);
+    assert.deepEqual((await knowsOf(cid, npc.id, "q", 1)).map((m) => m.text), ["outra dimensão"]);
     assert.deepEqual((await searchBookChunks(cid, "q", 5)).map((c) => c.content), ["c4"]);
     assert.deepEqual((await searchHistory(cid, "q")).map((h) => h.content), ["h outra"]);
-    out = 7; // ninguém nessa dimensão: memórias caem no full-text
-    assert.deepEqual((await searchMemories(cid, "longe")).map((m) => m.content), ["longe"]);
-    assert.deepEqual((await searchMemories(cid, "longe", { subject: "ong" })).map((m) => m.content), ["longe"], "subject acha quem o texto cita");
+    out = 7; // ninguém nessa dimensão: sem relevância, fica o mais recente
+    assert.deepEqual((await knowsOf(cid, npc.id, "q", 1)).map((m) => m.text), ["outra dimensão"]);
 
     // livro indexado com os padrões; reprocessar com outro chunk size/overlap refaz os chunks a partir das páginas
     out = 3;
@@ -183,12 +183,12 @@ async function main() {
       (await q<{ content: string }>(`SELECT content FROM book_chunks WHERE book_id = $1 ORDER BY page, chunk_index`, [book.bookId])).map((r) => r.content),
       want
     );
-    assert.equal(d.memories, 3);
+    assert.equal(d.events, 3);
     assert.equal(d.history_chunks, 3);
     assert.equal(d.dims, 5);
     assert.match(d.warning, /ignorou dimensions=8 e devolveu 5/);
     const dims = await q<{ d: number }>(
-      `SELECT DISTINCT vector_dims(embedding) AS d FROM (SELECT embedding FROM memories UNION ALL SELECT embedding FROM book_chunks UNION ALL SELECT embedding FROM history_chunks) x`
+      `SELECT DISTINCT vector_dims(embedding) AS d FROM (SELECT embedding FROM events UNION ALL SELECT embedding FROM book_chunks UNION ALL SELECT embedding FROM history_chunks) x`
     );
     assert.deepEqual(dims, [{ d: 5 }], "tudo na dimensão nova, sem vetor nulo");
     const calls = bodies.slice(before);

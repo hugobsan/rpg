@@ -23,6 +23,8 @@ async function main() {
     );
     await q(`INSERT INTO messages (campaign_id, scene_id, role, content) VALUES ($1, $2, 'gm', 'abertura')`, [id, scene.id]);
     await q(`INSERT INTO memories (campaign_id, content) VALUES ($1, 'memória antiga')`, [id]);
+    const [old] = await q<{ id: string }>(`INSERT INTO events (campaign_id, text) VALUES ($1, 'fato antigo') RETURNING id`, [id]);
+    await q(`INSERT INTO knowledge (event_id, character_id) VALUES ($1, $2)`, [old.id, hero.id]);
     const [arc] = await q<{ id: string }>(`INSERT INTO arcs (campaign_id, title, status) VALUES ($1, 'Ondas', 'active') RETURNING id`, [id]);
 
     // motivos dos "gerar novamente" somam na foto da mesma ação; ação nova zera
@@ -42,6 +44,9 @@ async function main() {
     await q(`UPDATE scenes SET mode = 'battle', location = 'Floresta', is_current = FALSE WHERE id = $1`, [scene.id]);
     await q(`INSERT INTO scenes (campaign_id, seq, mode) VALUES ($1, 2, 'battle')`, [id]);
     await q(`INSERT INTO memories (campaign_id, content) VALUES ($1, 'memória nova do turno')`, [id]);
+    // fato novo do turno e alguém que passou a saber do fato antigo
+    await q(`INSERT INTO events (campaign_id, text) VALUES ($1, 'fato do turno')`, [id]);
+    await q(`INSERT INTO knowledge (event_id, character_id, access, from_name) SELECT $1, id, 'told', 'Hugo' FROM characters WHERE campaign_id = $2 AND name = 'Mizuki'`, [old.id, id]);
     // história: beat novo, arco fechado, modo missão
     await q(`INSERT INTO beats (campaign_id, arc_id, title) VALUES ($1, $2, 'novo')`, [id, arc.id]);
     await q(`UPDATE arcs SET status = 'done' WHERE id = $1`, [arc.id]);
@@ -64,12 +69,13 @@ async function main() {
     assert.deepEqual(chunks.map((h) => h.content), ["abertura"], "trecho do histórico do turno some");
     const mems = await q<{ content: string }>(`SELECT content FROM memories WHERE campaign_id = $1`, [id]);
     assert.deepEqual(mems.map((m) => m.content), ["memória antiga"]);
+    assert.deepEqual(await q(`SELECT e.text, k.access FROM events e JOIN knowledge k ON k.event_id = e.id WHERE e.campaign_id = $1`, [id]), [{ text: "fato antigo", access: "witnessed" }], "fatos do turno somem");
     const [camp] = await q<{ state: { play: unknown } }>(`SELECT state FROM campaigns WHERE id = $1`, [id]);
     assert.deepEqual(camp.state.play, { mode: "exploration" }, "modo de jogo volta");
     assert.deepEqual(await q(`SELECT title, status FROM arcs WHERE campaign_id = $1`, [id]), [{ title: "Ondas", status: "active" }], "arco volta");
     assert.deepEqual(await q(`SELECT id FROM beats WHERE campaign_id = $1`, [id]), [], "beat do turno some");
 
-    console.log("ok: gerar novamente restaura ficha, NPCs, cena, mensagens, memórias, histórico, arcos, beats e modo de jogo");
+    console.log("ok: gerar novamente restaura ficha, NPCs, cena, mensagens, memórias, fatos, histórico, arcos, beats e modo de jogo");
   } finally {
     await q(`DELETE FROM campaigns WHERE id = $1`, [id]);
     await pool().end();

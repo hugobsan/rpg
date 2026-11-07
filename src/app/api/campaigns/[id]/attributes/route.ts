@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
 import { dehydrateSheet } from "@/lib/library";
 import { getCampaign, getCharacters } from "@/lib/engine";
-import { addMemory } from "@/lib/retrieval";
 import { attributePoints, raiseBlocked } from "@/lib/progression";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +29,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   s.attributes[key] = cur + 1;
   s.attrPointsSpent = (s.attrPointsSpent ?? 0) + 1;
   await q(`UPDATE characters SET sheet = $1, updated_at = now() WHERE id = $2`, [JSON.stringify(dehydrateSheet(s)), player.id]);
-  await addMemory(id, "event", `${player.name} usou 1 ponto livre de XP: ${def.label} ${cur} → ${cur + 1}.`, player.name, 2);
   return NextResponse.json({ ok: true, value: cur + 1, free: attributePoints(rs, s).free });
 }

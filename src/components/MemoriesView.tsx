@@ -1,25 +1,28 @@
 "use client";
 import { useState } from "react";
+import type { CampaignView, EventView } from "@/lib/campaignView";
+import { clockParts, period } from "@/lib/clock";
 import s from "./SidePanels.module.css";
 
-type Memory = { id: number; kind: string; subject: string | null; content: string; importance: number };
-
-const KINDS: [key: string, label: string][] = [
-  ["milestone", "Marcos"],
-  ["event", "Eventos"],
-  ["npc", "NPCs"],
-  ["discovery", "Descobertas"],
-  ["relationship", "Relações"],
+type Filter = "all" | "mine" | "public";
+const FILTERS: [Filter, string][] = [
+  ["all", "Tudo"],
+  ["mine", "Só você sabe"],
+  ["public", "Públicos"],
 ];
-const ONE: Record<string, string> = { milestone: "Marco", event: "Evento", npc: "NPC", discovery: "Descoberta", relationship: "Relação" };
 
-/** Memória da campanha: diretrizes fora do jogo à parte, a história numa linha do tempo (mais recente no topo). */
-export default function MemoriesView({ memories }: { memories: Memory[] }) {
-  const [filter, setFilter] = useState<string | null>(null);
+const npcsWho = (e: EventView) => e.knownBy.filter((k) => k.kind !== "player");
+const onlyYou = (e: EventView) => !e.public && npcsWho(e).length === 0;
+const how = (k: EventView["knownBy"][number]) => (k.access === "told" ? `contaram${k.from ? `: ${k.from}` : ""}` : k.access === "public" ? "boato" : "viu");
+
+/**
+ * Memória da campanha: diretrizes fora do jogo à parte; os fatos da história numa linha do tempo (mais recente no
+ * topo), cada um com quem sabe (viu, contaram, público). É o que cada NPC pode citar.
+ */
+export default function MemoriesView({ memories, events }: { memories: CampaignView["memories"]; events: EventView[] }) {
+  const [filter, setFilter] = useState<Filter>("all");
   const directives = memories.filter((m) => m.kind === "directive");
-  const story = memories.filter((m) => m.kind !== "directive");
-  const shown = story.filter((m) => !filter || m.kind === filter);
-  const kinds = KINDS.filter(([k]) => story.some((m) => m.kind === k));
+  const shown = events.filter((e) => filter === "all" || (filter === "public" ? e.public : onlyYou(e)));
   return (
     <div className={s.wrap}>
       {directives.length > 0 && (
@@ -35,37 +38,39 @@ export default function MemoriesView({ memories }: { memories: Memory[] }) {
           </ul>
         </section>
       )}
-      {kinds.length > 1 && (
-        <div className={s.filters} role="group" aria-label="Tipo de memória">
-          <button className={`pill filter-pill${filter ? "" : " on"}`} aria-pressed={!filter} onClick={() => setFilter(null)}>Tudo</button>
-          {kinds.map(([k, label]) => (
+      {events.length > 0 && (
+        <div className={s.filters} role="group" aria-label="Quem sabe">
+          {FILTERS.map(([k, label]) => (
             <button key={k} className={`pill filter-pill${filter === k ? " on" : ""}`} aria-pressed={filter === k} onClick={() => setFilter(k)}>
-              {label} <span className="num">{story.filter((m) => m.kind === k).length}</span>
+              {label} <span className="num">{k === "all" ? events.length : events.filter(k === "public" ? (e) => e.public : onlyYou).length}</span>
             </button>
           ))}
         </div>
       )}
-      {!story.length ? (
+      {!events.length ? (
         <div className={s.empty}>
           <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
             <path d="M6 3h9l3 3v15H6z" /><path d="M9 10h6M9 14h6M9 18h3" />
           </svg>
           <b>Nada registrado ainda</b>
-          Os fatos que a história deixa (marcos, descobertas, acordos) ficam aqui conforme você joga.
+          Os fatos que a história deixa (acordos, descobertas, o que alguém contou) ficam aqui com quem sabe de cada um.
         </div>
       ) : (
         <ol className={s.timeline}>
-          {shown.map((m, n) => (
-            <li key={m.id} className={`${s.event} ${s[`k-${m.kind}`] || ""}`} style={{ animationDelay: `${Math.min(n, 10) * 20}ms` }}>
-              <span className={s.dot} aria-hidden="true" />
-              <span className={s.kind}>{ONE[m.kind] || m.kind}</span>
-              {m.subject && <span className={s.subject}> · {m.subject}</span>}
-              <span className={s.pips} title={`Importância ${m.importance} de 5`}>
-                {[1, 2, 3, 4, 5].map((i) => <i key={i} className={i <= m.importance ? s.on : undefined} />)}
-              </span>
-              <p>{m.content}</p>
-            </li>
-          ))}
+          {shown.map((e, n) => {
+            const npcs = npcsWho(e);
+            return (
+              <li key={e.id} className={`${s.event} ${e.public ? s["k-milestone"] : onlyYou(e) ? s["k-discovery"] : s["k-event"]}`} style={{ animationDelay: `${Math.min(n, 10) * 20}ms` }}>
+                <span className={s.dot} aria-hidden="true" />
+                <span className={s.kind}>{e.public ? "Público" : onlyYou(e) ? "Só você" : "Fato"}</span>
+                {e.minute !== null && <span className={s.subject}> · Dia {clockParts(e.minute).day}, {period(e.minute)}</span>}
+                <p>{e.text}</p>
+                <span className={s.subject}>
+                  {e.public ? "Todos sabem" : npcs.length ? `Sabem: ${npcs.map((k) => `${k.name} (${how(k)})`).join(", ")}` : "Nenhum NPC sabe"}
+                </span>
+              </li>
+            );
+          })}
         </ol>
       )}
     </div>

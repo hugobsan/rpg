@@ -40,7 +40,7 @@ async function applySchema(): Promise<boolean> {
     if (hasVector) {
       // colunas de embedding sem dimensão fixa (dimensão vem do provedor configurado)
       await client.query(
-        `ALTER TABLE memories ADD COLUMN IF NOT EXISTS embedding vector`
+        `ALTER TABLE events ADD COLUMN IF NOT EXISTS embedding vector`
       );
       await client.query(
         `ALTER TABLE book_chunks ADD COLUMN IF NOT EXISTS embedding vector`

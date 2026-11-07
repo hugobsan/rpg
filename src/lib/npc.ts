@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { q } from "./db";
 import { getAdvanced } from "./advanced";
+import { knownLine, knowsOf } from "./knowledge";
 import { getAgent } from "./agents";
 import { chat, ChatMessage } from "./openrouter";
-import { indexHistory, searchMemories } from "./retrieval";
+import { indexHistory } from "./retrieval";
 import { conversationEffects, getCampaign, getCurrentScene, saveMessage } from "./engine";
 import { Character, InboxItem } from "./types";
 import { decideNpcWilling } from "./decisions";
@@ -33,6 +34,8 @@ function npcContext(npc: Character): string {
     p.current ? `Situação atual (o que vale agora; o passado abaixo é a origem): ${p.current}` : "",
     p.backstory ? `Passado: ${p.backstory}` : "",
     p.goals ? `Objetivos: ${p.goals}` : "",
+    p.wants ? `O que quer agora: ${p.wants}` : "",
+    p.agenda ? `O que faz por conta própria: ${p.agenda}` : "",
     p.relationships ? `Relações: ${p.relationships}` : "",
     p.secrets ? `Segredos (não revele levianamente): ${p.secrets}` : "",
     s.abilities.length
@@ -45,7 +48,7 @@ function npcContext(npc: Character): string {
 
 /**
  * Conversa particular com um NPC (fora da narração do Mestre).
- * O NPC recebe persona + memórias de relação + contexto da cena. No início da
+ * O NPC recebe persona + o bloco SABE dele (lib/knowledge: só o que viu, ouviu ou é público) + lore + cena. No início da
  * sessão o Jev decide se ele topa conversar; na recusa o próprio NPC recusa em
  * personagem e a troca não é gravada (se o jogador insistir, decide de novo).
  * divert (a fala veio do chat da campanha, engine.runTurn): na recusa não há fala do NPC, e o turno do Mestre segue.
@@ -63,11 +66,8 @@ export async function npcTalk(
   const agent = await getAgent("npc");
   const sid = sessionId || randomUUID();
 
-  const [relationMemories, playerRows, [lastGm]] = await Promise.all([
-    searchMemories(campaignId, `${npc.name} ${playerText}`, {
-      subject: npc.name.split(/\s+/)[0], // "Naruto" acha "Naruto Uzumaki" e as que só dizem "Naruto"
-      limit: (await getAdvanced()).memory.npcTopK,
-    }),
+  const [known, playerRows, [lastGm]] = await Promise.all([
+    knowsOf(campaignId, npc.id, playerText, (await getAdvanced()).memory.knowsTopK),
     q<Character>(
       `SELECT * FROM characters WHERE campaign_id = $1 AND kind = 'player' LIMIT 1`,
       [campaignId]
@@ -93,7 +93,7 @@ export async function npcTalk(
 
   const system = [
     agent.system_prompt,
-    `\n--- CENÁRIO ---\n${campaign.ruleset.name}. ${campaign.ruleset.loreNotes.slice(0, 1200)}`,
+    `\n--- CENÁRIO (conhecimento geral do mundo, que você pode usar) ---\n${campaign.ruleset.name}. ${campaign.ruleset.loreNotes.slice(0, 2500)}`,
     `\n--- ${npcContext(npc)}`,
     `\n--- CENA ATUAL (para julgar se a conversa é plausível agora) ---\nModo: ${scene.mode} | Local: ${scene.location || "?"}\n${scene.summary ? `Contexto: ${scene.summary.slice(-800)}` : ""}${npc.active || initiated ? "" : "\nATENÇÃO: você NÃO está presente na cena atual — a conversa só é plausível se houver como o jogador te alcançar."}`,
     // em cena, ele viu o que acabou de acontecer (a conversa costuma retomar a última fala dele na narração)
@@ -102,9 +102,9 @@ export async function npcTalk(
       ? `\n--- POR QUE VOCÊ PROCUROU O JOGADOR (só você sabe; não recite, conduza a conversa para isso) ---\n${first.intent || "(motivo não registrado: siga pela sua mensagem)"}\nFoi você quem chamou o jogador; se foi à distância (recado, mensageiro...), a conversa segue por esse meio.`
       : "",
     player ? `\n--- QUEM FALA COM VOCÊ ---\n${player.name}` : "",
-    relationMemories.length
-      ? `\n--- O QUE VOCÊ LEMBRA (da mais antiga para a mais recente; se duas se contradizem, vale a mais recente) ---\n${[...relationMemories].sort((a, b) => a.id - b.id).map((m) => `- ${m.content}`).join("\n")}`
-      : "",
+    `\n--- O QUE VOCÊ SABE DA HISTÓRIA (só isto, do mais antigo ao mais recente; o resto você não sabe: pergunte ou diga que não sabe) ---\n${
+      known.map(knownLine).join("\n") || "(nada até agora: só o que acontece nesta conversa)"
+    }`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -122,7 +122,7 @@ export async function npcTalk(
           goals: npc.persona.goals,
           present: npc.active,
         },
-        relation: relationMemories.map((m) => m.content),
+        relation: known.map((k) => k.text),
         scene: { mode: scene.mode, location: scene.location, summary: scene.summary },
         playerName: player?.name || null,
         playerMessage: playerText,
@@ -186,8 +186,8 @@ export async function discardNpcChat(campaignId: string, npcId: string, sessionI
 
 /**
  * Encerra a conversa. Antes de responder: o Anotador lê a conversa inteira no lugar da narração e os efeitos dela
- * entram como num turno (tempo, missão oferecida ou aceita, item comprado ou recebido, fatos, que viram memórias com o
- * NPC de assunto: ele lembra na próxima conversa); depois uma linha 'talk' entra no chat da campanha com o começo e o
+ * entram como num turno (tempo, missão oferecida ou aceita, item comprado ou recebido, fatos e "contou", que só o
+ * jogador e o NPC ficam sabendo: ele lembra na próxima conversa, os outros não); depois uma linha 'talk' entra no chat da campanha com o começo e o
  * fim da conversa, que fica no histórico do Narrador.
  * fromCampaign (a conversa nasceu de uma ação no chat da campanha): ao mesmo tempo, o NPC faz a fala de encerramento,
  * que aparece no chat depois da linha da conversa e mostra que houve uma troca ali.
@@ -212,7 +212,7 @@ export async function endNpcChat(
   const you = player?.name || "Jogador";
   const transcript = rows.map((r) => `${r.role === "player" ? you : npc.name}: ${r.content}`).join("\n");
   const [notes, farewell] = await Promise.all([
-    conversationEffects(campaignId, npc.name, transcript).catch((e): string[] => (console.warn("[anotador da conversa]", e), [])),
+    conversationEffects(campaignId, npc, transcript).catch((e): string[] => (console.warn("[anotador da conversa]", e), [])),
     fromCampaign ? npcFarewell(campaignId, npc, rows).catch((e) => (console.warn("[despedida do NPC]", e), "")) : "",
   ]);
   // conversa longa: a 1ª fala (o que o jogador foi fazer) e o fim

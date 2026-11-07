@@ -24,24 +24,41 @@ export interface CampaignView {
   books: { id: string; title: string; pages: number }[];
   messages: ChatLine[]; // só o lote mais recente; as anteriores vêm de /messages?before=
   hasMore: boolean; // há mensagens anteriores às carregadas
-  memories: { id: number; kind: string; subject: string | null; content: string; importance: number }[];
+  memories: { id: number; kind: string; subject: string | null; content: string; importance: number }[]; // só diretrizes
+  events: EventView[]; // fatos da história com quem sabe (aba Marcos)
   lastImage: { id: number; url: string } | null;
   ui: { diceAnimation: boolean; imageGeneration: boolean; diceForce: number }; // Configurações, ligadas por padrão
   inbox: InboxItem[]; // mensagens particulares de NPC não lidas (npc_message)
   jobs: Job[]; // tarefas em segundo plano rodando ou recém-terminadas (lib/jobs.ts)
 }
 
+export interface EventView {
+  id: number;
+  text: string;
+  minute: number | null;
+  public: boolean;
+  knownBy: { name: string; kind: string; access: "witnessed" | "told" | "public"; from: string | null }[];
+}
+
 /** Lança "Campanha não encontrada" se o id não existe. */
 export async function campaignView(id: string): Promise<CampaignView> {
   const campaign = await getCampaign(id);
-  const [scene, characters, books, page, memories, images, ui, inbox, jobs] = await Promise.all([
+  const [scene, characters, books, page, memories, events, images, ui, inbox, jobs] = await Promise.all([
     getCurrentScene(id),
     getCharacters(id),
     listBooks(id),
     messagePage(id),
     q<CampaignView["memories"][number]>(
       `SELECT id, kind, subject, content, importance, created_at::text FROM memories
-       WHERE campaign_id = $1 ORDER BY id DESC LIMIT 100`,
+       WHERE campaign_id = $1 AND kind = 'directive' ORDER BY id DESC LIMIT 100`,
+      [id]
+    ),
+    q<EventView>(
+      `SELECT e.id::int, e.text, e.minute, e.public,
+         COALESCE(json_agg(json_build_object('name', c.name, 'kind', c.kind, 'access', k.access, 'from', k.from_name) ORDER BY c.kind DESC, c.name)
+           FILTER (WHERE c.id IS NOT NULL), '[]') AS "knownBy"
+       FROM events e LEFT JOIN knowledge k ON k.event_id = e.id LEFT JOIN characters c ON c.id = k.character_id
+       WHERE e.campaign_id = $1 GROUP BY e.id ORDER BY e.id DESC LIMIT 150`,
       [id]
     ),
     // só o id: a imagem vai por URL (binário com cache longo), nunca em base64 no JSON
@@ -70,6 +87,7 @@ export async function campaignView(id: string): Promise<CampaignView> {
     messages: page.messages as ChatLine[],
     hasMore: page.hasMore,
     memories,
+    events,
     // a ficha mostra a última imagem, a menos que o jogador a tenha tirado de lá (✕); ela segue na galeria
     lastImage:
       images[0] && Number(images[0].id) !== Number(campaign.state?.hiddenSheetImageId)

@@ -2,7 +2,8 @@ import { q } from "./db";
 import { getAdvanced } from "./advanced";
 import { ToolDef } from "./openrouter";
 import { rollDice } from "./dice";
-import { addMemory, formatHistory, searchHistory, searchMemories, searchBookChunks } from "./retrieval";
+import { formatHistory, searchHistory, searchBookChunks } from "./retrieval";
+import { recordFact, recordTold } from "./knowledge";
 import { Ability, Campaign, Character, DiceResult, LibraryAbility, LibraryItem, Scene, Sheet, TableRules, TurnEvent } from "./types";
 import { abilityPromptLine, blankSheet, currentMilestone, nextMilestone } from "./ruleset";
 import { dehydrateSheet, editAbility, findLibrary, hydrateSheets, itemText, libraryLine, linkAbility, listLibrary } from "./library";
@@ -287,29 +288,20 @@ export const GM_TOOLS: ToolDef[] = [
   {
     type: "function",
     function: {
-      name: "add_memory",
+      name: "add_fact",
       description:
-        "Registra memória de longo prazo da campanha. kind: event, npc, discovery, milestone (marcos de história), relationship.",
-      parameters: S(
-        {
-          kind: { type: "string", enum: ["event", "npc", "discovery", "milestone", "relationship"] },
-          content: { type: "string", description: "fato autossuficiente" },
-          subject: { type: "string", description: "NPC/lugar relacionado" },
-          importance: { type: "number", description: "1-5" },
-        },
-        ["kind", "content"]
-      ),
+        "Registra um fato da história. Quem está na cena agora fica sabendo; public=true para anúncio ou boato que todos sabem.",
+      parameters: S({ text: { type: "string", description: "fato autossuficiente, até 25 palavras" }, public: { type: "boolean" } }, ["text"]),
     },
   },
   {
     type: "function",
     function: {
-      name: "search_memories",
-      description:
-        "Busca semântica nas memórias da campanha (eventos passados, interações com NPCs, descobertas, marcos).",
+      name: "tell_fact",
+      description: "Registra que alguém (inclusive o personagem do jogador) contou um fato a quem está na cena.",
       parameters: S(
-        { query: { type: "string" }, kind: { type: "string" }, subject: { type: "string" } },
-        ["query"]
+        { fact: { type: "string" }, by: { type: "string", description: "quem contou" }, to: { type: "array", items: { type: "string" }, description: "quem ouviu" } },
+        ["fact", "by", "to"]
       ),
     },
   },
@@ -318,7 +310,7 @@ export const GM_TOOLS: ToolDef[] = [
     function: {
       name: "search_history",
       description:
-        "Busca no chat inteiro da campanha, desde o começo (turnos e conversas particulares com NPCs). Devolve trechos curtos com dia, hora e local. Use para lembrar exatamente o que alguém disse ou fez, ou detalhes antigos que não viraram memória. É o que aconteceu naquele momento: ficha e memórias atuais valem mais.",
+        "Busca no chat inteiro da campanha, desde o começo (turnos e conversas particulares com NPCs). Devolve trechos curtos com dia, hora e local. Use para lembrar exatamente o que alguém disse ou fez, ou detalhes antigos que não viraram fato. É o que aconteceu naquele momento: ficha e fatos atuais valem mais.",
       parameters: S(
         { query: { type: "string" }, npc: { type: "string", description: "nome do NPC: só trechos com ele" } },
         ["query"]
@@ -351,7 +343,7 @@ export const GM_TOOLS: ToolDef[] = [
       description:
         "Ativa (entrou em cena/está por perto) ou inativa (saiu de cena, viajou, morreu) um NPC. NPCs inativos não interagem.",
       parameters: S(
-        { name: { type: "string" }, active: { type: "boolean" }, note: { type: "string" } },
+        { name: { type: "string" }, active: { type: "boolean" } },
         ["name", "active"]
       ),
     },
@@ -529,7 +521,14 @@ export interface ToolContext {
   emit: (e: TurnEvent) => void;
   /** habilidades (personagem:ref) que já subiram de domínio neste turno por use_ability ou train: não sobem de novo à mão */
   masteryGained?: Set<string>;
+  /** narração dos efeitos em aplicação: os fatos gravados somem com ela (gerar novamente) */
+  messageId?: number;
+  /** conversa particular: quem fica sabendo dos fatos (jogador + NPC) no lugar de quem está na cena */
+  audience?: string[];
 }
+
+/** Onde e quando um fato aconteceu (cena, narração e relógio do jogo). */
+const factWhere = (ctx: ToolContext) => ({ sceneId: ctx.scene.id, messageId: ctx.messageId ?? null, minute: getClock(ctx.campaign.state)?.minutes ?? null });
 
 // "Evento: Resposta do Hokage" = "resposta do hokage": o modelo repetia missões abertas com prefixo ou pontuação diferente
 const titleKey = (s: string) =>
@@ -1080,30 +1079,21 @@ export async function executeGmTool(
       ctx.emit({ type: "state" });
       return `Campo atualizado.`;
     }
-    case "add_memory": {
-      // quando aconteceu, para o Mestre medir prazos e "há quanto tempo"
-      const clock = getClock(ctx.campaign.state);
-      const when = clock ? `[Dia ${clockParts(clock.minutes).day}, ${period(clock.minutes)}] ` : "";
-      await addMemory(
-        cid,
-        String(args.kind),
-        when + String(args.content),
-        args.subject ? String(args.subject) : null,
-        Number(args.importance ?? 3)
-      );
-      ctx.emit({ type: "tool", name, summary: `📌 ${String(args.content).slice(0, 80)}` });
-      return `Memória registrada.`;
+    // fatos com testemunhas (lib/knowledge): quem está na cena, ou quem está na conversa particular (ctx.audience)
+    case "add_fact": {
+      const text = String(args.text ?? "").trim();
+      if (!text) return "Erro: fato vazio.";
+      await recordFact(cid, text, { public: !!args.public, ...factWhere(ctx), witnesses: ctx.audience });
+      ctx.emit({ type: "tool", name, summary: `📌 ${text.slice(0, 80)}` });
+      return "Fato registrado.";
     }
-    case "search_memories": {
-      const hits = await searchMemories(cid, String(args.query), {
-        kind: args.kind ? String(args.kind) : undefined,
-        subject: args.subject ? String(args.subject) : undefined,
-        limit: (await getAdvanced()).memory.toolTopK,
-      });
-      if (!hits.length) return "Nenhuma memória encontrada.";
-      return hits
-        .map((h) => `[${h.kind}${h.subject ? `/${h.subject}` : ""} imp=${h.importance}] ${h.content}`)
-        .join("\n");
+    case "tell_fact": {
+      const fact = String(args.fact ?? "").trim();
+      const to = Array.isArray(args.to) ? args.to.map(String) : [String(args.to ?? "")];
+      const r = fact ? await recordTold(cid, fact, String(args.by ?? ""), to, { ...factWhere(ctx), audience: ctx.audience, location: ctx.scene.location }) : null;
+      if (!r) return "Erro: quem contou ou quem ouviu não está na cena.";
+      ctx.emit({ type: "tool", name, summary: `🗣 ${String(args.by)} → ${to.join(", ")}: ${fact.slice(0, 70)}` });
+      return "Registrado.";
     }
     case "search_history": {
       const { history } = await getAdvanced();
@@ -1145,8 +1135,6 @@ export async function executeGmTool(
         !!args.active,
         c.id,
       ]);
-      if (args.note)
-        await addMemory(cid, "npc", `${c.name}: ${args.note}`, c.name, 2);
       ctx.emit({ type: "state" });
       ctx.emit({
         type: "tool",

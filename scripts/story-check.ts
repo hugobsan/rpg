@@ -253,10 +253,10 @@ async function db() {
     const objNow = getObjectives(ctx.campaign.state);
     assert.deepEqual(objNow.map((o) => o.status), ["aberto", "aberto"], "nenhuma missão do jogador perdida");
     assert.deepEqual(ctx.campaign.state.news, ["A escolta é atacada sem você; Tazuna se fere."]);
-    const [mem] = await q<{ content: string }>(`SELECT content FROM memories WHERE campaign_id = $1 AND content LIKE 'Fora de cena:%'`, [id]);
-    assert.ok(mem, "o fallback vira evento público");
+    const [ev] = await q<{ text: string; public: boolean }>(`SELECT text, public FROM events WHERE campaign_id = $1`, [id]);
+    assert.deepEqual(ev, { text: "A escolta é atacada sem você; Tazuna se fere.", public: true }, "o fallback vira evento público");
     assert.equal(s.clocks[0].filled, 3, "3 dias encheram o relógio");
-    ok("obrigatório vencido → perdido + notícia + memória; missão do jogador intacta; relógio encheu");
+    ok("obrigatório vencido → perdido + notícia + evento público; missão do jogador intacta; relógio encheu");
 
     // "done" do Narrador: conclui a missão do beat (paga) e volta à exploração; agenda ainda ≥ 4 (sem Roteirista)
     assert.ok(agendaSize(s) >= 4);
@@ -275,7 +275,8 @@ async function db() {
     assert.deepEqual(back.beats.slice(0, 2).map((b) => b.status), ["active", "pending"]);
     assert.deepEqual([back.clocks[0].filled, back.hooks.length, getPlay(st.state).mode, (st.state.news as string[]).length], [0, 1, "mission", 0]);
     assert.equal(getObjectives(st.state).find((o) => o.id === o2!.id)?.status, "aberto");
-    ok("foto do turno e gerar novamente com arcos, beats, relógios, ganchos e state.play");
+    assert.deepEqual(await q(`SELECT id FROM events WHERE campaign_id = $1`, [id]), [], "o evento público do beat perdido some com a foto");
+    ok("foto do turno e gerar novamente com arcos, beats, relógios, ganchos, eventos e state.play");
   } finally {
     await q(`DELETE FROM api_logs WHERE campaign_id = $1`, [id]);
     await q(`DELETE FROM campaigns WHERE id = $1`, [id]);

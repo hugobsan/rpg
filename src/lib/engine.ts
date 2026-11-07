@@ -4,7 +4,9 @@ import { chat, ChatMessage, estimateTokens } from "./openrouter";
 import { abilityPromptLine, currentMilestone, nextMilestone, rulesetPromptSummary } from "./ruleset";
 import { activeDirectives, excerpt, indexHistory, searchBookChunks, type ChunkHit } from "./retrieval";
 import { listBooks } from "./books";
-import { decideTurn } from "./decisions";
+import { decideLeaks, decideTurn, type LeakInput } from "./decisions";
+import { knownLine, recordFact, sceneKnowledge, type Known } from "./knowledge";
+import { getAdvanced } from "./advanced";
 import { attributeCap, attributePoints, controlLabel, costMultOf, powerLevel } from "./progression";
 import { clockParts, formatClock, getClock, period } from "./clock";
 import { hydrateSheets } from "./library";
@@ -25,6 +27,7 @@ import {
   optionSteps,
   parseLooseJson,
   proseIssues,
+  resolveName,
   splitNarration,
   type StepResult,
   validateEffects,
@@ -150,8 +153,31 @@ function npcLine(c: Character): string {
     .join("\n");
 }
 
+/** Memória do turno: o SABE de cada NPC em cena e o que só o jogador sabe. */
+export type TurnMemory = { sabe: Map<string, Known[]>; onlyPlayer: Known[] };
+
+/** Bloco SABE de um NPC (contexto do Narrador e agente NPC). */
+export function sabeBlock(known: Known[], indent = "  "): string {
+  return known.length
+    ? `${indent}SABE (só isto; o resto ele não sabe):\n${known.map((k) => `${indent}  ${knownLine(k)}`).join("\n")}`
+    : `${indent}SABE: nada da história até agora; só o que vê nesta cena.`;
+}
+
+/**
+ * Falas de NPC na narração (linhas **Nome:** "fala"), pelo nome registrado; quem não está registrado fica de fora
+ * (não tem SABE para comparar).
+ */
+export function npcSpeeches(prose: string, npcs: string[], location?: string): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const m of prose.matchAll(/^\s*\*\*([^*\n]{1,80}?)(?::\*\*|\*\*\s*:)\s*(.*)$/gm)) {
+    const name = resolveName(npcs, m[1].trim(), location);
+    if (name) out.set(name, [...(out.get(name) ?? []), m[2].trim()]);
+  }
+  return out;
+}
+
 /** O que o validador do bloco precisa saber da campanha. */
-export function effectsCtx(campaign: Campaign, chars: Character[], activeBeat: string | null = null): EffectsCtx {
+export function effectsCtx(campaign: Campaign, chars: Character[], activeBeat: string | null = null, location = ""): EffectsCtx {
   const player = chars.find((c) => c.kind === "player");
   return {
     player: player?.name ?? "",
@@ -164,6 +190,7 @@ export function effectsCtx(campaign: Campaign, chars: Character[], activeBeat: s
     money: campaign.ruleset.currency ? (player?.sheet.money ?? 0) : null,
     resourceWords: campaign.ruleset.resources.flatMap((r) => [r.key, r.label]),
     activeBeat,
+    location,
   };
 }
 
@@ -175,7 +202,8 @@ async function narratorContext(
   basePrompt: string,
   results: string,
   books: string,
-  storyBlock: string
+  storyBlock: string,
+  memory: TurnMemory
 ): Promise<[fixed: string, turn: string]> {
   const rs = campaign.ruleset;
   const player = chars.find((c) => c.kind === "player");
@@ -202,7 +230,10 @@ async function narratorContext(
     player
       ? `\n--- PERSONAGEM DO JOGADOR ---\n${characterInWords(player, rs.resources)}${cargo ? `\nCargo: ${cargo}` : ""}${rs.currency ? `\nDinheiro: ${money(player.sheet.money ?? 0)}` : ""}`
       : "",
-    `\n--- NPCs EM CENA ---\n${here.map(npcLine).join("\n") || "(nenhum)"}`,
+    `\n--- NPCs EM CENA ---\n${here.map((c) => `${npcLine(c)}\n${sabeBlock(memory.sabe.get(c.id) ?? [])}`).join("\n") || "(nenhum)"}`,
+    memory.onlyPlayer.length
+      ? `\n--- O QUE SÓ O JOGADOR SABE (continuidade para você; nenhum NPC em cena sabe disto: não falam nem insinuam) ---\n${memory.onlyPlayer.map(knownLine).join("\n")}`
+      : "",
     away.length ? `NPCs conhecidos fora de cena: ${away.slice(0, 40).join(", ")}` : "",
     live.length || done.length
       ? `\n--- MISSÕES ---\n${live
@@ -314,6 +345,35 @@ function toolSummary(name: string, args: Record<string, unknown>): string {
   if (name === "search_lore") return `📖 consultando livros e biblioteca: "${args.query}"`;
   if (name === "get_character") return `📋 lendo ficha de ${args.name}`;
   return `⚙️ ${name}`;
+}
+
+/**
+ * NPCs registrados que falaram na narração e, pelo Jev, citaram algo fora do SABE deles. NPC que não estava em cena no
+ * começo do turno (chegou agora) tem o SABE lido aqui. Falha = nenhum.
+ */
+async function checkLeaks(
+  campaignId: string,
+  prose: string,
+  chars: Character[],
+  location: string,
+  memory: TurnMemory,
+  query: string,
+  recent: string
+): Promise<string[]> {
+  const npcs = chars.filter((c) => c.kind === "npc");
+  const said = npcSpeeches(prose, npcs.map((c) => c.name), location);
+  if (!said.size) return [];
+  const speakers = npcs.filter((c) => said.has(c.name));
+  const missing = speakers.filter((c) => !memory.sabe.has(c.id)).map((c) => c.id);
+  const extra = missing.length ? (await sceneKnowledge(campaignId, query, missing, null).catch(() => null))?.sabe : undefined;
+  const input: LeakInput[] = speakers.map((c) => ({
+    name: c.name,
+    knows: (memory.sabe.get(c.id) ?? extra?.get(c.id) ?? []).map(knownLine),
+    lines: said.get(c.name)!,
+  }));
+  const { flagged, p } = await decideLeaks({ recent: recent.slice(-2000), narration: prose.slice(-3000) }, input, campaignId);
+  if (flagged.length) console.warn("[falas fora do SABE]", p);
+  return flagged;
 }
 
 /**
@@ -437,7 +497,12 @@ export async function runTurn(
     console.warn("[história]", e);
     return { block: "", beat: null, card: null };
   });
-  const [fixed, turn] = await narratorContext(campaign, toolCtx.scene, chars, gm.system_prompt, resultsBlock(results, steps.length, it, oracleLine), bookText, scenePlan.block);
+  // memória por testemunha: o SABE de cada NPC em cena, pela ação (ou pelo fim da narração anterior) e pela recência
+  const memQuery = acting ? playerInput : lastGmText.slice(-400);
+  const memory: TurnMemory = await sceneKnowledge(campaignId, memQuery, npcsHere.map((c) => c.id), player?.id ?? null, (await getAdvanced()).memory.knowsTopK).catch(
+    (e) => (console.warn("[memória]", e), { sabe: new Map(), onlyPlayer: [] })
+  );
+  const [fixed, turn] = await narratorContext(campaign, toolCtx.scene, chars, gm.system_prompt, resultsBlock(results, steps.length, it, oracleLine), bookText, scenePlan.block, memory);
   if (history.length) history[history.length - 1] = { ...history[history.length - 1], cache: true };
   const messages: ChatMessage[] = [
     { role: "system", content: fixed },
@@ -565,8 +630,44 @@ export async function runTurn(
     }
   }
 
+  // pós-checagem: NPC que falou de algo fora do SABE dele (Jev, uma pergunta por NPC) → refaz a narração 1 vez
+  const leaks = prose ? await checkLeaks(campaignId, prose, chars, toolCtx.scene.location, memory, memQuery, `${lastGmText.slice(-1200)}\n\nJogador: ${playerInput}`) : [];
+  if (leaks.length) {
+    signal?.throwIfAborted();
+    emit({ type: "status", text: "Revisando as falas..." });
+    const retry = await chat({
+      model: turnModel,
+      messages: [
+        ...messages,
+        { role: "assistant", content: [prose, block && `\`\`\`efeitos\n${block}\n\`\`\``].filter(Boolean).join("\n") },
+        {
+          role: "user",
+          content: `(Sistema, fora do jogo: na narração, ${leaks.join(" e ")} fala de algo que não está no SABE dele: não viu, não ouviu e ninguém contou. Reescreva a resposta inteira com a mesma história: cada NPC só fala do que está no SABE dele e do que acontece na cena; o que não sabe, ele pergunta ou não comenta. Termine com o bloco efeitos.)`,
+        },
+      ],
+      temperature: gm.temperature,
+      max_tokens: gm.max_tokens,
+      reasoning: params.reasoning as Record<string, unknown> | undefined,
+      tools: NARRATOR_TOOLS,
+      noTools: true,
+      agentId: "gm",
+      campaignId,
+      purpose: "turno (falas fora do SABE)",
+      signal,
+    }).catch((e) => {
+      signal?.throwIfAborted();
+      console.warn("[narrador: falas]", e);
+      return null;
+    });
+    const again = retry ? splitNarration(retry.content) : null;
+    if (again?.prose && proseIssues(again.prose, resourceWords).length <= proseIssues(prose, resourceWords).length) {
+      prose = again.prose;
+      block = again.block ?? block;
+    }
+  }
+
   // bloco de efeitos: validado campo a campo; ausente ou ilegível = Anotador; falhou = vazio
-  const fxCtx = effectsCtx(campaign, chars, scenePlan.beat?.id ?? null);
+  const fxCtx = effectsCtx(campaign, chars, scenePlan.beat?.id ?? null, toolCtx.scene.location);
   const raw = block ? parseLooseJson(block) : null;
   let fx: Effects;
   let dropped: string[] = [];
@@ -587,6 +688,7 @@ export async function runTurn(
     resolved: results,
     effects: { ...fx, options: undefined },
     ...(dropped.length && { dropped }),
+    ...(leaks.length && { leaks }),
   });
   emit({ type: "narration", content: narration, messageId: msgId });
   if (choices.length) {
@@ -603,6 +705,9 @@ export async function runTurn(
         JSON.stringify(entries),
         msgId,
       ]);
+    // marco do Resolvedor (domínio que subiu de faixa): quem está na cena viu
+    for (const r of results.filter((x) => x.fact))
+      await recordFact(campaignId, r.fact!, { sceneId: toolCtx.scene.id, messageId: msgId, minute: getClock(toolCtx.campaign.state)?.minutes ?? null }).catch((e) => console.warn("[fatos]", e));
     // beats, relógios, missão do beat e agenda (falhou = a história fica como estava; o turno vale)
     await afterTurn(toolCtx, fx.beat).catch((e) => console.warn("[história]", e));
   }
@@ -612,17 +717,18 @@ export async function runTurn(
 
 /**
  * Conversa particular encerrada (lib/npc): o Anotador lê as falas no lugar da narração e os efeitos (tempo, itens,
- * compra, missão, fatos) entram como no turno. Devolve as linhas do que ficou registrado.
+ * compra, missão, fatos com testemunhas = jogador + NPC) entram como no turno. Devolve as linhas do que ficou registrado.
  */
-export async function conversationEffects(campaignId: string, npcName: string, transcript: string): Promise<string[]> {
+export async function conversationEffects(campaignId: string, npc: { id: string; name: string }, transcript: string): Promise<string[]> {
   const [campaign, scene, chars] = await Promise.all([getCampaign(campaignId), getCurrentScene(campaignId), getCharacters(campaignId)]);
   const player = chars.find((c) => c.kind === "player");
   if (!player) return [];
-  const fx = await annotate(campaignId, transcript, effectsCtx(campaign, chars), `conversa particular com ${npcName}`);
+  const fx = await annotate(campaignId, transcript, effectsCtx(campaign, chars, null, scene.location), `conversa particular com ${npc.name}`);
   fx.options = [];
   fx.beat = null;
   fx.scene = { newScene: false, location: "", present: null }; // conversa não muda de lugar nem elenco
   // ponytail: sem desfazer pela etiqueta (messageId 0); o desfazer vale só para a última narração do Mestre
-  const entries = await applyEffects({ campaign, scene, emit: () => {} }, fx, { player, messageId: 0, subject: npcName });
+  // fatos da conversa: só o jogador e o NPC ficam sabendo
+  const entries = await applyEffects({ campaign, scene, emit: () => {} }, fx, { player, messageId: 0, audience: [player.id, npc.id] });
   return entries.map((e) => e.summary);
 }

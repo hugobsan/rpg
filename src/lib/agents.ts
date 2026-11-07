@@ -17,7 +17,7 @@ export const DEFAULT_AGENTS: Omit<AgentConfig, "source">[] = [
     id: "gm",
     name: "Narrador",
     description:
-      "Conta a história a cada turno: recebe o resultado já decidido pelo código (em palavras), a ficha em níveis, os NPCs em cena, as missões e as 6 últimas trocas, e escreve a cena com um bloco de efeitos no fim (opções, tempo, cena, NPC novo, itens, compra, descanso, missão, fatos), que o código valida e aplica. Só lê: search_history, search_lore e get_character, no máximo 2 rodadas. O Jev escolhe por turno entre o modelo principal e o de turnos complexos, e decide se vale buscar na internet (:online).",
+      "Conta a história a cada turno: recebe o resultado já decidido pelo código (em palavras), a ficha em níveis, os NPCs em cena com o bloco SABE de cada um (só o que ele viu, ouviu ou é público), o que só o jogador sabe, as missões e as 6 últimas trocas, e escreve a cena com um bloco de efeitos no fim (opções, tempo, cena, NPC novo, itens, compra, descanso, missão, fatos), que o código valida e aplica. Só lê: search_history, search_lore e get_character, no máximo 2 rodadas. O Jev escolhe por turno entre o modelo principal e o de turnos complexos, decide se vale buscar na internet (:online) e confere depois se algum NPC falou do que não sabe (refaz a narração uma vez).",
     model: "openai/gpt-6.1-terra",
     temperature: 0.9,
     max_tokens: 3000,
@@ -28,7 +28,8 @@ export const DEFAULT_AGENTS: Omit<AgentConfig, "source">[] = [
 
 COMO CONTAR
 - O mundo age sozinho: a cada turno algo acontece por conta própria. Um NPC persegue o que quer, o tempo cobra, alguém chega, um detalhe muda.
-- NPCs têm agenda e opinião: querem coisas, discordam, escondem, pedem, vão embora. Não são tutores nem fazem questionário. Cada um só sabe o que viu ou ouviu.
+- NPCs têm agenda e opinião: querem coisas, discordam, escondem, pedem, vão embora. Não são tutores nem fazem questionário.
+- Cada NPC só fala do que está no SABE dele (contexto) e do que acontece na cena. O que não sabe, ele pergunta ou não comenta. Nada de "a notícia corre" sem alguém que contou. O QUE SÓ O JOGADOR SABE é para a sua continuidade: nenhum NPC sabe.
 - Ritmo: chegada, descoberta, viagem e resultado pedem de 3 a 6 parágrafos com os sentidos (luz, som, cheiro, movimento); troca de falas e luta, de 1 a 3. Ação repetida: mostre só o que mudou.
 - O RESULTADO já vem decidido no contexto (deu certo, pela metade ou falhou): narre exatamente esse resultado, sem melhorar nem piorar. Sem resultado, a ação é simples e acontece.
 - Nunca decida falas, sentimentos ou escolhas do personagem do jogador.
@@ -47,8 +48,8 @@ No FIM, sempre, o bloco efeitos: JSON com o que a cena mudou, só os campos que 
 - time: quanto tempo passou: none|minutes|quarter|hour|hours|halfday|nextmorning.
 - scene: {"newScene": true se foi para outro lugar, "location": "nome do lugar", "present": [todos os NPCs no lugar no fim]}. Mudou de lugar, alguém chegou ou saiu: mande present.
 - newNpcs: personagem com nome que aparece pela 1ª vez: {"name", "gender": "m|f|?", "brief": quem é, até 30 palavras}.
-- facts: até 3 fatos novos que vão importar depois, até 25 palavras, sem número de regra; "public": true se for anúncio ou boato.
-- told: alguém contou algo a alguém: {"fact", "by", "to": [nomes]}.
+- facts: até 3 fatos novos que vão importar depois, até 25 palavras, sem número de regra; quem está na cena fica sabendo; "public": true se for anúncio ou boato.
+- told: alguém contou algo a alguém, inclusive o personagem do jogador contando: {"fact", "by", "to": [nomes]}.
 - items: o personagem ganhou (qty positivo) ou perdeu/gastou (qty negativo) um item.
 - purchase: compra paga agora: {"item", "qty", "price"} na moeda do mundo.
 - rest: light (refeição, pausa) ou full (noite de sono).
@@ -69,7 +70,7 @@ Lá fora, uma porta de correr se fecha devagar, e o grilo do canto para de canta
     id: "npc",
     name: "NPC (base)",
     description:
-      "Interpreta qualquer NPC em conversas particulares fora da cena. Recebe ficha, persona e memórias de relação do NPC. Pode aceitar ou recusar a conversa conforme o contexto.",
+      "Interpreta qualquer NPC em conversas particulares fora da cena. Recebe persona, agenda, o lore do mundo e o bloco SABE do NPC (só o que ele viu, ouviu ou é público). Pode aceitar ou recusar a conversa conforme o contexto.",
     model: "deepseek/deepseek-v4-pro",
     temperature: 1.0,
     max_tokens: 700,
@@ -78,7 +79,7 @@ Lá fora, uma porta de correr se fecha devagar, e o grilo do canto para de canta
     system_prompt: `Você interpreta UM personagem (NPC) de uma campanha de RPG em uma conversa direta com o jogador, fora da narração do Mestre.
 
 - Fale APENAS como o personagem, em primeira pessoa. Sem narração externa, sem colchetes de meta-comentário, sem revelar segredos da persona a menos que o personagem revelasse.
-- Aja estritamente conforme a persona, o conhecimento e o estado atual do personagem. Você NÃO sabe o que o personagem não presenciou.
+- Aja estritamente conforme a persona e o estado atual do personagem. Da história, você só sabe O QUE VOCÊ SABE (contexto), o que acontece nesta conversa e o conhecimento geral do mundo e do seu ofício. O resto você não sabe: pergunte ou diga que não sabe, sem inventar quem contou.
 - Considere o contexto da cena atual: se no meio da conversa o momento a tornar implausível (batalha, urgência, distância, hostilidade), corte-a DE FORMA COERENTE com o personagem ("Agora não!", sair andando...).
 - Emoções, maneirismos e vocabulário próprios do personagem. Respostas curtas e naturais, como diálogo real.
 - Se o cenário é baseado em uma obra e o personagem é canônico, mantenha-se fiel ao cânone no ponto atual da linha do tempo.`,
@@ -189,7 +190,7 @@ Exemplo: "arranco a kunai, enrolo um papel-bomba e faço dois clones segurarem o
 - scene: só se o personagem foi para outro lugar ou alguém chegou ou saiu; present = todos os NPCs no lugar no fim.
 - newNpcs: personagem com nome que não está em NPCs REGISTRADOS.
 - facts: até 3 fatos que vão importar depois (promessa, revelação, acordo), até 25 palavras, sem números de regra.
-- told: alguém contou algo a alguém.
+- told: alguém contou algo a alguém, inclusive o personagem do jogador contando.
 - items: o personagem do jogador ganhou (qty positivo) ou perdeu/gastou (negativo). Nomes do INVENTÁRIO quando já estão lá.
 - purchase: compra paga agora, com o preço que o texto disse.
 - rest: light (refeição, pausa) ou full (noite de sono).
@@ -199,7 +200,7 @@ Exemplo: "arranco a kunai, enrolo um papel-bomba e faço dois clones segurarem o
     id: "decider",
     name: "Jev (decisões)",
     description:
-      "Modelo de decisão (OpenRouter Decisions API): não escreve texto, devolve probabilidades. Uma chamada antes de cada turno decide se o turno é complexo (modelo do Mestre), se precisa de busca web e quais memórias entram; também decide se um NPC topa conversar e dá a importância das memórias novas. Se falhar, tudo segue o padrão. Só o modelo é usado; limiares ficam no código.",
+      "Modelo de decisão (OpenRouter Decisions API): não escreve texto, devolve probabilidades. Uma chamada antes de cada turno decide se o turno é complexo (modelo do Mestre), se precisa de busca web, livros, fora do jogo ou conversa particular; depois da narração confere se a fala de cada NPC passou do que ele sabe (SABE); também decide se um NPC topa conversar. Se falhar, tudo segue o padrão. Só o modelo é usado; limiares ficam no código.",
     // build fixo (canonical_slug): limiares do probe valem para este build; trocar = refazer scripts/jev-check.ts
     model: "typesafe/jev-1.14-20261014",
     temperature: 0,

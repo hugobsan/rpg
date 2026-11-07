@@ -6,7 +6,7 @@ import { db, q } from "./db";
  * NPCs criados, cena, memórias). Só o último turno pode ser refeito.
  *
  * ponytail: volta o estado inteiro da campanha; uma conversa particular com NPC
- * feita depois do turno também é desfeita (falas, memórias novas e mudanças nas fichas), e a missão aceita ou recusada
+ * feita depois do turno também é desfeita (falas, fatos novos e mudanças nas fichas), e a missão aceita ou recusada
  * no painel depois dele volta a oferecida (ou some, se o turno a criou).
  * Diretrizes da conversa fora do jogo, regras da mesa e tema ficam (não são estado da história).
  */
@@ -21,6 +21,8 @@ interface Snapshot {
   maxMessageId: number;
   maxMemoryId: number;
   maxNpcChatId?: number; // ausente em fotos antigas: não apaga conversa nenhuma
+  maxEventId?: number; // fatos (events) e quem sabe (knowledge) depois da foto somem; ausente em fotos antigas: não mexe
+  maxKnowledgeId?: number;
   regenNotes?: string[]; // motivos dos "gerar novamente" desta ação, em ordem (somam a cada vez; ação nova zera)
   option?: number; // a ação foi a opção N da narração anterior: o "gerar novamente" resolve a mesma opção tipada
 }
@@ -42,10 +44,12 @@ export async function takeSnapshot(campaignId: string, playerInput: string, note
     q(`SELECT * FROM characters WHERE campaign_id = $1`, [campaignId]),
     q(`SELECT * FROM scenes WHERE campaign_id = $1`, [campaignId]),
     q<{ state: unknown }>(`SELECT state FROM campaigns WHERE id = $1`, [campaignId]),
-    q<{ msg: string | null; mem: string | null; npc: string | null }>(
+    q<{ msg: string | null; mem: string | null; npc: string | null; ev: string | null; kn: string | null }>(
       `SELECT (SELECT MAX(id) FROM messages WHERE campaign_id = $1) AS msg,
               (SELECT MAX(id) FROM memories WHERE campaign_id = $1) AS mem,
-              (SELECT MAX(id) FROM npc_chats WHERE campaign_id = $1) AS npc`,
+              (SELECT MAX(id) FROM npc_chats WHERE campaign_id = $1) AS npc,
+              (SELECT MAX(id) FROM events) AS ev,
+              (SELECT MAX(id) FROM knowledge) AS kn`,
       [campaignId]
     ),
     ...STORY.map((t) => q(`SELECT * FROM ${t} WHERE campaign_id = $1`, [campaignId])),
@@ -58,6 +62,8 @@ export async function takeSnapshot(campaignId: string, playerInput: string, note
     maxMessageId: Number(ids.msg ?? 0),
     maxMemoryId: Number(ids.mem ?? 0),
     maxNpcChatId: Number(ids.npc ?? 0),
+    maxEventId: Number(ids.ev ?? 0),
+    maxKnowledgeId: Number(ids.kn ?? 0),
     ...(notes.length && { regenNotes: notes }),
     ...(option !== undefined && { option }),
   };
@@ -116,6 +122,9 @@ export async function restoreSnapshot(campaignId: string, keepAction = false): P
       [campaignId, s.maxMessageId, keepAction]
     );
     await client.query(`DELETE FROM memories WHERE campaign_id = $1 AND id > $2 AND kind <> 'directive'`, [campaignId, s.maxMemoryId]);
+    // fatos do turno (e da conversa particular depois dele) e quem ficou sabendo de fato antigo
+    await client.query(`DELETE FROM events WHERE campaign_id = $1 AND id > $2`, [campaignId, s.maxEventId ?? null]);
+    await client.query(`DELETE FROM knowledge k USING events e WHERE e.id = k.event_id AND e.campaign_id = $1 AND k.id > $2`, [campaignId, s.maxKnowledgeId ?? null]);
     // mensagens de NPC (npc_message) e falas de conversa particular depois da foto
     await client.query(`DELETE FROM npc_chats WHERE campaign_id = $1 AND id > $2`, [campaignId, s.maxNpcChatId ?? null]);
     await client.query("COMMIT");

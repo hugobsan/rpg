@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
 import { dehydrateSheet } from "@/lib/library";
 import { getCharacters, getCurrentScene } from "@/lib/engine";
-import { addMemory } from "@/lib/retrieval";
+import { recordFact } from "@/lib/knowledge";
+import { getClock } from "@/lib/clock";
 
 export const dynamic = "force-dynamic";
 
 /**
  * POST { name, qty } → o personagem do jogador larga o item (sai da ficha).
- * Vira uma memória curta para o Mestre saber que o item ficou no local da cena.
+ * Vira um fato que quem está na cena viu, para o Narrador saber que o item ficou no local.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -26,12 +27,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   item.qty -= qty;
   player.sheet.inventory = player.sheet.inventory.filter((i) => i.qty > 0);
   await q(`UPDATE characters SET sheet = $1, updated_at = now() WHERE id = $2`, [JSON.stringify(dehydrateSheet(player.sheet)), player.id]);
-  await addMemory(
-    id,
-    "event",
-    `${player.name} largou ${qty}x ${name}${scene.location ? ` em ${scene.location}` : ""}. O item ficou lá e não está mais com ${player.name}.`,
-    player.name,
-    2
-  );
+  const [camp] = await q<{ state: Record<string, unknown> }>(`SELECT state FROM campaigns WHERE id = $1`, [id]);
+  await recordFact(id, `${player.name} largou ${qty}x ${name}${scene.location ? ` em ${scene.location}` : ""}; o item ficou lá`, {
+    sceneId: scene.id,
+    minute: getClock(camp?.state)?.minutes ?? null,
+  });
   return NextResponse.json({ ok: true, dropped: qty, left: item.qty });
 }

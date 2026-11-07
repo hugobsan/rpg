@@ -143,11 +143,13 @@ export async function resolveSteps(ctx: ToolContext, player: Character, steps: I
       }
     } else if (step.kind === "train" && (step.ability || step.attribute)) {
       const target = step.ability ? findAbility(player.sheet, step.ability)?.name ?? step.ability : step.attribute!;
+      const was = masteryWord(findAbility((await refreshed(ctx, player)).sheet, target)?.progress ?? 0);
       const res = await executeGmTool("train", { character: player.name, target, hours: step.hours ?? 2 }, ctx);
       if (res.startsWith("Treino de")) {
         const after = (await refreshed(ctx, player)).sheet;
         const a = findAbility(after, target);
         r.note = a ? `Domínio de ${a.name} agora: ${masteryWord(a.progress ?? 0)}.` : "";
+        if (a && masteryWord(a.progress ?? 0) !== was) r.fact = `${player.name} melhorou no domínio de ${a.name} (agora: ${masteryWord(a.progress ?? 0)})`;
       } else r = { ...r, result: "fail", note: "O treino não rende agora (cansaço ou limite do dia)." };
     } else if (step.kind === "item" && step.item) {
       if (!player.sheet.inventory.some((i) => i.name === step.item)) r = { ...r, result: "fail", note: `Ele não tem ${step.item}.` };

@@ -18,11 +18,10 @@ interface Field {
 
 export const ADVANCED_SPEC = {
   memory: {
-    title: "Memórias (memories)",
-    note: "Memórias não entram mais no turno do Narrador (só as diretrizes); servem à busca fora do jogo e à conversa particular com NPC.",
+    title: "Memória por testemunha (events)",
+    note: "Cada NPC em cena recebe o bloco SABE: os 3 últimos fatos que ele testemunhou, metade por relevância à ação (vetor ou full-text) e o resto pelos mais recentes. O agente NPC recebe o mesmo bloco na conversa particular.",
     fields: {
-      toolTopK: { label: "search_memories top-k", help: "Resultados da ferramenta search_memories do Mestre.", def: 8, min: 1, max: 50, step: 1 },
-      npcTopK: { label: "NPC top-k (subject = NPC)", help: "Memórias sobre o NPC que entram no prompt da conversa particular.", def: 8, min: 1, max: 50, step: 1 },
+      knowsTopK: { label: "fatos no SABE de cada NPC", help: "Teto de fatos por NPC no contexto do Narrador e do agente NPC. Mais = menos amnésia e mais tokens.", def: 8, min: 3, max: 30, step: 1 },
     },
   },
   history: {

@@ -62,6 +62,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (url.endsWith("/decisions")) {
     const qs = body.questions as Record<string, { type: string; criteria: Record<string, unknown> }>;
     if (qs.willing) return Response.json({ answers: { willing: { type: "noul", noul: willing } } });
+    // pós-checagem das falas (SABE): nenhuma passou
+    if (Object.keys(qs).every((k) => k.startsWith("leak_"))) return Response.json({ answers: Object.fromEntries(Object.keys(qs).map((k) => [k, { type: "noul", noul: 0 }])) });
     jevQuestions.push(Object.keys(qs));
     if (jevTalk === "falha") return new Response("fora do roteiro", { status: 500 });
     const answers = Object.fromEntries(

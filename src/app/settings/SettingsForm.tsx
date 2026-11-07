@@ -124,10 +124,10 @@ export default function SettingsForm({ initial, advanced, usedBy, notice }: {
     try {
       const res = await fetch("/api/embeddings/reprocess", { method: "POST" });
       const d = await res.json();
-      const n = `${d.memories ?? 0} memórias, ${d.book_chunks ?? 0} trechos de livros e ${d.history_chunks ?? 0} do histórico`;
+      const n = `${d.events ?? 0} fatos, ${d.book_chunks ?? 0} trechos de livros e ${d.history_chunks ?? 0} do histórico`;
       setRe(res.ok
         ? { ok: !d.warning, text: `${n} reprocessados${d.dims ? `, vetores de ${d.dims} dimensões` : ""}${d.warning ? `. ${d.warning}` : ""}` }
-        : { ok: false, text: `${d.error || res.status}${d.memories !== undefined ? ` (${n} reprocessados; o restante ficou sem embedding)` : ""}` });
+        : { ok: false, text: `${d.error || res.status}${d.events !== undefined ? ` (${n} reprocessados; o restante ficou sem embedding)` : ""}` });
     } catch {
       setRe({ ok: false, text: "Falha na requisição" });
     }
@@ -153,7 +153,7 @@ export default function SettingsForm({ initial, advanced, usedBy, notice }: {
       <section className={s.section} aria-labelledby="sec-emb">
         <div className={s.aside}>
           <h2 id="sec-emb">Memória semântica</h2>
-          <p>Embeddings deixam a busca de memórias e livros por significado (pgvector). Desligados, a busca usa texto do Postgres e o jogo segue funcionando.</p>
+          <p>Embeddings deixam a busca de fatos, histórico e livros por significado (pgvector). Desligados, a busca usa texto do Postgres e o jogo segue funcionando.</p>
         </div>
         <div>
           <label className={s.switch}>
@@ -179,7 +179,7 @@ export default function SettingsForm({ initial, advanced, usedBy, notice }: {
           </label>
           <div className={s.warn}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M8 1.8 14.6 13.5H1.4L8 1.8Z" strokeLinejoin="round" /><path d="M8 6.2v3.4M8 11.6v.1" strokeLinecap="round" /></svg>
-            <span>Trocar o modelo ou a fonte exige reprocessar os embeddings já gerados (memórias, livros e histórico): vetores de modelos diferentes não se comparam. Salve antes de reprocessar.</span>
+            <span>Trocar o modelo ou a fonte exige reprocessar os embeddings já gerados (fatos, livros e histórico): vetores de modelos diferentes não se comparam. Salve antes de reprocessar.</span>
           </div>
           <div className={s.row}>
             <button className="btn small" onClick={reprocess} disabled={reRunning}>

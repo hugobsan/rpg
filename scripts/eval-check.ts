@@ -113,7 +113,7 @@ assert.deepEqual([masteryWord(10), masteryWord(40), masteryWord(70), masteryWord
 ok("tabelas: CD, desfecho, oráculo, níveis");
 
 // ---------- prompts curtos (R2: system ≤ ~1,5k tokens) ----------
-for (const id of ["gm", "interpreter", "scribe", "director", "scriptwriter"]) {
+for (const id of ["gm", "interpreter", "scribe", "director", "scriptwriter", "npc"]) {
   const a = DEFAULT_AGENTS.find((x) => x.id === id)!;
   assert.ok(a.system_prompt.length / 3.5 <= 1500, `${id}: ${a.system_prompt.length} caracteres`);
   // o exemplo do prompt passa no próprio validador

@@ -357,7 +357,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
       case "npcs":
         return <NpcList npcs={npcs} onOpen={setOpenNpc} inbox={state.inbox} onSetActive={setNpcActive} />;
       case "memories":
-        return <MemoriesView memories={state.memories} />;
+        return <MemoriesView memories={state.memories} events={state.events} />;
       case "books":
         return <BooksView campaignId={campaignId} books={state.books} onChange={reloadState} />;
       case "script":
