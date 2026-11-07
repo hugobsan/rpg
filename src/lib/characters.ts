@@ -254,15 +254,14 @@ async function createProfile(
     hydrateSheet(base.sheet), // a foto pode vir crua (só ref): o Refazer precisa dos nomes
   ]);
   const r = campaign.ruleset;
-  const arc = campaign.script?.arcs.find((a) => a.status === "active");
+  const arc = campaign.arc;
   const { voiceFx: _fx, ...known } = base.persona;
   const sheetNow = { ...baseSheet, abilities: baseSheet.abilities.map((a) => ({ name: a.name, progress: a.progress, costMult: a.costMult })) };
   const user = [
     `MECÂNICA E CENÁRIO\n${rulesetPromptSummary(r)}`,
     `KEYS PARA O JSON\n${keysBlock(r)}`,
     `MUNDO AGORA\n${[
-      campaign.script?.premise && `Premissa: ${campaign.script.premise}`,
-      arc && `Arco atual: ${arc.title}: ${arc.summary}${arc.canonEvents.length ? ` Eventos canônicos: ${arc.canonEvents.join(" | ")}` : ""}`,
+      arc && `Arco atual: ${arc.title}: ${arc.premise}`,
       typeof campaign.state.startingPoint === "string" && campaign.state.startingPoint && `Ponto de partida da campanha: ${campaign.state.startingPoint}`,
       scene && `Cena atual: ${scene.title || "-"} em ${scene.location || "?"}${scene.summary ? `. ${scene.summary.slice(-1200)}` : ""}`,
       others.length && `Personagens já registrados: ${others.map((o) => `${o.name}${o.kind === "player" ? " (jogador)" : o.role ? ` (${o.role})` : ""}`).join(", ")}`,

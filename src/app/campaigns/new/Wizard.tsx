@@ -461,8 +461,8 @@ export default function Wizard({ presets }: { presets: Record<"naruto" | "defaul
             <label className={s.toggle}>
               <input type="checkbox" checked={genScript} onChange={(e) => setGenScript(e.target.checked)} />
               <span>
-                <b>Gerar o roteiro interno da campanha</b>
-                O Roteirista planeja arcos, eventos canônicos e ganchos. Recomendado para cenários com cânone. É uma chamada de IA (centavos) e pode levar até um minuto.
+                <b>Gerar o primeiro arco agora</b>
+                O Roteirista planeja o que o mundo faz, com prazos, relógios e ganchos (no cânone, a linha do tempo da obra). Desmarcado, o arco é escrito em segundo plano depois do primeiro turno. É uma chamada de IA (centavos) e pode levar até um minuto.
               </span>
             </label>
             <label className="field">

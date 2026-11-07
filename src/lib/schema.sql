@@ -290,3 +290,59 @@ CREATE TABLE IF NOT EXISTS corrections (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS corrections_campaign_idx ON corrections (campaign_id, created_at);
+
+-- campanha como estado (lib/story.ts): arcos, beats (o que o MUNDO faz, com prazo e fallback fora de cena), relógios e
+-- ganchos. O jogador vê só título e stakes do arco ativo e os relógios; os beats são do Diretor e do Narrador.
+-- campaigns.script (roteiro antigo) fica no banco como legado e não é mais lido.
+CREATE TABLE IF NOT EXISTS arcs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  ord INT NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL DEFAULT 'main',       -- main | side
+  title TEXT NOT NULL,
+  premise TEXT NOT NULL DEFAULT '',
+  stakes TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending | active | done
+  canon_ref TEXT,                          -- arquivo de references/<mundo>; "#ep" = um beat por episódio (fallback)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS arcs_campaign_idx ON arcs (campaign_id, ord);
+CREATE TABLE IF NOT EXISTS beats (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  arc_id UUID NOT NULL REFERENCES arcs(id) ON DELETE CASCADE,
+  ord INT NOT NULL DEFAULT 0,
+  title TEXT NOT NULL,
+  situation TEXT NOT NULL DEFAULT '',      -- o que o mundo faz (nunca ato do personagem do jogador)
+  npcs TEXT[] NOT NULL DEFAULT '{}',       -- elenco ("cast" é reservada no Postgres)
+  location TEXT NOT NULL DEFAULT '',
+  trigger JSONB NOT NULL DEFAULT '{}',     -- { after_beat?, day_gte?, clock?: {id, gte}, narrative? }
+  due_minute INT,                          -- prazo no relógio do jogo
+  required BOOLEAN NOT NULL DEFAULT FALSE,
+  fallback TEXT NOT NULL DEFAULT '',       -- o que acontece fora de cena se o jogador não estiver lá
+  foreshadow TEXT NOT NULL DEFAULT '',
+  clue TEXT,
+  reward JSONB,                            -- { pay?, xp? }: beat que vira missão do jogador ao ativar
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending | ready | active | done | missed
+  resolved_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS beats_campaign_idx ON beats (campaign_id, ord);
+CREATE TABLE IF NOT EXISTS clocks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  arc_id UUID REFERENCES arcs(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,                      -- visível ao jogador
+  segments INT NOT NULL DEFAULT 6,
+  filled INT NOT NULL DEFAULT 0,
+  tick TEXT[] NOT NULL DEFAULT '{day}',    -- day | scene
+  on_full_beat UUID REFERENCES beats(id) ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS hooks (
+  id BIGSERIAL PRIMARY KEY,
+  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  beat_id UUID REFERENCES beats(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'open',     -- open | paid | dropped
+  last_touched_scene INT NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS hooks_campaign_idx ON hooks (campaign_id);

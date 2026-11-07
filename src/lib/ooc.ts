@@ -13,7 +13,7 @@ import type { SceneMode } from "./types";
 
 // as ferramentas do turno, menos as que leem o roteiro e os segredos dos NPCs (spoiler) e a mensagem de NPC
 // (é jogada, não conversa fora do jogo), mais remover habilidade
-const HIDDEN = ["get_script", "update_script", "get_character", "npc_message"];
+const HIDDEN = ["get_character", "npc_message"];
 export const OOC_GAME_TOOLS: ToolDef[] = [
   ...GM_TOOLS.filter((t) => !HIDDEN.includes(t.function.name)),
   {

@@ -60,7 +60,7 @@ const char = (id: string, kind: "player" | "npc", name: string, o: Partial<Chara
   ({ id, campaign_id: "c", kind, name, active: true, canon: false, sheet: sheet(), persona: {}, voice: null, ...o }) as Character;
 const view = (o: { player?: Partial<Sheet>; npcs?: Character[]; state?: Record<string, unknown>; id?: string } = {}): CampaignView =>
   ({
-    campaign: { id: o.id ?? "c", name: "t", style: "hybrid", ruleset: r, script: null, state: o.state ?? {} },
+    campaign: { id: o.id ?? "c", name: "t", style: "hybrid", ruleset: r, state: o.state ?? {} },
     characters: [char("p", "player", "Hugo", { sheet: sheet(o.player) }), ...(o.npcs ?? [])],
   }) as CampaignView;
 

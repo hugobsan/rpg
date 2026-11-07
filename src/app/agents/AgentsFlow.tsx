@@ -130,18 +130,18 @@ const NODES: (FlowNode | LaneNode)[] = [
     freq: "1 a 4 chamadas por mensagem (outra rodada só para ler uma busca ou escrever a resposta).",
     custo: "O modelo principal do Mestre, sem Jev e sem busca web; contexto menor que o do turno.",
   }),
-  n("s_btn1", X[0], -250, "player", "Criar ou replanejar campanha", "gera o roteiro", {
-    oque: "O roteiro é gerado ao criar a campanha (se a opção estiver marcada) ou quando você pede para replanejar.",
+  n("s_btn1", X[0], -250, "player", "Criar campanha, Refazer arco", "ou agenda < 4 beats", {
+    oque: "O arco é escrito ao criar a campanha, no Refazer arco da aba Roteiro e, em segundo plano, quando a agenda cai abaixo de 4 beats abertos.",
   }),
-  n("s_writer", X[1], -250, "writer", "Roteirista", "premissa, arcos, ganchos", {
-    oque: "Planeja a campanha: premissa, de 4 a 8 arcos, eventos canônicos e ganchos ligados ao passado do personagem, em JSON. Se o cenário é baseado em obra, ancora os arcos na linha do tempo canônica, com busca web.",
-    quando: "Ao criar a campanha (se marcado) e ao pedir replanejamento.",
-    freq: "Raro: 1 chamada por geração.",
-    custo: "Médio e pontual: saída de até 4 mil tokens, mais a busca web.",
-    fallback: "Sem JSON válido, nada é salvo e a tela mostra erro (502); o roteiro anterior continua.",
+  n("s_writer", X[1], -250, "writer", "Roteirista", "arco: beats, relógios, ganchos", {
+    oque: "Escreve o arco como estado: 8 a 12 beats com o que o mundo faz (gatilho, prazo, fallback fora de cena, foreshadow, pista, recompensa), relógios, ganchos e agenda dos NPCs. Só roda com modelo forte; a saída é validada por código e pelo Jev (beat que exige ato do personagem do jogador sai).",
+    quando: "Criar campanha, Refazer arco, agenda abaixo de 4.",
+    freq: "Raro: 1 a 2 chamadas por arco.",
+    custo: "Médio e pontual: saída de até 6 mil tokens.",
+    fallback: "Modelo fraco ou sem plano válido depois de 1 nova tentativa: o código monta o arco das sinopses do cânone (references/) ou um arco genérico da premissa.",
   }),
-  n("s_script", X[2], -250, "code", "Roteiro da campanha", "campaigns.script", {
-    oque: "Fica salvo na campanha. O arco ativo entra no contexto do Mestre a cada turno, na decisão do Jev e, como momento da história, no prompt do Ilustrador; o Mestre consulta (get_script) e atualiza (update_script, uma anotação) o roteiro por ferramenta.",
+  n("s_script", X[2], -250, "code", "Arcos, beats, relógios, ganchos", "tabelas + Diretor", {
+    oque: "O código avalia gatilhos, enche relógios por dia e por cena e marca beat vencido como perdido (o fallback vira notícia pública; a missão do jogador nunca é tocada). Antes do Narrador, o Diretor (agente, síncrono) monta o cartão da cena quando ela abre, um beat fica pronto ou a cada 8 turnos; o cartão substitui o roteiro no contexto. Beat com recompensa vira missão aberta ao ativar.",
   }),
   n("s_btn2", X[0], -130, "player", "Botão “Ver ambiente”", "na tela da campanha", {
     oque: "A imagem só é gerada quando o jogador clica.",

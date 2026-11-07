@@ -9,7 +9,7 @@ import { regenNotes, restoreSnapshot, snapshotOption, takeSnapshot } from "../sr
 
 async function main() {
   const [c] = await q<{ id: string }>(
-    `INSERT INTO campaigns (name, ruleset, script) VALUES ('[teste-regen]', '{}', '{"arcs":[]}') RETURNING id`
+    `INSERT INTO campaigns (name, ruleset, state) VALUES ('[teste-regen]', '{}', '{"play":{"mode":"exploration"}}') RETURNING id`
   );
   const id = c.id;
   try {
@@ -23,6 +23,7 @@ async function main() {
     );
     await q(`INSERT INTO messages (campaign_id, scene_id, role, content) VALUES ($1, $2, 'gm', 'abertura')`, [id, scene.id]);
     await q(`INSERT INTO memories (campaign_id, content) VALUES ($1, 'memória antiga')`, [id]);
+    const [arc] = await q<{ id: string }>(`INSERT INTO arcs (campaign_id, title, status) VALUES ($1, 'Ondas', 'active') RETURNING id`, [id]);
 
     // motivos dos "gerar novamente" somam na foto da mesma ação; ação nova zera
     await takeSnapshot(id, "ataco o boneco de treino", ["com o Hokage"]);
@@ -41,7 +42,10 @@ async function main() {
     await q(`UPDATE scenes SET mode = 'battle', location = 'Floresta', is_current = FALSE WHERE id = $1`, [scene.id]);
     await q(`INSERT INTO scenes (campaign_id, seq, mode) VALUES ($1, 2, 'battle')`, [id]);
     await q(`INSERT INTO memories (campaign_id, content) VALUES ($1, 'memória nova do turno')`, [id]);
-    await q(`UPDATE campaigns SET script = '{"arcs":[{"title":"novo"}]}' WHERE id = $1`, [id]);
+    // história: beat novo, arco fechado, modo missão
+    await q(`INSERT INTO beats (campaign_id, arc_id, title) VALUES ($1, $2, 'novo')`, [id, arc.id]);
+    await q(`UPDATE arcs SET status = 'done' WHERE id = $1`, [arc.id]);
+    await q(`UPDATE campaigns SET state = state || '{"play":{"mode":"mission"}}' WHERE id = $1`, [id]);
 
     const input = await restoreSnapshot(id);
 
@@ -60,10 +64,12 @@ async function main() {
     assert.deepEqual(chunks.map((h) => h.content), ["abertura"], "trecho do histórico do turno some");
     const mems = await q<{ content: string }>(`SELECT content FROM memories WHERE campaign_id = $1`, [id]);
     assert.deepEqual(mems.map((m) => m.content), ["memória antiga"]);
-    const [camp] = await q<{ script: unknown }>(`SELECT script FROM campaigns WHERE id = $1`, [id]);
-    assert.deepEqual(camp.script, { arcs: [] }, "roteiro volta");
+    const [camp] = await q<{ state: { play: unknown } }>(`SELECT state FROM campaigns WHERE id = $1`, [id]);
+    assert.deepEqual(camp.state.play, { mode: "exploration" }, "modo de jogo volta");
+    assert.deepEqual(await q(`SELECT title, status FROM arcs WHERE campaign_id = $1`, [id]), [{ title: "Ondas", status: "active" }], "arco volta");
+    assert.deepEqual(await q(`SELECT id FROM beats WHERE campaign_id = $1`, [id]), [], "beat do turno some");
 
-    console.log("ok: gerar novamente restaura ficha, NPCs, cena, mensagens, memórias, histórico e roteiro");
+    console.log("ok: gerar novamente restaura ficha, NPCs, cena, mensagens, memórias, histórico, arcos, beats e modo de jogo");
   } finally {
     await q(`DELETE FROM campaigns WHERE id = $1`, [id]);
     await pool().end();

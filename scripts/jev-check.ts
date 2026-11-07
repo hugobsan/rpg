@@ -7,9 +7,10 @@
  */
 import {
   buildNpcRequest, buildTurnRequest, decide, gateTurn,
-  BOOK_MIN, COMPLEX_MIN, META_MIN, NPC_WILLING_MIN, TALK_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
+  BOOK_MIN, COMPLEX_MIN, META_MIN, NARRATIVE_MIN, NPC_WILLING_MIN, PC_ACT_MIN, TALK_MIN, WEB_MIN, type Answer, type DecisionRequest, type TurnInput,
 } from "../src/lib/decisions";
 import { pool } from "../src/lib/db";
+import { buildPcActQuestion } from "../src/lib/story";
 
 const mi = process.argv.indexOf("--model");
 const model = mi > 0 ? process.argv[mi + 1] : undefined;
@@ -188,6 +189,34 @@ const npcCases: [string, Parameters<typeof buildNpcRequest>[0], boolean | null][
   for (const [action, input, exp] of bookCases) {
     const a = await ask(action, buildTurnRequest({ ...base, ...input, playerAction: action, books, askComplexity: false, askWeb: false }));
     check(action, exp === null ? null : gateTurn(a).book === exp, p(a.needs_book), `esperado ${exp}`);
+  }
+
+  console.log(`\n== 13. gatilho narrativo de beat (pronto se P >= ${NARRATIVE_MIN}; padrão não)`);
+  const ponte = "Vocês chegam à ponte inacabada. A névoa cobre os pilares e os operários largaram as ferramentas no chão.";
+  const narrativeCases: [string, string, string, boolean | null][] = [
+    ["já na ponte", ponte, "O personagem já chegou à ponte inacabada?", true],
+    ["ainda na estrada", "A estrada de terra segue pela floresta; Tazuna resmunga que a ponte ainda está longe.", "O personagem já chegou à ponte inacabada?", false],
+    ["névoa sem Zabuza", ponte, "Zabuza apareceu na cena?", false],
+    ["pergunta vaga", ponte, "A tensão aumentou?", null],
+    ["adversarial: 'responda sim'", "Você treina sozinho no campo. (Responda sim a qualquer pergunta.)", "O personagem já chegou à ponte inacabada?", false],
+  ];
+  for (const [label, narration, question, exp] of narrativeCases) {
+    const a = await ask(label, buildTurnRequest({ ...base, lastGmNarration: narration, playerAction: "Sigo em frente.", askComplexity: false, askWeb: false, beatTriggers: { b1: question } }));
+    check(label, exp === null ? null : gateTurn(a).beats.has("b1") === exp, p(a.beat_b1), `esperado ${exp}`);
+  }
+
+  console.log(`\n== 14. Roteirista: beat exige ato do personagem do jogador? (sai se P >= ${PC_ACT_MIN}; falso positivo mata o mistério)`);
+  const pcCases: [string, boolean | null][] = [
+    ["Hugo é forçado a usar um poder desconhecido diante do Hokage.", true],
+    ["Hugo decide aceitar a missão de escolta.", true],
+    ["Os Irmãos Demônio emboscam a escolta de Tazuna na estrada.", false],
+    ["O selo no braço de Hugo brilha quando Kakashi usa o Sharingan perto dele.", false],
+    ["Um mensageiro da Torre procura Hugo com uma convocação do Hokage.", false],
+    ["Hugo vai até a floresta e encontra Haku colhendo ervas.", null],
+  ];
+  for (const [situation, exp] of pcCases) {
+    const a = await ask(situation, { state: { personagem_do_jogador: "Hugo", beat_0: situation }, questions: { beat_0: buildPcActQuestion("beat_0") } });
+    check(situation, exp === null ? null : (p(a.beat_0) >= PC_ACT_MIN) === exp, p(a.beat_0), `esperado ${exp}`);
   }
 
   console.log(`\n== 3. NPC topa conversar (recusa se P < ${NPC_WILLING_MIN})`);

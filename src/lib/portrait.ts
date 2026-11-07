@@ -14,10 +14,10 @@ import type { Campaign, Character } from "./types";
  * Em que ponto da história a campanha está (arco ativo do roteiro). Vai no prompt do Ilustrador e do reescritor para
  * cada personagem sair na fase certa da obra: sem isso, um modelo desenhava o visual de Shippuden numa sessão do Naruto clássico.
  */
-export function storyMoment(campaign: Pick<Campaign, "ruleset" | "script">): string {
-  const arc = campaign.script?.arcs.find((a) => a.status === "active");
+export function storyMoment(campaign: Pick<Campaign, "ruleset" | "arc">): string {
+  const arc = campaign.arc;
   return [
-    arc && `Momento da história: arco "${arc.title}": ${arc.summary.slice(0, 300)}`,
+    arc && `Momento da história: arco "${arc.title}": ${arc.premise.slice(0, 300)}`,
     campaign.ruleset.canonBased && "Desenhe cada personagem com a aparência e a roupa desta fase da obra, não de fases posteriores.",
   ]
     .filter(Boolean)
@@ -32,7 +32,7 @@ export function appearanceLine(c: Pick<Character, "name" | "kind" | "canon" | "p
 }
 
 /** Quem é o personagem, em texto curto e agnóstico de cenário (entra no prompt do Ilustrador). */
-export function describe(campaign: Pick<Campaign, "ruleset"> & Partial<Pick<Campaign, "script">>, c: Pick<Character, "name" | "kind" | "canon" | "sheet" | "persona">): string {
+export function describe(campaign: Pick<Campaign, "ruleset" | "arc">, c: Pick<Character, "name" | "kind" | "canon" | "sheet" | "persona">): string {
   const rs = campaign.ruleset;
   const rank = rs.ranks?.find((r) => r.key === c.sheet.rank)?.label || c.sheet.rank;
   const extra = Object.entries(c.sheet.extra || {})
@@ -42,7 +42,7 @@ export function describe(campaign: Pick<Campaign, "ruleset"> & Partial<Pick<Camp
   const p = c.persona;
   return [
     `Cenário: ${rs.name}${rs.description ? `. ${rs.description}` : ""}`,
-    storyMoment({ ruleset: rs, script: campaign.script ?? null }),
+    storyMoment(campaign),
     `Personagem: ${c.name} (${c.kind === "player" ? "protagonista" : "NPC"}${c.canon ? ", personagem canônico da obra: siga a aparência oficial" : ""})`,
     rank && `Cargo: ${rank}`,
     extra,

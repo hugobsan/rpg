@@ -361,7 +361,7 @@ export default function GameClient({ campaignId, initial }: { campaignId: string
       case "books":
         return <BooksView campaignId={campaignId} books={state.books} onChange={reloadState} />;
       case "script":
-        return <ScriptView script={campaign.script} campaignId={campaignId} onChange={reloadState} />;
+        return <ScriptView campaignId={campaignId} onChange={reloadState} />;
       case "gallery":
         return <Gallery campaignId={campaignId} refreshKey={sceneImage?.id} onDeleted={reloadState} />;
       case "table":

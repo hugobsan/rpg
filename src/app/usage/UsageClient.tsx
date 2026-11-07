@@ -8,7 +8,7 @@ import s from "./usage.module.css";
 
 // cor fixa por agente (paleta categórica validada no fundo escuro: scripts/validate_palette da skill dataviz);
 // a ordem é a do empilhamento e não muda com os filtros
-const AGENT_ORDER = ["gm", "npc", "chronicler", "scriptwriter", "decider", "image", "voice", "pixel", "scribe", "interpreter", "characters", "abilities", "items", "adventure", "suggest", "referee"];
+const AGENT_ORDER = ["gm", "npc", "chronicler", "scriptwriter", "director", "decider", "image", "voice", "pixel", "scribe", "interpreter", "characters", "abilities", "items", "adventure", "suggest", "referee"];
 // 7 cores da paleta + 1 extra para o Pixel artista (aposentado; fica pelo histórico de custo, como Cronista, Árbitro e Ações
 // rápidas) + 1 do Anotador + 1 do Intérprete;
 // os criadores grátis ficam no cinza de "outros"

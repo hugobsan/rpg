@@ -218,6 +218,9 @@ export interface Persona {
   gender?: "male" | "female" | null;
   // ajuste de reprodução da voz (só no navegador, nunca vai para a API do TTS). undefined = padrão (1x, 0 st)
   voiceFx?: VoiceFx;
+  // cartão do NPC (Roteirista): o que ele faz por conta própria e o que quer
+  agenda?: string;
+  wants?: string;
 }
 
 /** Efeitos aplicados ao tocar o mp3 do NPC: rate = velocidade (0,5 a 2, mantém o tom); pitch = semitons (-12 a 12, mantém a velocidade). */
@@ -256,25 +259,14 @@ export type SceneMode =
   | "training"
   | "downtime";
 
-export interface CampaignScript {
-  premise: string;
-  arcs: {
-    title: string;
-    summary: string;
-    canonEvents: string[];
-    hooks: string[];
-    status: "pending" | "active" | "done";
-    notes: string[];
-  }[];
-}
-
 export interface Campaign {
   id: string;
   name: string;
   style: CampaignStyle;
   ruleset: Ruleset;
-  script: CampaignScript | null;
   state: Record<string, unknown>;
+  // arco ativo (lib/story.ts), lido junto em getCampaign: momento da história para o Ilustrador e o Criador de personagens
+  arc?: { title: string; premise: string; stakes: string } | null;
 }
 
 export interface Scene {

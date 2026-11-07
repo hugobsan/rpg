@@ -10,11 +10,14 @@ import { db, q } from "./db";
  * no painel depois dele volta a oferecida (ou some, se o turno a criou).
  * Diretrizes da conversa fora do jogo, regras da mesa e tema ficam (não são estado da história).
  */
+const STORY = ["arcs", "beats", "clocks", "hooks"] as const;
+
 // fichas no formato gravado (abilities = { ref, progress }): salvar e restaurar copiam a linha crua, sem hidratar
 interface Snapshot {
   characters: Record<string, unknown>[];
   scenes: Record<string, unknown>[];
-  campaign: { script: unknown; state: unknown };
+  campaign: { state: unknown };
+  story?: { arcs: unknown[]; beats: unknown[]; clocks: unknown[]; hooks: unknown[] }; // ausente em fotos antigas: não mexe
   maxMessageId: number;
   maxMemoryId: number;
   maxNpcChatId?: number; // ausente em fotos antigas: não apaga conversa nenhuma
@@ -35,21 +38,23 @@ export async function snapshotOption(campaignId: string): Promise<number | undef
 }
 
 export async function takeSnapshot(campaignId: string, playerInput: string, notes: string[] = [], option?: number): Promise<void> {
-  const [characters, scenes, [campaign], [ids]] = await Promise.all([
+  const [characters, scenes, [campaign], [ids], ...story] = await Promise.all([
     q(`SELECT * FROM characters WHERE campaign_id = $1`, [campaignId]),
     q(`SELECT * FROM scenes WHERE campaign_id = $1`, [campaignId]),
-    q<{ script: unknown; state: unknown }>(`SELECT script, state FROM campaigns WHERE id = $1`, [campaignId]),
+    q<{ state: unknown }>(`SELECT state FROM campaigns WHERE id = $1`, [campaignId]),
     q<{ msg: string | null; mem: string | null; npc: string | null }>(
       `SELECT (SELECT MAX(id) FROM messages WHERE campaign_id = $1) AS msg,
               (SELECT MAX(id) FROM memories WHERE campaign_id = $1) AS mem,
               (SELECT MAX(id) FROM npc_chats WHERE campaign_id = $1) AS npc`,
       [campaignId]
     ),
+    ...STORY.map((t) => q(`SELECT * FROM ${t} WHERE campaign_id = $1`, [campaignId])),
   ]);
   const snap: Snapshot = {
     characters,
     scenes,
     campaign,
+    story: Object.fromEntries(STORY.map((t, i) => [t, story[i]])) as Snapshot["story"],
     maxMessageId: Number(ids.msg ?? 0),
     maxMemoryId: Number(ids.mem ?? 0),
     maxNpcChatId: Number(ids.npc ?? 0),
@@ -94,15 +99,17 @@ export async function restoreSnapshot(campaignId: string, keepAction = false): P
       }
     }
     await client.query(
-      `UPDATE campaigns SET script = $1,
-         state = ($2::jsonb - 'table' - 'theme') || jsonb_strip_nulls(jsonb_build_object('table', state->'table', 'theme', state->'theme'))
-       WHERE id = $3`,
-      [
-        JSON.stringify(s.campaign.script),
-        JSON.stringify(s.campaign.state),
-        campaignId,
-      ]
+      `UPDATE campaigns SET
+         state = ($1::jsonb - 'table' - 'theme') || jsonb_strip_nulls(jsonb_build_object('table', state->'table', 'theme', state->'theme'))
+       WHERE id = $2`,
+      [JSON.stringify(s.campaign.state), campaignId]
     );
+    // história (arcos, beats, relógios, ganchos): apaga e regrava como na foto, na ordem das FKs
+    if (s.story) {
+      for (const t of [...STORY].reverse()) await client.query(`DELETE FROM ${t} WHERE campaign_id = $1`, [campaignId]);
+      for (const t of STORY)
+        await client.query(`INSERT INTO ${t} SELECT * FROM jsonb_populate_recordset(NULL::${t}, $1)`, [JSON.stringify(s.story[t])]);
+    }
     await client.query(
       `DELETE FROM messages WHERE campaign_id = $1 AND id > $2
          AND NOT ($3 AND id = COALESCE((SELECT MIN(id) FROM messages WHERE campaign_id = $1 AND id > $2 AND role = 'player'), 0))`,

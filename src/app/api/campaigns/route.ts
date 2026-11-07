@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { q } from "@/lib/db";
 import { blankSheet, normalizeRuleset, startingKit } from "@/lib/ruleset";
-import { generateScript, getCampaign } from "@/lib/engine";
+import { writeArc } from "@/lib/story";
 import { EXTRA_MASTERY } from "@/lib/progression";
 import { dehydrateSheet, ensureLibraryAbility } from "@/lib/library";
 import { slugKey } from "@/lib/table";
@@ -96,14 +96,15 @@ export async function POST(req: NextRequest) {
     [campaign.id, body.startingPoint?.slice(0, 120) || ""]
   );
 
-  let script = null;
+  // primeiro arco: Roteirista forte, senão fallback por código (cânone ou genérico); desmarcado = depois do 1º turno
+  let script = false;
   let scriptError: string | null = null;
   if (body.generateScript !== false) {
     try {
-      script = await generateScript(await getCampaign(campaign.id));
+      script = !!(await writeArc(campaign.id, "new"));
     } catch (e) {
       scriptError = e instanceof Error ? e.message : String(e);
     }
   }
-  return NextResponse.json({ id: campaign.id, script: !!script, scriptError });
+  return NextResponse.json({ id: campaign.id, script, scriptError });
 }

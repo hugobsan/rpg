@@ -36,6 +36,12 @@ export const TALK_MIN = D.jev.talkMin;
 // (2026-11-02, 3 rodadas): precisa de fato da obra 0.59-0.97; rotina, treino, o que já está em npcs_em_cena 0.06-0.36.
 // Abaixo do meio do vão: errar para baixo custa uma rodada do Mestre no search_book; para cima, ~400 tokens à toa.
 export const BOOK_MIN = D.jev.bookMin;
+// Gatilho narrativo de beat (lib/story.ts): o beat fica pronto se P(a última narração mostra isso) >= limiar. Sem probe
+// medido ainda (casos em scripts/jev-check.ts, seção 13); alto porque o padrão é "não" e o beat ainda vence pelo prazo.
+export const NARRATIVE_MIN = 0.7;
+// Roteirista: beat cuja situation só acontece por ato do personagem do jogador sai do plano se P >= limiar. Sem probe
+// medido (seção 14); alto porque o falso positivo mata o mistério ("o selo reage ao chakra dele" é o mundo agindo).
+export const PC_ACT_MIN = 0.8;
 
 // ---------- tipos da API ----------
 
@@ -134,6 +140,7 @@ export interface TurnInput {
   askMeta?: boolean; // pergunta se a ação é fala fora do jogo sobre o registro (não no Continuar nem no gerar novamente)
   askTalk?: boolean; // pergunta se a ação é conversa à parte com um dos npcsInScene (idem; o chamador pula batalha e treino)
   books?: string[]; // títulos dos livros de referência indexados: presente e não vazio = pergunta se a ação precisa deles
+  beatTriggers?: Record<string, string>; // id do beat → pergunta sim/não do gatilho narrativo (sobre a última narração)
 }
 
 export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest {
@@ -196,6 +203,15 @@ export function buildTurnRequest(t: TurnInput, a: Advanced = D): DecisionRequest
           "Fala que faz parte da cena: sobre a atividade em andamento (treino, missão, investigação, luta, viagem), perguntar como fazer o que está sendo ensinado, propor ou discutir um método, plano ou próximo passo, aceitar ou escolher o que fazer a seguir (\"vamos começar por...\"), colher informação para a missão. Ou: ação no mundo (entrar, ir, pegar, entregar, oferecer, treinar, atacar, usar técnica), fala junto de uma ação (\"entro e pergunto...\"), fala para vários personagens, fala com quem não está em `npcs_em_cena`, fala fora do jogo ao Mestre.",
       },
     };
+  for (const [id, text] of Object.entries(t.beatTriggers ?? {}))
+    questions[`beat_${id}`] = {
+      type: "noul",
+      instructions: `Pela \`ultima_narracao_do_mestre\`, a resposta a esta pergunta é sim: "${text}"?`,
+      criteria: {
+        true: "Sim: a narração mostra isso claramente, já aconteceu ou está acontecendo.",
+        false: "Não, ou a narração não deixa claro.",
+      },
+    };
   return {
     state: {
       cenario: { nome: t.setting.name, baseado_em_obra: t.setting.canonBased },
@@ -221,6 +237,7 @@ export interface TurnDecision {
   meta: boolean; // fala fora do jogo sobre o registro; falha do Jev = não (turno normal)
   talk: string | null; // nome do NPC com quem a ação é conversa direta; falha do Jev = null (turno normal)
   book: boolean; // trechos dos livros no contexto; falha do Jev = não (o Narrador ainda tem search_lore)
+  beats: Set<string>; // ids dos beats cujo gatilho narrativo o Jev confirmou; falha = nenhum
 }
 
 export function gateTurn(answers: Record<string, Answer> | null, a: Advanced = D): TurnDecision {
@@ -233,6 +250,11 @@ export function gateTurn(answers: Record<string, Answer> | null, a: Advanced = D
     meta: (answers ? (noulOf(answers, "meta") ?? 0) : 0) >= a.jev.metaMin,
     book: (answers ? (noulOf(answers, "needs_book") ?? 0) : 0) >= a.jev.bookMin,
     talk: t?.type === "choice" && t.choice !== "nenhum" && (t.probabilities?.[t.choice] ?? 1) >= a.jev.talkMin ? t.choice : null,
+    beats: new Set(
+      Object.entries(answers ?? {})
+        .filter(([k, v]) => k.startsWith("beat_") && v.type === "noul" && v.noul >= NARRATIVE_MIN)
+        .map(([k]) => k.slice(5))
+    ),
   };
 }
 

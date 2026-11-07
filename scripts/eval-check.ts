@@ -26,6 +26,7 @@ import {
   validateInterpretation,
 } from "../src/lib/contracts";
 import { DEFAULT_AGENTS } from "../src/lib/agents";
+import { validateCard } from "../src/lib/story";
 
 const dir = path.join(__dirname, "eval", "fixtures");
 const load = (f: string) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf-8"));
@@ -112,7 +113,7 @@ assert.deepEqual([masteryWord(10), masteryWord(40), masteryWord(70), masteryWord
 ok("tabelas: CD, desfecho, oráculo, níveis");
 
 // ---------- prompts curtos (R2: system ≤ ~1,5k tokens) ----------
-for (const id of ["gm", "interpreter", "scribe"]) {
+for (const id of ["gm", "interpreter", "scribe", "director", "scriptwriter"]) {
   const a = DEFAULT_AGENTS.find((x) => x.id === id)!;
   assert.ok(a.system_prompt.length / 3.5 <= 1500, `${id}: ${a.system_prompt.length} caracteres`);
   // o exemplo do prompt passa no próprio validador
@@ -123,6 +124,11 @@ for (const id of ["gm", "interpreter", "scribe"]) {
   }
 }
 assert.ok(!DEFAULT_AGENTS.some((a) => ["referee", "suggest", "chronicler"].includes(a.id)), "Árbitro, Ações rápidas e Cronista saíram");
+// o exemplo do Diretor passa no validador do cartão
+const dirPrompt = DEFAULT_AGENTS.find((a) => a.id === "director")!.system_prompt;
+const card = validateCard(parseLooseJson(dirPrompt.slice(dirPrompt.indexOf("Exemplo:"))), { beats: [{ id: "3f9a1c2e-0000-4000-8000-000000000000" } as never], names: ["Tazuna"] });
+assert.deepEqual(card.errors, [], "exemplo do Diretor válido");
+assert.equal(card.card?.npcIntents.length, 1);
 ok("prompts curtos e exemplo válido");
 
 console.log(`\n${n} verificações ok`);

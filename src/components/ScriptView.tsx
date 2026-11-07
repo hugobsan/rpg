@@ -1,42 +1,32 @@
 "use client";
-import { useState } from "react";
-import type { CampaignScript } from "@/lib/types";
+import { useEffect, useState } from "react";
 import Loader from "./ui/Loader";
 import s from "./SidePanels.module.css";
 
-const STATUS: Record<string, string> = { active: "em andamento", done: "concluído", pending: "pendente" };
-const Anchor = () => (
-  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-    <circle cx="12" cy="5" r="2" /><path d="M12 7v14M5 13a7 7 0 0 0 14 0M8 11h8" />
-  </svg>
-);
-const Pen = () => (
-  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="m15 5 4 4L8 20H4v-4L15 5Z" />
-  </svg>
-);
 const Down = () => (
   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
   </svg>
 );
 
-export default function ScriptView({
-  script,
-  campaignId,
-  onChange,
-}: {
-  script: CampaignScript | null;
-  campaignId: string;
-  onChange: () => void;
-}) {
+interface View {
+  arc: { title: string; stakes: string } | null;
+  clocks: { name: string; filled: number; segments: number }[];
+}
+
+/** Aba Roteiro: só o título e o que está em jogo do arco ativo e os relógios. Os beats nunca vêm (spoiler). */
+export default function ScriptView({ campaignId, onChange }: { campaignId: string; onChange: () => void }) {
+  const [view, setView] = useState<View | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [show, setShow] = useState(false);
-  const regen = async () => {
+  useEffect(() => {
+    fetch(`/api/campaigns/${campaignId}/script`).then((r) => r.json()).then(setView).catch(() => setView({ arc: null, clocks: [] }));
+  }, [campaignId]);
+  const redo = async () => {
     setConfirming(false);
     setBusy(true);
-    await fetch(`/api/campaigns/${campaignId}/script`, { method: "POST" });
+    const r = await fetch(`/api/campaigns/${campaignId}/script`, { method: "POST" });
+    if (r.ok) setView(await r.json());
     setBusy(false);
     onChange();
   };
@@ -45,69 +35,51 @@ export default function ScriptView({
       <details className={s.how}>
         <summary>Para que serve o roteiro</summary>
         <p>
-          É o planejamento interno do Mestre, feito pelo agente Roteirista a partir do seu personagem e do ponto de partida.
-          Ele divide a história em <b>arcos</b> e, em cenários baseados numa obra, ancora cada arco nos <b>eventos canônicos</b> daquele
-          momento, além de plantar ganchos ligados ao seu passado e aos seus objetivos.
-        </p>
-        <p>
-          Durante o jogo o Mestre consulta o roteiro para saber em que ponto está e anota o progresso. É um guia, não um trilho: suas
-          escolhas podem desviar a história, e o Mestre adapta. Com a campanha em andamento, regenerar replaneja a partir de onde a história parou: o Roteirista lê o que já aconteceu, os arcos concluídos ficam e as anotações dos arcos que continuam também.
+          O Roteirista planeja o que o <b>mundo</b> faz neste arco, com prazos: se você não estiver lá, acontece fora de cena e
+          vira notícia. Os relógios enchem com o tempo e com as cenas. Antes de cada cena, o Diretor escolhe o que ela quer e
+          o Narrador conta. O plano em si fica escondido para não estragar a surpresa.
         </p>
       </details>
 
-      {busy ? (
+      {busy || !view ? (
         <div className={s.gate} aria-busy="true">
-          <Loader size={34} label="O Roteirista está escrevendo" showLabel />
-          <p>Montando arcos e ganchos. Leva um minuto.</p>
+          <Loader size={34} label={busy ? "O Roteirista está escrevendo" : "Carregando"} showLabel />
+          {busy && <p>Montando o arco. Leva um minuto.</p>}
         </div>
-      ) : !script ? (
+      ) : !view.arc ? (
         <div className={s.empty}>
-          <b>Ainda sem roteiro</b>
-          Gere um para o Mestre ter um plano de arcos e saber para onde levar a história.
-          <button className="btn small" style={{ marginTop: 6 }} onClick={regen}>Gerar roteiro</button>
-        </div>
-      ) : !show ? (
-        <div className={s.gate}>
-          <b>{script.arcs.length} arcos planejados</b>
-          <p>O roteiro revela o que o Mestre planejou. Abra só se não se importar com spoilers.</p>
-          <button className="btn ghost small" onClick={() => setShow(true)}>Mostrar o roteiro</button>
+          <b>Ainda sem arco</b>
+          O Roteirista escreve o primeiro arco ao criar a campanha ou depois do primeiro turno.
+          <button className="btn small" style={{ marginTop: 6 }} onClick={redo}>Gerar arco</button>
         </div>
       ) : (
         <>
           <div className={s.head}>
-            <h4>Roteiro</h4>
-            <button className="btn ghost small" onClick={() => setShow(false)}>Esconder</button>
+            <h4>{view.arc.title}</h4>
           </div>
-          <p className={s.premise}>{script.premise}</p>
-          <ol className={s.arcs}>
-            {script.arcs.map((a, i) => (
-              <li key={i} className={`${s.arc}${a.status === "done" ? ` ${s.done}` : a.status === "active" ? ` ${s.active}` : ""}`}>
-                <span className={s.arcDot} aria-hidden="true">
-                  {a.status === "done" ? (
-                    <svg viewBox="0 0 12 12" width="10" height="10"><path d="m2.5 6.5 2.2 2L9.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                  ) : <span className="num" style={{ fontSize: 10, fontWeight: 600 }}>{i + 1}</span>}
-                </span>
-                <div className={s.title}>
-                  {a.title} <span className={s.chip}>{STATUS[a.status] || a.status}</span>
-                </div>
-                <div className={s.sub}>{a.summary}</div>
-                {a.canonEvents.length > 0 && <div className={s.arcMeta}><Anchor /><span>{a.canonEvents.join(" · ")}</span></div>}
-                {a.notes.length > 0 && <div className={s.arcMeta}><Pen /><span>{a.notes.slice(-3).join(" · ")}</span></div>}
-              </li>
-            ))}
-          </ol>
+          <p className={s.premise}>{view.arc.stakes}</p>
+          {view.clocks.map((c) => (
+            <div key={c.name} className={s.sub} title={`${c.filled} de ${c.segments}`}>
+              <div>{c.name}</div>
+              <div style={{ display: "flex", gap: 3, marginTop: 4 }} aria-label={`${c.filled} de ${c.segments}`}>
+                {Array.from({ length: c.segments }, (_, i) => (
+                  <span key={i} style={{ flex: 1, height: 6, borderRadius: 3, background: i < c.filled ? "var(--accent)" : "color-mix(in srgb, currentColor 18%, transparent)" }} />
+                ))}
+              </div>
+            </div>
+          ))}
         </>
       )}
 
-      {script && !busy && (
+      {view?.arc && !busy && (
         confirming ? (
           <div className={s.actions}>
-            <span className={s.sub}>Replaneja do ponto atual da história: os arcos seguintes são reescritos; os concluídos ficam.</span>
-            <button className="btn danger small" onClick={regen}>Regenerar</button>
+            <span className={s.sub}>O arco atual é refeito do ponto em que a história está; o que já aconteceu fica.</span>
+            <button className="btn danger small" onClick={redo}>Refazer</button>
             <button className="btn ghost small" onClick={() => setConfirming(false)}>Cancelar</button>
           </div>
         ) : (
-          <button className="btn ghost small" style={{ alignSelf: "flex-start" }} onClick={() => setConfirming(true)}>Regenerar roteiro</button>
+          <button className="btn ghost small" style={{ alignSelf: "flex-start" }} onClick={() => setConfirming(true)}>Refazer arco</button>
         )
       )}
       <div className={s.links}>

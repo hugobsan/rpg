@@ -45,6 +45,7 @@ export interface Effects {
   purchase: { item: string; qty: number; price: number } | null;
   rest: (typeof REST_KINDS)[number];
   mission: { op: Exclude<MissionOp, "none">; id: string; title?: string; pay?: number; size?: string } | null;
+  beat: { op: "advance" | "done"; id: string } | null; // o beat em jogo do cartão andou ou aconteceu (id completo)
 }
 
 export const emptyEffects = (): Effects => ({
@@ -58,6 +59,7 @@ export const emptyEffects = (): Effects => ({
   purchase: null,
   rest: "none",
   mission: null,
+  beat: null,
 });
 
 /** O que o validador precisa saber da campanha (montado pelo engine). */
@@ -69,6 +71,7 @@ export interface EffectsCtx {
   missions: { id: string; title: string; status: string }[];
   money: number | null; // saldo; null = mundo sem dinheiro
   resourceWords: string[]; // keys e rótulos dos recursos (validador de prosa nos fatos)
+  activeBeat?: string | null; // id do beat em jogo (lib/story.ts); o "beat" do bloco só vale para ele
 }
 
 // ---------- nomes ----------
@@ -293,6 +296,14 @@ export function validateEffects(raw: unknown, ctx: EffectsCtx): { effects: Effec
     const m = ctx.missions.find((x) => x.id.toLowerCase() === id.toLowerCase()) ?? ctx.missions.find((x) => fold(x.title) === fold(id));
     if (!m) drop(`missão desconhecida: ${id || "(sem id)"}`);
     else fx.mission = { op, id: m.id };
+  }
+
+  const be = obj(r.beat);
+  const bop = oneOf(["none", "advance", "done"] as const, be.op);
+  if (bop && bop !== "none") {
+    const id = str(be.id, 40);
+    if (ctx.activeBeat && id.length >= 8 && ctx.activeBeat.startsWith(id.slice(0, 8))) fx.beat = { op: bop, id: ctx.activeBeat };
+    else drop(`beat fora do cartão: ${id || "(sem id)"}`);
   }
 
   return { effects: fx, dropped };

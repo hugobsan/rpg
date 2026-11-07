@@ -6,7 +6,7 @@ import { activeDirectives, excerpt, indexHistory, searchBookChunks, type ChunkHi
 import { listBooks } from "./books";
 import { decideTurn } from "./decisions";
 import { attributeCap, attributePoints, controlLabel, costMultOf, powerLevel } from "./progression";
-import { formatClock, getClock, period } from "./clock";
+import { clockParts, formatClock, getClock, period } from "./clock";
 import { hydrateSheets } from "./library";
 import { getObjectives } from "./objectives";
 import { regenNotes, snapshotOption, takeSnapshot } from "./turnSnapshot";
@@ -29,12 +29,20 @@ import {
   type StepResult,
   validateEffects,
 } from "./contracts";
-import { Campaign, CampaignScript, Character, Scene, TurnEvent } from "./types";
+import { activeArc, loadStory, narrativeCandidates, prepareScene, afterTurn } from "./story";
+import { Campaign, Character, Scene, TurnEvent } from "./types";
 
 // ---------- carregamento de estado ----------
 
 export async function getCampaign(id: string): Promise<Campaign> {
-  const rows = await q<Campaign>(`SELECT * FROM campaigns WHERE id = $1`, [id]);
+  // sem a coluna script (roteiro antigo, legado); o arco ativo vem junto (momento da história)
+  const rows = await q<Campaign>(
+    `SELECT c.id, c.name, c.style, c.ruleset, c.state,
+       (SELECT jsonb_build_object('title', a.title, 'premise', a.premise, 'stakes', a.stakes) FROM arcs a
+         WHERE a.campaign_id = c.id AND a.status = 'active' ORDER BY a.ord LIMIT 1) AS arc
+     FROM campaigns c WHERE c.id = $1`,
+    [id]
+  );
   if (!rows.length) throw new Error("Campanha não encontrada");
   return rows[0];
 }
@@ -133,7 +141,8 @@ function npcLine(c: Character): string {
     `- ${c.name}${p.role ? ` — ${cut(p.role, 80)}` : ""}`,
     p.personality && `  personalidade: ${cut(p.personality, 200)}`,
     p.speech && `  fala: ${cut(p.speech, 140)}`,
-    p.goals && `  quer: ${cut(p.goals, 160)}`,
+    (p.wants || p.goals) && `  quer: ${cut(p.wants || p.goals, 160)}`,
+    p.agenda && `  agenda (o que faz por conta própria): ${cut(p.agenda, 160)}`,
     p.current && `  agora: ${cut(p.current, 200)}`,
     p.secrets && `  segredo (nunca diga): ${cut(p.secrets, 140)}`,
   ]
@@ -142,7 +151,7 @@ function npcLine(c: Character): string {
 }
 
 /** O que o validador do bloco precisa saber da campanha. */
-export function effectsCtx(campaign: Campaign, chars: Character[]): EffectsCtx {
+export function effectsCtx(campaign: Campaign, chars: Character[], activeBeat: string | null = null): EffectsCtx {
   const player = chars.find((c) => c.kind === "player");
   return {
     player: player?.name ?? "",
@@ -154,6 +163,7 @@ export function effectsCtx(campaign: Campaign, chars: Character[]): EffectsCtx {
       .map((o) => ({ id: o.id, title: o.title, status: o.status })),
     money: campaign.ruleset.currency ? (player?.sheet.money ?? 0) : null,
     resourceWords: campaign.ruleset.resources.flatMap((r) => [r.key, r.label]),
+    activeBeat,
   };
 }
 
@@ -164,7 +174,8 @@ async function narratorContext(
   chars: Character[],
   basePrompt: string,
   results: string,
-  books: string
+  books: string,
+  storyBlock: string
 ): Promise<[fixed: string, turn: string]> {
   const rs = campaign.ruleset;
   const player = chars.find((c) => c.kind === "player");
@@ -172,8 +183,6 @@ async function narratorContext(
   const away = chars.filter((c) => c.kind === "npc" && !c.active).map((c) => c.name);
   const clock = getClock(campaign.state);
   const directives = await activeDirectives(campaign.id);
-  const arcs = campaign.script?.arcs ?? [];
-  const arc = arcs.find((a) => a.status === "active");
   const objectives = getObjectives(campaign.state);
   const live = objectives.filter((o) => o.status === "aberto" || o.status === "oferecida");
   const done = objectives.filter((o) => o.status === "concluido").slice(-6);
@@ -205,9 +214,7 @@ async function narratorContext(
           )
           .join("\n")}${done.length ? `\nJá cumpridas (não ofereça de novo como inéditas): ${done.map((o) => o.title).join("; ")}` : ""}`
       : "",
-    arc
-      ? `\n--- ROTEIRO (só para você; nunca revele) ---\n${arc.title}: ${cut(arc.summary, 500)}\nPróximos eventos: ${arc.canonEvents.slice(0, 3).join(" | ") || "-"}\nGanchos: ${arc.hooks.slice(0, 3).join(" | ") || "-"}`
-      : "",
+    storyBlock,
     books ? `\n--- TRECHOS DOS LIVROS DE REFERÊNCIA ---\n${books}` : "",
     playerFixesLine(campaign.state),
     directives.length
@@ -336,7 +343,7 @@ export async function runTurn(
   const bookHitsP = booksP.then((b) => (b.length ? searchBookChunks(campaignId, playerInput, 2) : [])).catch((): ChunkHit[] => []);
   // gerar novamente uma opção escolhida: a foto guarda o índice (a narração com as opções continua salva)
   if (regen && optionIndex === undefined) optionIndex = await snapshotOption(campaignId);
-  const [campaign, scene, chars, gm, history, books, [lastGm]] = await Promise.all([
+  const [campaign, scene, chars, gm, history, books, [lastGm], story] = await Promise.all([
     getCampaign(campaignId),
     getCurrentScene(campaignId),
     getCharacters(campaignId),
@@ -347,13 +354,17 @@ export async function runTurn(
       `SELECT content, meta FROM messages WHERE campaign_id = $1 AND role = 'gm' ORDER BY id DESC LIMIT 1`,
       [campaignId]
     ),
+    loadStory(campaignId),
   ]);
   const params = gm.params as { complexModel?: string; reasoning?: unknown };
   const complexModel = params.complexModel?.trim();
   const lastGmText = lastGm?.content ?? "";
   const option = optionIndex !== undefined ? lastGm?.meta?.options?.[optionIndex] : undefined;
   const player = chars.find((c) => c.kind === "player");
-  const activeArc = campaign.script?.arcs.find((a) => a.status === "active");
+  const arc = activeArc(story);
+  const now = getClock(campaign.state)?.minutes;
+  // gatilhos narrativos de beat vão na mesma chamada do Jev (sobre a última narração)
+  const beatTriggers = Object.fromEntries(narrativeCandidates(story, now === undefined ? 1 : clockParts(now).day).map((b) => [b.id, b.trigger.narrative!]));
   const npcsHere = chars.filter((c) => c.kind === "npc" && c.active);
 
   // Jev, numa chamada só: modelo do turno, busca web, livros, fora do jogo e conversa particular
@@ -361,7 +372,7 @@ export async function runTurn(
     {
       setting: { name: campaign.ruleset.name, canonBased: !!campaign.ruleset.canonBased },
       scene: { mode: scene.mode, location: scene.location, title: scene.title, summary: scene.summary },
-      activeArc: activeArc ? `${activeArc.title}: ${activeArc.summary} Eventos canônicos: ${activeArc.canonEvents.join(" | ") || "-"}` : null,
+      activeArc: arc ? `${arc.title}: ${arc.stakes}` : null,
       npcsInScene: Object.fromEntries(npcsHere.map((c) => [c.name, [c.persona.personality, c.sheet.abilities.map((a) => a.name).join(", ")].filter(Boolean).join(" | ")])),
       lastGmNarration: lastGmText,
       playerAction: playerInput,
@@ -371,6 +382,7 @@ export async function runTurn(
       // batalha e treino: a fala com o NPC faz parte da atividade da cena
       askTalk: askTalk && acting && !option && scene.mode !== "battle" && scene.mode !== "training",
       books: books.map((b) => b.title),
+      beatTriggers: lastGmText ? beatTriggers : {},
     },
     campaignId
   );
@@ -420,7 +432,12 @@ export async function runTurn(
   const results: StepResult[] = player && steps.length ? await resolveSteps(toolCtx, player, steps) : [];
   const oracleLine = it?.question ? askOracle(it.question) : undefined;
 
-  const [fixed, turn] = await narratorContext(campaign, toolCtx.scene, chars, gm.system_prompt, resultsBlock(results, steps.length, it, oracleLine), bookText);
+  // história por código + cartão do Diretor (síncrono, antes do Narrador); falhou = turno sem cartão
+  const scenePlan = await prepareScene(toolCtx, chars, decision.beats, (text) => emit({ type: "status", text })).catch((e) => {
+    console.warn("[história]", e);
+    return { block: "", beat: null, card: null };
+  });
+  const [fixed, turn] = await narratorContext(campaign, toolCtx.scene, chars, gm.system_prompt, resultsBlock(results, steps.length, it, oracleLine), bookText, scenePlan.block);
   if (history.length) history[history.length - 1] = { ...history[history.length - 1], cache: true };
   const messages: ChatMessage[] = [
     { role: "system", content: fixed },
@@ -549,7 +566,7 @@ export async function runTurn(
   }
 
   // bloco de efeitos: validado campo a campo; ausente ou ilegível = Anotador; falhou = vazio
-  const fxCtx = effectsCtx(campaign, chars);
+  const fxCtx = effectsCtx(campaign, chars, scenePlan.beat?.id ?? null);
   const raw = block ? parseLooseJson(block) : null;
   let fx: Effects;
   let dropped: string[] = [];
@@ -559,6 +576,8 @@ export async function runTurn(
     fx = await annotate(campaignId, prose, fxCtx);
   }
   if (dropped.length) console.warn("[efeitos descartados]", dropped);
+  // sem opções no bloco: as saídas do cartão
+  if (!fx.options.length && scenePlan.card) fx.options = scenePlan.card.exits.map((label) => ({ label, approach: "move" as const, steps: [] }));
 
   const narration = prose || "*(O Mestre ficou em silêncio — tente novamente.)*";
   const choices = fx.options.map((o) => o.label);
@@ -584,6 +603,8 @@ export async function runTurn(
         JSON.stringify(entries),
         msgId,
       ]);
+    // beats, relógios, missão do beat e agenda (falhou = a história fica como estava; o turno vale)
+    await afterTurn(toolCtx, fx.beat).catch((e) => console.warn("[história]", e));
   }
   indexHistory(campaignId).catch((e) => console.warn("[histórico]", e));
   emit({ type: "done" });
@@ -599,119 +620,9 @@ export async function conversationEffects(campaignId: string, npcName: string, t
   if (!player) return [];
   const fx = await annotate(campaignId, transcript, effectsCtx(campaign, chars), `conversa particular com ${npcName}`);
   fx.options = [];
+  fx.beat = null;
   fx.scene = { newScene: false, location: "", present: null }; // conversa não muda de lugar nem elenco
   // ponytail: sem desfazer pela etiqueta (messageId 0); o desfazer vale só para a última narração do Mestre
   const entries = await applyEffects({ campaign, scene, emit: () => {} }, fx, { player, messageId: 0, subject: npcName });
   return entries.map((e) => e.summary);
-}
-
-// ---------- roteirista ----------
-
-/**
- * O que já aconteceu, para o Roteirista replanejar a partir daqui: hora, resumos das cenas em ordem, marcos e memórias
- * importantes, situação dos NPCs, onde a história parou, diretrizes do jogador e o roteiro atual. Vazio = campanha
- * sem narração ainda (roteiro do zero). Sem isso, regenerar voltava a história ao ponto de inserção.
- */
-async function storySoFar(campaign: Campaign, chars: Character[]): Promise<string> {
-  const id = campaign.id;
-  const [scenes, mems, [last], directives] = await Promise.all([
-    q<{ seq: number; location: string | null; summary: string }>(
-      `SELECT seq, location, summary FROM scenes WHERE campaign_id = $1 AND summary IS NOT NULL AND summary <> '' ORDER BY seq`,
-      [id]
-    ),
-    q<{ content: string }>(
-      `SELECT content FROM memories WHERE campaign_id = $1 AND kind <> 'directive' AND (kind = 'milestone' OR importance >= 4) ORDER BY id`,
-      [id]
-    ),
-    q<{ content: string }>(`SELECT content FROM messages WHERE campaign_id = $1 AND role = 'gm' ORDER BY id DESC LIMIT 1`, [id]),
-    activeDirectives(id),
-  ]);
-  if (!last) return "";
-  const clock = getClock(campaign.state);
-  // ponytail: corta pelo começo se passar de ~16 mil caracteres (campanhas muito longas); depois, resumo por arco
-  const story = scenes.map((s) => `Cena ${s.seq}${s.location ? ` (${s.location})` : ""}: ${s.summary}`).join("\n").slice(-16000);
-  const npcs = chars.filter((c) => c.kind === "npc" && (c.canon || c.persona.current));
-  const arcs = (campaign.script?.arcs ?? []).map(
-    (a) => `- ${a.title} [${a.status}]: ${a.summary.slice(0, 300)}${a.notes.length ? ` | notas: ${a.notes.slice(-3).join(" | ")}` : ""}`
-  );
-  return [
-    "HISTÓRIA ATÉ AGORA (a campanha já está em andamento):",
-    clock ? `Agora: ${formatClock(clock.minutes)}` : "",
-    story ? `Resumo das cenas, em ordem:\n${story}` : "",
-    mems.length ? `Marcos e fatos importantes, em ordem:\n${mems.map((m) => `- ${m.content.slice(0, 300)}`).join("\n")}` : "",
-    npcs.length ? `NPCs:\n${npcs.map((c) => `- ${c.name} | cargo: ${c.sheet.rank || "-"}${c.persona.current ? ` | agora: ${c.persona.current}` : c.persona.role ? ` | ${c.persona.role}` : ""}`).join("\n")}` : "",
-    `Onde a história parou (última narração):\n${last.content.slice(-1500)}`,
-    directives.length ? `Diretrizes do jogador (siga):\n${directives.map((d) => `- ${d.content.slice(0, 300)}`).join("\n")}` : "",
-    arcs.length ? `Roteiro atual:\n${arcs.join("\n")}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-export async function generateScript(campaign: Campaign): Promise<CampaignScript | null> {
-  const writer = await getAgent("scriptwriter");
-  const chars = await getCharacters(campaign.id);
-  const player = chars.find((c) => c.kind === "player");
-  const story = await storySoFar(campaign, chars);
-  const old = campaign.script;
-  const done = story ? (old?.arcs ?? []).filter((a) => a.status === "done") : [];
-  const result = await chat({
-    model: writer.model,
-    messages: [
-      { role: "system", content: writer.system_prompt },
-      {
-        role: "user",
-        content: `MECÂNICA/CENÁRIO:\n${rulesetPromptSummary(campaign.ruleset)}\n\nPERSONAGEM DO JOGADOR:\n${
-          player ? sheetSummary(player, true, campaign.ruleset) : "(não criado)"
-        }\n\n${
-          story
-            ? `${story}\n\nREPLANEJE o roteiro da campanha "${campaign.name}" a partir de onde a história parou: o que já aconteceu é fato e não se repete. ${
-                done.length ? `Os arcos concluídos (${done.map((a) => a.title).join("; ")}) ficam como estão: não os devolva. ` : ""
-              }O 1º arco que você devolver é o atual (status "active"), começando no ponto em que a história está, e os seguintes continuam dele.${
-                campaign.ruleset.canonBased
-                  ? " O cenário é baseado em obra: ancore os arcos na linha do tempo canônica a partir do ponto atual da história (eventos canônicos que já aconteceram não voltam)."
-                  : ""
-              }`
-            : `Monte o roteiro da campanha "${campaign.name}".${
-                campaign.ruleset.canonBased
-                  ? " O cenário é baseado em obra: ancore os arcos na linha do tempo canônica a partir do ponto de inserção do personagem."
-                  : ""
-              }`
-        }`,
-      },
-    ],
-    temperature: writer.temperature,
-    max_tokens: writer.max_tokens,
-    webSearch: writer.web_search,
-    agentId: "scriptwriter",
-    campaignId: campaign.id,
-    purpose: "geração de roteiro",
-  });
-  try {
-    const jsonText = result.content.replace(/```json|```/g, "").trim();
-    const script = JSON.parse(jsonText) as CampaignScript;
-    if (!script.premise || !Array.isArray(script.arcs)) return null;
-    const doneTitles = new Set(done.map((a) => a.title.toLowerCase()));
-    script.arcs = script.arcs
-      .filter((a) => !doneTitles.has(String(a.title || "").toLowerCase()))
-      .map((a) => ({
-        title: a.title || "Arco",
-        summary: a.summary || "",
-        canonEvents: a.canonEvents || [],
-        hooks: a.hooks || [],
-        status: a.status === "done" ? "pending" : a.status || "pending", // replanejado: concluído só o que já estava
-        // mesmo arco replanejado: as notas do Mestre e do Cronista ficam
-        notes: [...(old?.arcs.find((o) => o.title.toLowerCase() === String(a.title || "").toLowerCase())?.notes ?? []), ...(a.notes || [])],
-      }));
-    if (!script.arcs.some((a) => a.status === "active") && script.arcs[0])
-      script.arcs[0].status = "active";
-    script.arcs = [...done, ...script.arcs]; // os concluídos ficam na frente, como estavam
-    await q(`UPDATE campaigns SET script = $1, updated_at = now() WHERE id = $2`, [
-      JSON.stringify(script),
-      campaign.id,
-    ]);
-    return script;
-  } catch {
-    return null;
-  }
 }
